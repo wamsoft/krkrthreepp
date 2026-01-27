@@ -134,10 +134,6 @@
             "configurePreset": "x64-windows"
         },
         {
-            "name": "x64-windows-sdl",
-            "configurePreset": "x64-windows-sdl"
-        },
-        {
             "name": "x64-linux",
             "configurePreset": "x64-linux"
         },

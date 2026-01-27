@@ -2097,6 +2097,182 @@ class Threepp {
 	// ============================================================
 
 	/**
+	 * 2D直線カーブ
+	 * @description 2点間の直線を表現するカーブです。
+	 */
+	class LineCurve {
+		/**
+		 * コンストラクタ
+		 * @param v1 始点 (Vector2 または [x, y])
+		 * @param v2 終点 (Vector2 または [x, y])
+		 */
+		function LineCurve(v1, v2);
+		
+		property v1;  // 始点（読み取り専用）
+		property v2;  // 終点（読み取り専用）
+		
+		function getLength();      // 曲線の長さを取得
+		function getPoint(t);      // パラメータ t (0-1) の点を取得
+		function getPointAt(u);    // 等間隔パラメータ u の点を取得
+		function getTangent(t);    // 接線ベクトルを取得
+	}
+
+	/**
+	 * 3D直線カーブ
+	 * @description 3D空間での2点間の直線を表現するカーブです。
+	 */
+	class LineCurve3 {
+		/**
+		 * コンストラクタ
+		 * @param v1 始点 (Vector3 または [x, y, z])
+		 * @param v2 終点 (Vector3 または [x, y, z])
+		 */
+		function LineCurve3(v1, v2);
+		
+		property v1;  // 始点（読み取り専用）
+		property v2;  // 終点（読み取り専用）
+		
+		function getLength();      // 曲線の長さを取得
+		function getPoint(t);      // パラメータ t (0-1) の点を取得
+		function getPointAt(u);    // 等間隔パラメータ u の点を取得
+		function getTangent(t);    // 接線ベクトルを取得
+	}
+
+	/**
+	 * 2D二次ベジェカーブ
+	 * @description 制御点1つを持つ二次ベジェ曲線です。
+	 */
+	class QuadraticBezierCurve {
+		/**
+		 * コンストラクタ
+		 * @param v0 始点
+		 * @param v1 制御点
+		 * @param v2 終点
+		 */
+		function QuadraticBezierCurve(v0, v1, v2);
+		
+		property v0;  // 始点（読み取り専用）
+		property v1;  // 制御点（読み取り専用）
+		property v2;  // 終点（読み取り専用）
+		
+		function getLength();      // 曲線の長さを取得
+		function getPoint(t);      // パラメータ t (0-1) の点を取得
+	}
+
+	/**
+	 * 3D二次ベジェカーブ
+	 * @description 3D空間での二次ベジェ曲線です。
+	 */
+	class QuadraticBezierCurve3 {
+		/**
+		 * コンストラクタ
+		 * @param v0 始点
+		 * @param v1 制御点
+		 * @param v2 終点
+		 */
+		function QuadraticBezierCurve3(v0, v1, v2);
+		
+		property v0;  // 始点（読み取り専用）
+		property v1;  // 制御点（読み取り専用）
+		property v2;  // 終点（読み取り専用）
+		
+		function getLength();      // 曲線の長さを取得
+		function getPoint(t);      // パラメータ t (0-1) の点を取得
+	}
+
+	/**
+	 * 2D三次ベジェカーブ
+	 * @description 制御点2つを持つ三次ベジェ曲線です。
+	 */
+	class CubicBezierCurve {
+		/**
+		 * コンストラクタ
+		 * @param v0 始点
+		 * @param v1 制御点1
+		 * @param v2 制御点2
+		 * @param v3 終点
+		 */
+		function CubicBezierCurve(v0, v1, v2, v3);
+		
+		property v0;  // 始点（読み取り専用）
+		property v1;  // 制御点1（読み取り専用）
+		property v2;  // 制御点2（読み取り専用）
+		property v3;  // 終点（読み取り専用）
+		
+		function getLength();      // 曲線の長さを取得
+		function getPoint(t);      // パラメータ t (0-1) の点を取得
+	}
+
+	/**
+	 * 3D三次ベジェカーブ
+	 * @description 3D空間での三次ベジェ曲線です。
+	 */
+	class CubicBezierCurve3 {
+		/**
+		 * コンストラクタ
+		 * @param v0 始点
+		 * @param v1 制御点1
+		 * @param v2 制御点2
+		 * @param v3 終点
+		 */
+		function CubicBezierCurve3(v0, v1, v2, v3);
+		
+		property v0;  // 始点（読み取り専用）
+		property v1;  // 制御点1（読み取り専用）
+		property v2;  // 制御点2（読み取り専用）
+		property v3;  // 終点（読み取り専用）
+		
+		function getLength();      // 曲線の長さを取得
+		function getPoint(t);      // パラメータ t (0-1) の点を取得
+	}
+
+	/**
+	 * 2Dスプラインカーブ
+	 * @description 複数の点を通過するスムーズな曲線です。
+	 */
+	class SplineCurve {
+		/**
+		 * コンストラクタ
+		 * @param points 点の配列 (Vector2の配列または [x,y] の配列)
+		 */
+		function SplineCurve(points);
+		
+		function getLength();      // 曲線の長さを取得
+		function getPoint(t);      // パラメータ t (0-1) の点を取得
+	}
+
+	/**
+	 * 楕円カーブ
+	 * @description 楕円または円弧を表現するカーブです。
+	 */
+	class EllipseCurve {
+		/**
+		 * コンストラクタ
+		 * @param aX 中心X座標
+		 * @param aY 中心Y座標
+		 * @param xRadius X方向の半径
+		 * @param yRadius Y方向の半径
+		 * @param aStartAngle 開始角度 (ラジアン)
+		 * @param aEndAngle 終了角度 (ラジアン)
+		 * @param aClockwise 時計回りかどうか
+		 * @param aRotation 楕円の回転角度 (ラジアン)
+		 */
+		function EllipseCurve(aX=0, aY=0, xRadius=1, yRadius=1, aStartAngle=0, aEndAngle=Math.PI*2, aClockwise=false, aRotation=0);
+		
+		property aX;          // 中心X座標
+		property aY;          // 中心Y座標
+		property xRadius;     // X方向の半径
+		property yRadius;     // Y方向の半径
+		property aStartAngle; // 開始角度
+		property aEndAngle;   // 終了角度
+		property aClockwise;  // 時計回りフラグ
+		property aRotation;   // 回転角度
+		
+		function getLength();      // 曲線の長さを取得
+		function getPoint(t);      // パラメータ t (0-1) の点を取得
+	}
+
+	/**
 	 * CatmullRom スプライン曲線
 	 * @description 制御点を通過する滑らかな曲線を生成します。
 	 */
@@ -2115,6 +2291,107 @@ class Threepp {
 		
 		function getLength();      // 曲線の長さを取得
 		function getPoint(t);      // パラメータ t (0-1) の点を取得
+	}
+
+	/**
+	 * 2Dパス
+	 * @description 複数のカーブを組み合わせた2Dパスを作成します。
+	 *              Canvas API と同様のメソッドで描画できます。
+	 */
+	class Path {
+		/**
+		 * コンストラクタ
+		 * @param points 初期点の配列（省略可）
+		 */
+		function Path(points);
+		
+		property autoClose;     // パスを自動的に閉じるか
+		property currentPoint;  // 現在のペン位置（読み取り専用）
+		
+		function getLength();      // パスの全長を取得
+		function getPoint(t);      // パラメータ t (0-1) の点を取得
+		function getPointAt(u);    // 等間隔パラメータ u の点を取得
+		
+		function moveTo(x, y);     // ペンを移動
+		function lineTo(x, y);     // 直線を描画
+		function quadraticCurveTo(cpX, cpY, x, y);  // 二次ベジェ曲線を描画
+		function bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);  // 三次ベジェ曲線を描画
+		function arc(x, y, radius, startAngle, endAngle, clockwise);  // 相対位置から円弧を描画
+		function absarc(x, y, radius, startAngle, endAngle, clockwise);  // 絶対位置で円弧を描画
+		function absellipse(x, y, xRadius, yRadius, startAngle, endAngle, clockwise, rotation);  // 楕円を描画
+		function splineThru(points);  // 点の配列を通過するスプライン
+		function closePath();      // パスを閉じる
+	}
+
+	/**
+	 * Shape（穴付き2D形状）
+	 * Pathを継承し、穴を追加できる2D形状クラス
+	 * ExtrudeGeometryやShapeGeometryで使用
+	 */
+	class Shape {
+		/**
+		 * コンストラクタ
+		 * @param points 初期点の配列（省略可）
+		 */
+		function Shape(points);
+		
+		property autoClose;     // パスを自動的に閉じるか
+		property currentPoint;  // 現在のペン位置（読み取り専用）
+		
+		function getLength();      // パスの全長を取得
+		function getPoint(t);      // パラメータ t (0-1) の点を取得
+		function getPointAt(u);    // 等間隔パラメータ u の点を取得
+		
+		// Pathと同じ描画メソッド
+		function moveTo(x, y);     // ペンを移動
+		function lineTo(x, y);     // 直線を描画
+		function quadraticCurveTo(cpX, cpY, x, y);  // 二次ベジェ曲線を描画
+		function bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);  // 三次ベジェ曲線を描画
+		function arc(x, y, radius, startAngle, endAngle, clockwise);  // 相対位置から円弧を描画
+		function absarc(x, y, radius, startAngle, endAngle, clockwise);  // 絶対位置で円弧を描画
+		function absellipse(x, y, xRadius, yRadius, startAngle, endAngle, clockwise, rotation);  // 楕円を描画
+		function splineThru(points);  // 点の配列を通過するスプライン
+		function closePath();      // パスを閉じる
+		
+		// 穴の管理
+		function addHole(hole);    // 穴を追加（Pathオブジェクト）
+		function getHole(index);   // 穴を取得
+		function getHoleCount();   // 穴の数を取得
+		function uuid();           // 形状のUUIDを取得
+	}
+
+	/**
+	 * ShapeGeometry（2D形状ジオメトリ）
+	 * Shapeから平面的なジオメトリを生成
+	 */
+	class ShapeGeometry {
+		/**
+		 * コンストラクタ
+		 * @param shape Shapeオブジェクトまたは配列
+		 * @param curveSegments カーブの分割数（デフォルト: 12）
+		 */
+		function ShapeGeometry(shape, curveSegments);
+	}
+
+	/**
+	 * ExtrudeGeometry（押し出しジオメトリ）
+	 * Shapeを押し出して3Dジオメトリを生成
+	 */
+	class ExtrudeGeometry {
+		/**
+		 * コンストラクタ
+		 * @param shape Shapeオブジェクトまたは配列
+		 * @param options 押し出しオプション（辞書）
+		 *   - curveSegments: カーブの分割数
+		 *   - steps: 押し出しのステップ数
+		 *   - depth: 押し出しの深さ
+		 *   - bevelEnabled: ベベルを有効にするか
+		 *   - bevelThickness: ベベルの厚さ
+		 *   - bevelSize: ベベルのサイズ
+		 *   - bevelOffset: ベベルのオフセット
+		 *   - bevelSegments: ベベルの分割数
+		 */
+		function ExtrudeGeometry(shape, options);
 	}
 
 	// CurveType 定数
@@ -2198,6 +2475,37 @@ class Threepp {
  * var curve = new Threepp.CatmullRomCurve3(points, false);
  * var point = curve.getPoint(0.5);  // 曲線の中間点を取得
  * 
+ * // Path の使用例（Canvas API 風の描画）
+ * var path = new Threepp.Path();
+ * path.moveTo(0, 0);
+ * path.lineTo(100, 0);
+ * path.quadraticCurveTo(150, 50, 100, 100);
+ * path.bezierCurveTo(50, 150, 0, 150, 0, 100);
+ * path.closePath();
+ * 
+ * // 2Dベジェカーブの例
+ * var bezier = new Threepp.CubicBezierCurve(
+ *     [0, 0],      // 始点
+ *     [0.5, 1],    // 制御点1
+ *     [1, 1],      // 制御点2
+ *     [1, 0]       // 終点
+ * );
+ * var midPoint = bezier.getPoint(0.5);
+ * 
+ * // 楕円カーブの例
+ * var ellipse = new Threepp.EllipseCurve(
+ *     0, 0,        // 中心座標
+ *     10, 5,       // X半径, Y半径
+ *     0, Math.PI,  // 開始角度, 終了角度（半円）
+ *     false,       // 時計回り
+ *     0            // 回転
+ * );
+ * 
+ * // LineCurve3 の例（3D直線）
+ * var line3d = new Threepp.LineCurve3([0, 0, 0], [10, 10, 10]);
+ * var length = line3d.getLength();
+ * var tangent = line3d.getTangent(0.5);  // 接線ベクトル
+ * 
  * // LatheGeometry の使用例（花瓶のような形状）
  * var lathePoints = [
  *     [0.0, 0.0],
@@ -2211,4 +2519,49 @@ class Threepp {
  * var vaseGeometry = new Threepp.LatheGeometry(lathePoints, 32);
  * var vaseMesh = new Threepp.Mesh(vaseGeometry, material);
  * scene.add(vaseMesh);
+ * 
+ * // Shape の使用例（穴付き2D形状）
+ * var heartShape = new Threepp.Shape();
+ * heartShape.moveTo(25, 25);
+ * heartShape.bezierCurveTo(25, 25, 20, 0, 0, 0);
+ * heartShape.bezierCurveTo(-30, 0, -30, 35, -30, 35);
+ * heartShape.bezierCurveTo(-30, 55, -10, 77, 25, 95);
+ * heartShape.bezierCurveTo(60, 77, 80, 55, 80, 35);
+ * heartShape.bezierCurveTo(80, 35, 80, 0, 50, 0);
+ * heartShape.bezierCurveTo(35, 0, 25, 25, 25, 25);
+ * 
+ * // ShapeGeometry で2D形状をそのまま使用
+ * var shapeGeo = new Threepp.ShapeGeometry(heartShape, 16);
+ * var shapeMesh = new Threepp.Mesh(shapeGeo, material);
+ * scene.add(shapeMesh);
+ * 
+ * // ExtrudeGeometry で3Dに押し出し
+ * var extrudeSettings = %[
+ *     depth: 16,
+ *     bevelEnabled: true,
+ *     bevelThickness: 1,
+ *     bevelSize: 1,
+ *     bevelSegments: 2
+ * ];
+ * var extrudeGeo = new Threepp.ExtrudeGeometry(heartShape, extrudeSettings);
+ * var extrudeMesh = new Threepp.Mesh(extrudeGeo, material);
+ * scene.add(extrudeMesh);
+ * 
+ * // 穴付きShapeの例（角丸四角形に丸い穴）
+ * var rectWithHole = new Threepp.Shape();
+ * rectWithHole.moveTo(0, 0);
+ * rectWithHole.lineTo(0, 100);
+ * rectWithHole.lineTo(100, 100);
+ * rectWithHole.lineTo(100, 0);
+ * rectWithHole.closePath();
+ * 
+ * // 穴を定義
+ * var hole = new Threepp.Path();
+ * hole.absarc(50, 50, 20, 0, Math.PI * 2, false);
+ * rectWithHole.addHole(hole);
+ * 
+ * // 押し出して3Dにする
+ * var holeGeo = new Threepp.ExtrudeGeometry(rectWithHole, %[depth: 10]);
+ * var holeMesh = new Threepp.Mesh(holeGeo, material);
+ * scene.add(holeMesh);
  */

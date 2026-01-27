@@ -71,7 +71,22 @@
 #include <threepp/objects/Reflector.hpp>
 
 // Curves
+#include <threepp/extras/core/Curve.hpp>
+#include <threepp/extras/core/CurvePath.hpp>
+#include <threepp/extras/core/Path.hpp>
+#include <threepp/extras/core/Shape.hpp>
 #include <threepp/extras/curves/CatmullRomCurve3.hpp>
+
+// Shape-based Geometries
+#include <threepp/geometries/ShapeGeometry.hpp>
+#include <threepp/geometries/ExtrudeGeometry.hpp>
+#include <threepp/extras/curves/LineCurve.hpp>
+#include <threepp/extras/curves/QuadraticBezierCurve.hpp>
+#include <threepp/extras/curves/QuadraticBezierCurve3.hpp>
+#include <threepp/extras/curves/CubicBezierCurve.hpp>
+#include <threepp/extras/curves/CubicBezierCurve3.hpp>
+#include <threepp/extras/curves/SplineCurve.hpp>
+#include <threepp/extras/curves/EllipseCurve.hpp>
 
 // Helpers
 #include <threepp/helpers/AxesHelper.hpp>
@@ -3166,6 +3181,882 @@ NCB_THREE_PROPERTY_RO(type, type);
 };
 
 // ======================================================================
+// LineCurve (2D)
+// ======================================================================
+
+static tjs_error
+LineCurveFactory(ThreeWrapper<LineCurve> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	Vector2 v1, v2;
+
+	if (numparams > 0 && params[0]->Type() == tvtObject) {
+		ncbPropAccessor pt(*params[0]);
+		if (IsArray(*params[0])) {
+			v1 = Vector2((float)pt.getRealValue(0), (float)pt.getRealValue(1));
+		} else {
+			v1 = Vector2((float)pt.getRealValue(TJS_W("x")), (float)pt.getRealValue(TJS_W("y")));
+		}
+	}
+	if (numparams > 1 && params[1]->Type() == tvtObject) {
+		ncbPropAccessor pt(*params[1]);
+		if (IsArray(*params[1])) {
+			v2 = Vector2((float)pt.getRealValue(0), (float)pt.getRealValue(1));
+		} else {
+			v2 = Vector2((float)pt.getRealValue(TJS_W("x")), (float)pt.getRealValue(TJS_W("y")));
+		}
+	}
+
+	auto obj = std::make_shared<LineCurve>(v1, v2);
+	*result = new ThreeWrapper<LineCurve>(obj);
+	return TJS_S_OK;
+}
+
+static Vector2 LineCurveGetPoint(ThreeWrapper<LineCurve> *self, float t)
+{
+	Vector2 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPoint(t, result);
+	}
+	return result;
+}
+
+static Vector2 LineCurveGetPointAt(ThreeWrapper<LineCurve> *self, float u)
+{
+	Vector2 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPointAt(u, result);
+	}
+	return result;
+}
+
+static Vector2 LineCurveGetTangent(ThreeWrapper<LineCurve> *self, float t)
+{
+	Vector2 result;
+	if (self && self->getObject()) {
+		self->getObject()->getTangent(t, result);
+	}
+	return result;
+}
+
+NCB_REGISTER_THREE_SUBCLASS(LineCurve)
+Factory(LineCurveFactory);
+NCB_THREE_MEMBER_PROPERTY_RO(v1, Vector2&, v1);
+NCB_THREE_MEMBER_PROPERTY_RO(v2, Vector2&, v2);
+NCB_THREE_METHOD(getLength);
+NCB_METHOD_PROXY(getPoint, LineCurveGetPoint);
+NCB_METHOD_PROXY(getPointAt, LineCurveGetPointAt);
+NCB_METHOD_PROXY(getTangent, LineCurveGetTangent);
+};
+
+// ======================================================================
+// LineCurve3 (3D)
+// ======================================================================
+
+static tjs_error
+LineCurve3Factory(ThreeWrapper<LineCurve3> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	Vector3 v1, v2;
+
+	if (numparams > 0 && params[0]->Type() == tvtObject) {
+		ncbPropAccessor pt(*params[0]);
+		if (IsArray(*params[0])) {
+			v1 = Vector3((float)pt.getRealValue(0), (float)pt.getRealValue(1), (float)pt.getRealValue(2));
+		} else {
+			v1 = Vector3((float)pt.getRealValue(TJS_W("x")), (float)pt.getRealValue(TJS_W("y")), (float)pt.getRealValue(TJS_W("z")));
+		}
+	}
+	if (numparams > 1 && params[1]->Type() == tvtObject) {
+		ncbPropAccessor pt(*params[1]);
+		if (IsArray(*params[1])) {
+			v2 = Vector3((float)pt.getRealValue(0), (float)pt.getRealValue(1), (float)pt.getRealValue(2));
+		} else {
+			v2 = Vector3((float)pt.getRealValue(TJS_W("x")), (float)pt.getRealValue(TJS_W("y")), (float)pt.getRealValue(TJS_W("z")));
+		}
+	}
+
+	auto obj = std::make_shared<LineCurve3>(v1, v2);
+	*result = new ThreeWrapper<LineCurve3>(obj);
+	return TJS_S_OK;
+}
+
+static Vector3 LineCurve3GetPoint(ThreeWrapper<LineCurve3> *self, float t)
+{
+	Vector3 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPoint(t, result);
+	}
+	return result;
+}
+
+static Vector3 LineCurve3GetPointAt(ThreeWrapper<LineCurve3> *self, float u)
+{
+	Vector3 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPointAt(u, result);
+	}
+	return result;
+}
+
+static Vector3 LineCurve3GetTangent(ThreeWrapper<LineCurve3> *self, float t)
+{
+	Vector3 result;
+	if (self && self->getObject()) {
+		self->getObject()->getTangent(t, result);
+	}
+	return result;
+}
+
+NCB_REGISTER_THREE_SUBCLASS(LineCurve3)
+Factory(LineCurve3Factory);
+NCB_THREE_MEMBER_PROPERTY_RO(v1, Vector3&, v1);
+NCB_THREE_MEMBER_PROPERTY_RO(v2, Vector3&, v2);
+NCB_THREE_METHOD(getLength);
+NCB_METHOD_PROXY(getPoint, LineCurve3GetPoint);
+NCB_METHOD_PROXY(getPointAt, LineCurve3GetPointAt);
+NCB_METHOD_PROXY(getTangent, LineCurve3GetTangent);
+};
+
+// ======================================================================
+// QuadraticBezierCurve (2D)
+// ======================================================================
+
+static tjs_error
+QuadraticBezierCurveFactory(ThreeWrapper<QuadraticBezierCurve> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	Vector2 v0, v1, v2;
+
+	auto readVec2 = [](tTJSVariant* param) -> Vector2 {
+		if (param->Type() == tvtObject) {
+			ncbPropAccessor pt(*param);
+			if (IsArray(*param)) {
+				return Vector2((float)pt.getRealValue(0), (float)pt.getRealValue(1));
+			} else {
+				return Vector2((float)pt.getRealValue(TJS_W("x")), (float)pt.getRealValue(TJS_W("y")));
+			}
+		}
+		return Vector2();
+	};
+
+	if (numparams > 0) v0 = readVec2(params[0]);
+	if (numparams > 1) v1 = readVec2(params[1]);
+	if (numparams > 2) v2 = readVec2(params[2]);
+
+	auto obj = std::make_shared<QuadraticBezierCurve>(v0, v1, v2);
+	*result = new ThreeWrapper<QuadraticBezierCurve>(obj);
+	return TJS_S_OK;
+}
+
+static Vector2 QuadraticBezierCurveGetPoint(ThreeWrapper<QuadraticBezierCurve> *self, float t)
+{
+	Vector2 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPoint(t, result);
+	}
+	return result;
+}
+
+NCB_REGISTER_THREE_SUBCLASS(QuadraticBezierCurve)
+Factory(QuadraticBezierCurveFactory);
+NCB_THREE_MEMBER_PROPERTY_RO(v0, Vector2&, v0);
+NCB_THREE_MEMBER_PROPERTY_RO(v1, Vector2&, v1);
+NCB_THREE_MEMBER_PROPERTY_RO(v2, Vector2&, v2);
+NCB_THREE_METHOD(getLength);
+NCB_METHOD_PROXY(getPoint, QuadraticBezierCurveGetPoint);
+};
+
+// ======================================================================
+// QuadraticBezierCurve3 (3D)
+// ======================================================================
+
+static tjs_error
+QuadraticBezierCurve3Factory(ThreeWrapper<QuadraticBezierCurve3> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	Vector3 v0, v1, v2;
+
+	auto readVec3 = [](tTJSVariant* param) -> Vector3 {
+		if (param->Type() == tvtObject) {
+			ncbPropAccessor pt(*param);
+			if (IsArray(*param)) {
+				return Vector3((float)pt.getRealValue(0), (float)pt.getRealValue(1), (float)pt.getRealValue(2));
+			} else {
+				return Vector3((float)pt.getRealValue(TJS_W("x")), (float)pt.getRealValue(TJS_W("y")), (float)pt.getRealValue(TJS_W("z")));
+			}
+		}
+		return Vector3();
+	};
+
+	if (numparams > 0) v0 = readVec3(params[0]);
+	if (numparams > 1) v1 = readVec3(params[1]);
+	if (numparams > 2) v2 = readVec3(params[2]);
+
+	auto obj = std::make_shared<QuadraticBezierCurve3>(v0, v1, v2);
+	*result = new ThreeWrapper<QuadraticBezierCurve3>(obj);
+	return TJS_S_OK;
+}
+
+static Vector3 QuadraticBezierCurve3GetPoint(ThreeWrapper<QuadraticBezierCurve3> *self, float t)
+{
+	Vector3 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPoint(t, result);
+	}
+	return result;
+}
+
+NCB_REGISTER_THREE_SUBCLASS(QuadraticBezierCurve3)
+Factory(QuadraticBezierCurve3Factory);
+NCB_THREE_MEMBER_PROPERTY_RO(v0, Vector3&, v0);
+NCB_THREE_MEMBER_PROPERTY_RO(v1, Vector3&, v1);
+NCB_THREE_MEMBER_PROPERTY_RO(v2, Vector3&, v2);
+NCB_THREE_METHOD(getLength);
+NCB_METHOD_PROXY(getPoint, QuadraticBezierCurve3GetPoint);
+};
+
+// ======================================================================
+// CubicBezierCurve (2D)
+// ======================================================================
+
+static tjs_error
+CubicBezierCurveFactory(ThreeWrapper<CubicBezierCurve> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	Vector2 v0, v1, v2, v3;
+
+	auto readVec2 = [](tTJSVariant* param) -> Vector2 {
+		if (param->Type() == tvtObject) {
+			ncbPropAccessor pt(*param);
+			if (IsArray(*param)) {
+				return Vector2((float)pt.getRealValue(0), (float)pt.getRealValue(1));
+			} else {
+				return Vector2((float)pt.getRealValue(TJS_W("x")), (float)pt.getRealValue(TJS_W("y")));
+			}
+		}
+		return Vector2();
+	};
+
+	if (numparams > 0) v0 = readVec2(params[0]);
+	if (numparams > 1) v1 = readVec2(params[1]);
+	if (numparams > 2) v2 = readVec2(params[2]);
+	if (numparams > 3) v3 = readVec2(params[3]);
+
+	auto obj = std::make_shared<CubicBezierCurve>(v0, v1, v2, v3);
+	*result = new ThreeWrapper<CubicBezierCurve>(obj);
+	return TJS_S_OK;
+}
+
+static Vector2 CubicBezierCurveGetPoint(ThreeWrapper<CubicBezierCurve> *self, float t)
+{
+	Vector2 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPoint(t, result);
+	}
+	return result;
+}
+
+NCB_REGISTER_THREE_SUBCLASS(CubicBezierCurve)
+Factory(CubicBezierCurveFactory);
+NCB_THREE_MEMBER_PROPERTY_RO(v0, Vector2&, v0);
+NCB_THREE_MEMBER_PROPERTY_RO(v1, Vector2&, v1);
+NCB_THREE_MEMBER_PROPERTY_RO(v2, Vector2&, v2);
+NCB_THREE_MEMBER_PROPERTY_RO(v3, Vector2&, v3);
+NCB_THREE_METHOD(getLength);
+NCB_METHOD_PROXY(getPoint, CubicBezierCurveGetPoint);
+};
+
+// ======================================================================
+// CubicBezierCurve3 (3D)
+// ======================================================================
+
+static tjs_error
+CubicBezierCurve3Factory(ThreeWrapper<CubicBezierCurve3> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	Vector3 v0, v1, v2, v3;
+
+	auto readVec3 = [](tTJSVariant* param) -> Vector3 {
+		if (param->Type() == tvtObject) {
+			ncbPropAccessor pt(*param);
+			if (IsArray(*param)) {
+				return Vector3((float)pt.getRealValue(0), (float)pt.getRealValue(1), (float)pt.getRealValue(2));
+			} else {
+				return Vector3((float)pt.getRealValue(TJS_W("x")), (float)pt.getRealValue(TJS_W("y")), (float)pt.getRealValue(TJS_W("z")));
+			}
+		}
+		return Vector3();
+	};
+
+	if (numparams > 0) v0 = readVec3(params[0]);
+	if (numparams > 1) v1 = readVec3(params[1]);
+	if (numparams > 2) v2 = readVec3(params[2]);
+	if (numparams > 3) v3 = readVec3(params[3]);
+
+	auto obj = std::make_shared<CubicBezierCurve3>(v0, v1, v2, v3);
+	*result = new ThreeWrapper<CubicBezierCurve3>(obj);
+	return TJS_S_OK;
+}
+
+static Vector3 CubicBezierCurve3GetPoint(ThreeWrapper<CubicBezierCurve3> *self, float t)
+{
+	Vector3 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPoint(t, result);
+	}
+	return result;
+}
+
+NCB_REGISTER_THREE_SUBCLASS(CubicBezierCurve3)
+Factory(CubicBezierCurve3Factory);
+NCB_THREE_MEMBER_PROPERTY_RO(v0, Vector3&, v0);
+NCB_THREE_MEMBER_PROPERTY_RO(v1, Vector3&, v1);
+NCB_THREE_MEMBER_PROPERTY_RO(v2, Vector3&, v2);
+NCB_THREE_MEMBER_PROPERTY_RO(v3, Vector3&, v3);
+NCB_THREE_METHOD(getLength);
+NCB_METHOD_PROXY(getPoint, CubicBezierCurve3GetPoint);
+};
+
+// ======================================================================
+// SplineCurve (2D)
+// ======================================================================
+
+static tjs_error
+SplineCurveFactory(ThreeWrapper<SplineCurve> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	std::vector<Vector2> points;
+
+	if (numparams > 0 && params[0]->Type() == tvtObject) {
+		ncbPropAccessor arr(*params[0]);
+		tjs_int count = arr.GetArrayCount();
+		for (tjs_int i = 0; i < count; i++) {
+			tTJSVariant v;
+			arr.checkArrayGet(i, v);
+			if (v.Type() == tvtObject) {
+				ncbPropAccessor pt(v);
+				if (IsArray(v)) {
+					points.push_back(Vector2((float)pt.getRealValue(0), (float)pt.getRealValue(1)));
+				} else {
+					points.push_back(Vector2((float)pt.getRealValue(TJS_W("x")), (float)pt.getRealValue(TJS_W("y"))));
+				}
+			}
+		}
+	}
+
+	auto obj = std::make_shared<SplineCurve>(points);
+	*result = new ThreeWrapper<SplineCurve>(obj);
+	return TJS_S_OK;
+}
+
+static Vector2 SplineCurveGetPoint(ThreeWrapper<SplineCurve> *self, float t)
+{
+	Vector2 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPoint(t, result);
+	}
+	return result;
+}
+
+NCB_REGISTER_THREE_SUBCLASS(SplineCurve)
+Factory(SplineCurveFactory);
+NCB_THREE_METHOD(getLength);
+NCB_METHOD_PROXY(getPoint, SplineCurveGetPoint);
+};
+
+// ======================================================================
+// EllipseCurve (2D)
+// ======================================================================
+
+static tjs_error
+EllipseCurveFactory(ThreeWrapper<EllipseCurve> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	float aX = 0, aY = 0;
+	float xRadius = 1, yRadius = 1;
+	float aStartAngle = 0, aEndAngle = math::TWO_PI;
+	bool aClockwise = false;
+	float aRotation = 0;
+
+	if (numparams > 0) aX = (float)params[0]->AsReal();
+	if (numparams > 1) aY = (float)params[1]->AsReal();
+	if (numparams > 2) xRadius = (float)params[2]->AsReal();
+	if (numparams > 3) yRadius = (float)params[3]->AsReal();
+	if (numparams > 4) aStartAngle = (float)params[4]->AsReal();
+	if (numparams > 5) aEndAngle = (float)params[5]->AsReal();
+	if (numparams > 6) aClockwise = (bool)params[6]->AsInteger();
+	if (numparams > 7) aRotation = (float)params[7]->AsReal();
+
+	auto obj = std::make_shared<EllipseCurve>(aX, aY, xRadius, yRadius, aStartAngle, aEndAngle, aClockwise, aRotation);
+	*result = new ThreeWrapper<EllipseCurve>(obj);
+	return TJS_S_OK;
+}
+
+static Vector2 EllipseCurveGetPoint(ThreeWrapper<EllipseCurve> *self, float t)
+{
+	Vector2 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPoint(t, result);
+	}
+	return result;
+}
+
+NCB_REGISTER_THREE_SUBCLASS(EllipseCurve)
+Factory(EllipseCurveFactory);
+NCB_THREE_MEMBER_PROPERTY(aX, float, aX);
+NCB_THREE_MEMBER_PROPERTY(aY, float, aY);
+NCB_THREE_MEMBER_PROPERTY(xRadius, float, xRadius);
+NCB_THREE_MEMBER_PROPERTY(yRadius, float, yRadius);
+NCB_THREE_MEMBER_PROPERTY(aStartAngle, float, aStartAngle);
+NCB_THREE_MEMBER_PROPERTY(aEndAngle, float, aEndAngle);
+NCB_THREE_MEMBER_PROPERTY(aClockwise, bool, aClockwise);
+NCB_THREE_MEMBER_PROPERTY(aRotation, float, aRotation);
+NCB_THREE_METHOD(getLength);
+NCB_METHOD_PROXY(getPoint, EllipseCurveGetPoint);
+};
+
+// ======================================================================
+// Path (CurvePath<Vector2>)
+// ======================================================================
+
+static tjs_error
+PathFactory(ThreeWrapper<Path> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	std::vector<Vector2> points;
+
+	if (numparams > 0 && params[0]->Type() == tvtObject) {
+		ncbPropAccessor arr(*params[0]);
+		tjs_int count = arr.GetArrayCount();
+		for (tjs_int i = 0; i < count; i++) {
+			tTJSVariant v;
+			arr.checkArrayGet(i, v);
+			if (v.Type() == tvtObject) {
+				ncbPropAccessor pt(v);
+				if (IsArray(v)) {
+					points.push_back(Vector2((float)pt.getRealValue(0), (float)pt.getRealValue(1)));
+				} else {
+					points.push_back(Vector2((float)pt.getRealValue(TJS_W("x")), (float)pt.getRealValue(TJS_W("y"))));
+				}
+			}
+		}
+	}
+
+	auto obj = std::make_shared<Path>(points);
+	*result = new ThreeWrapper<Path>(obj);
+	return TJS_S_OK;
+}
+
+static Vector2 PathGetPoint(ThreeWrapper<Path> *self, float t)
+{
+	Vector2 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPoint(t, result);
+	}
+	return result;
+}
+
+static Vector2 PathGetPointAt(ThreeWrapper<Path> *self, float u)
+{
+	Vector2 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPointAt(u, result);
+	}
+	return result;
+}
+
+// Path描画メソッド用プロキシ
+static void PathMoveTo(ThreeWrapper<Path> *self, float x, float y)
+{
+	if (self && self->getObject()) {
+		self->getObject()->moveTo(x, y);
+	}
+}
+
+static void PathLineTo(ThreeWrapper<Path> *self, float x, float y)
+{
+	if (self && self->getObject()) {
+		self->getObject()->lineTo(x, y);
+	}
+}
+
+static void PathQuadraticCurveTo(ThreeWrapper<Path> *self, float cpX, float cpY, float x, float y)
+{
+	if (self && self->getObject()) {
+		self->getObject()->quadraticCurveTo(cpX, cpY, x, y);
+	}
+}
+
+static void PathBezierCurveTo(ThreeWrapper<Path> *self, float cp1x, float cp1y, float cp2x, float cp2y, float x, float y)
+{
+	if (self && self->getObject()) {
+		self->getObject()->bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
+	}
+}
+
+static void PathArc(ThreeWrapper<Path> *self, float x, float y, float radius, float startAngle, float endAngle, bool clockwise)
+{
+	if (self && self->getObject()) {
+		self->getObject()->arc(x, y, radius, startAngle, endAngle, clockwise);
+	}
+}
+
+static void PathAbsarc(ThreeWrapper<Path> *self, float x, float y, float radius, float startAngle, float endAngle, bool clockwise)
+{
+	if (self && self->getObject()) {
+		self->getObject()->absarc(x, y, radius, startAngle, endAngle, clockwise);
+	}
+}
+
+static void PathAbsellipse(ThreeWrapper<Path> *self, float x, float y, float xRadius, float yRadius, float startAngle, float endAngle, bool clockwise, float rotation)
+{
+	if (self && self->getObject()) {
+		self->getObject()->absellipse(x, y, xRadius, yRadius, startAngle, endAngle, clockwise, rotation);
+	}
+}
+
+static void PathSplineThru(ThreeWrapper<Path> *self, tTJSVariant *array)
+{
+	if (self && self->getObject() && array && array->Type() == tvtObject) {
+		std::vector<Vector2> pts;
+		ncbPropAccessor arr(*array);
+		tjs_int count = arr.GetArrayCount();
+		for (tjs_int i = 0; i < count; i++) {
+			tTJSVariant v;
+			arr.checkArrayGet(i, v);
+			if (v.Type() == tvtObject) {
+				ncbPropAccessor pt(v);
+				if (IsArray(v)) {
+					pts.push_back(Vector2((float)pt.getRealValue(0), (float)pt.getRealValue(1)));
+				} else {
+					pts.push_back(Vector2((float)pt.getRealValue(TJS_W("x")), (float)pt.getRealValue(TJS_W("y"))));
+				}
+			}
+		}
+		self->getObject()->splineThru(pts);
+	}
+}
+
+static void PathClosePath(ThreeWrapper<Path> *self)
+{
+	if (self && self->getObject()) {
+		self->getObject()->closePath();
+	}
+}
+
+NCB_REGISTER_THREE_SUBCLASS(Path)
+Factory(PathFactory);
+NCB_THREE_MEMBER_PROPERTY(autoClose, bool, autoClose);
+NCB_THREE_MEMBER_PROPERTY_RO(currentPoint, Vector2&, currentPoint);
+NCB_THREE_METHOD(getLength);
+NCB_METHOD_PROXY(getPoint, PathGetPoint);
+NCB_METHOD_PROXY(getPointAt, PathGetPointAt);
+NCB_METHOD_PROXY(moveTo, PathMoveTo);
+NCB_METHOD_PROXY(lineTo, PathLineTo);
+NCB_METHOD_PROXY(quadraticCurveTo, PathQuadraticCurveTo);
+NCB_METHOD_PROXY(bezierCurveTo, PathBezierCurveTo);
+NCB_METHOD_PROXY(arc, PathArc);
+NCB_METHOD_PROXY(absarc, PathAbsarc);
+NCB_METHOD_PROXY(absellipse, PathAbsellipse);
+NCB_METHOD_PROXY(splineThru, PathSplineThru);
+NCB_METHOD_PROXY(closePath, PathClosePath);
+};
+
+// ======================================================================
+// Shape (extends Path)
+// ======================================================================
+
+static tjs_error
+ShapeFactory(ThreeWrapper<Shape> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	std::vector<Vector2> points;
+
+	if (numparams > 0 && params[0]->Type() == tvtObject) {
+		ncbPropAccessor arr(*params[0]);
+		tjs_int count = arr.GetArrayCount();
+		for (tjs_int i = 0; i < count; i++) {
+			tTJSVariant v;
+			arr.checkArrayGet(i, v);
+			if (v.Type() == tvtObject) {
+				ncbPropAccessor pt(v);
+				if (IsArray(v)) {
+					points.push_back(Vector2((float)pt.getRealValue(0), (float)pt.getRealValue(1)));
+				} else {
+					points.push_back(Vector2((float)pt.getRealValue(TJS_W("x")), (float)pt.getRealValue(TJS_W("y"))));
+				}
+			}
+		}
+	}
+
+	auto obj = std::make_shared<Shape>(points);
+	*result = new ThreeWrapper<Shape>(obj);
+	return TJS_S_OK;
+}
+
+static Vector2 ShapeGetPoint(ThreeWrapper<Shape> *self, float t)
+{
+	Vector2 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPoint(t, result);
+	}
+	return result;
+}
+
+static Vector2 ShapeGetPointAt(ThreeWrapper<Shape> *self, float u)
+{
+	Vector2 result;
+	if (self && self->getObject()) {
+		self->getObject()->getPointAt(u, result);
+	}
+	return result;
+}
+
+static void ShapeMoveTo(ThreeWrapper<Shape> *self, float x, float y)
+{
+	if (self && self->getObject()) {
+		self->getObject()->moveTo(x, y);
+	}
+}
+
+static void ShapeLineTo(ThreeWrapper<Shape> *self, float x, float y)
+{
+	if (self && self->getObject()) {
+		self->getObject()->lineTo(x, y);
+	}
+}
+
+static void ShapeQuadraticCurveTo(ThreeWrapper<Shape> *self, float cpX, float cpY, float x, float y)
+{
+	if (self && self->getObject()) {
+		self->getObject()->quadraticCurveTo(cpX, cpY, x, y);
+	}
+}
+
+static void ShapeBezierCurveTo(ThreeWrapper<Shape> *self, float cp1x, float cp1y, float cp2x, float cp2y, float x, float y)
+{
+	if (self && self->getObject()) {
+		self->getObject()->bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
+	}
+}
+
+static void ShapeArc(ThreeWrapper<Shape> *self, float x, float y, float radius, float startAngle, float endAngle, bool clockwise)
+{
+	if (self && self->getObject()) {
+		self->getObject()->arc(x, y, radius, startAngle, endAngle, clockwise);
+	}
+}
+
+static void ShapeAbsarc(ThreeWrapper<Shape> *self, float x, float y, float radius, float startAngle, float endAngle, bool clockwise)
+{
+	if (self && self->getObject()) {
+		self->getObject()->absarc(x, y, radius, startAngle, endAngle, clockwise);
+	}
+}
+
+static void ShapeAbsellipse(ThreeWrapper<Shape> *self, float x, float y, float xRadius, float yRadius, float startAngle, float endAngle, bool clockwise, float rotation)
+{
+	if (self && self->getObject()) {
+		self->getObject()->absellipse(x, y, xRadius, yRadius, startAngle, endAngle, clockwise, rotation);
+	}
+}
+
+static void ShapeSplineThru(ThreeWrapper<Shape> *self, tTJSVariant *array)
+{
+	if (self && self->getObject() && array && array->Type() == tvtObject) {
+		std::vector<Vector2> pts;
+		ncbPropAccessor arr(*array);
+		tjs_int count = arr.GetArrayCount();
+		for (tjs_int i = 0; i < count; i++) {
+			tTJSVariant v;
+			arr.checkArrayGet(i, v);
+			if (v.Type() == tvtObject) {
+				ncbPropAccessor pt(v);
+				if (IsArray(v)) {
+					pts.push_back(Vector2((float)pt.getRealValue(0), (float)pt.getRealValue(1)));
+				} else {
+					pts.push_back(Vector2((float)pt.getRealValue(TJS_W("x")), (float)pt.getRealValue(TJS_W("y"))));
+				}
+			}
+		}
+		self->getObject()->splineThru(pts);
+	}
+}
+
+static void ShapeClosePath(ThreeWrapper<Shape> *self)
+{
+	if (self && self->getObject()) {
+		self->getObject()->closePath();
+	}
+}
+
+// Shapeに穴を追加
+static void ShapeAddHole(ThreeWrapper<Shape> *self, ThreeWrapper<Path> *hole)
+{
+	if (self && self->getObject() && hole && hole->getObject()) {
+		self->getObject()->holes.push_back(hole->getObject());
+	}
+}
+
+// 穴のPathを取得
+static ThreeWrapper<Path>* ShapeGetHole(ThreeWrapper<Shape> *self, int index)
+{
+	if (self && self->getObject() && index >= 0 && index < (int)self->getObject()->holes.size()) {
+		return new ThreeWrapper<Path>(self->getObject()->holes[index]);
+	}
+	return nullptr;
+}
+
+// 穴の数を取得
+static int ShapeGetHoleCount(ThreeWrapper<Shape> *self)
+{
+	if (self && self->getObject()) {
+		return (int)self->getObject()->holes.size();
+	}
+	return 0;
+}
+
+// uuid取得
+static ttstr ShapeGetUUID(ThreeWrapper<Shape> *self)
+{
+	if (self && self->getObject()) {
+		return ttstr(self->getObject()->uuid().c_str());
+	}
+	return TJS_W("");
+}
+
+NCB_REGISTER_THREE_SUBCLASS(Shape)
+Factory(ShapeFactory);
+NCB_THREE_MEMBER_PROPERTY(autoClose, bool, autoClose);
+NCB_THREE_MEMBER_PROPERTY_RO(currentPoint, Vector2&, currentPoint);
+NCB_THREE_METHOD(getLength);
+NCB_METHOD_PROXY(getPoint, ShapeGetPoint);
+NCB_METHOD_PROXY(getPointAt, ShapeGetPointAt);
+NCB_METHOD_PROXY(moveTo, ShapeMoveTo);
+NCB_METHOD_PROXY(lineTo, ShapeLineTo);
+NCB_METHOD_PROXY(quadraticCurveTo, ShapeQuadraticCurveTo);
+NCB_METHOD_PROXY(bezierCurveTo, ShapeBezierCurveTo);
+NCB_METHOD_PROXY(arc, ShapeArc);
+NCB_METHOD_PROXY(absarc, ShapeAbsarc);
+NCB_METHOD_PROXY(absellipse, ShapeAbsellipse);
+NCB_METHOD_PROXY(splineThru, ShapeSplineThru);
+NCB_METHOD_PROXY(closePath, ShapeClosePath);
+NCB_METHOD_PROXY(addHole, ShapeAddHole);
+NCB_METHOD_PROXY(getHole, ShapeGetHole);
+NCB_METHOD_PROXY(getHoleCount, ShapeGetHoleCount);
+NCB_METHOD_PROXY(uuid, ShapeGetUUID);
+};
+
+// ======================================================================
+// ShapeGeometry
+// ======================================================================
+
+static tjs_error
+ShapeGeometryFactory(ThreeWrapper<ShapeGeometry> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	unsigned int curveSegments = 12;
+
+	if (numparams < 1 || params[0]->Type() != tvtObject) {
+		return TJS_E_INVALIDPARAM;
+	}
+
+	if (numparams > 1) curveSegments = (unsigned int)params[1]->AsInteger();
+
+	// 単一のShapeかShapeの配列かを判定
+	ncbPropAccessor arr(*params[0]);
+	
+	// Shapeラッパーかどうかチェック
+	ThreeWrapper<Shape> *shapeWrapper = ncbInstanceAdaptor<ThreeWrapper<Shape>>::GetNativeInstance(params[0]->AsObjectNoAddRef());
+	
+	if (shapeWrapper && shapeWrapper->getObject()) {
+		// 単一のShape
+		auto obj = ShapeGeometry::create(*shapeWrapper->getObject(), curveSegments);
+		*result = new ThreeWrapper<ShapeGeometry>(obj);
+	} else {
+		// Shapeの配列
+		std::vector<Shape> shapes;
+		tjs_int count = arr.GetArrayCount();
+		for (tjs_int i = 0; i < count; i++) {
+			tTJSVariant v;
+			arr.checkArrayGet(i, v);
+			if (v.Type() == tvtObject) {
+				ThreeWrapper<Shape> *sw = ncbInstanceAdaptor<ThreeWrapper<Shape>>::GetNativeInstance(v.AsObjectNoAddRef());
+				if (sw && sw->getObject()) {
+					shapes.push_back(*sw->getObject());
+				}
+			}
+		}
+		if (shapes.empty()) {
+			return TJS_E_INVALIDPARAM;
+		}
+		auto obj = ShapeGeometry::create(shapes, curveSegments);
+		*result = new ThreeWrapper<ShapeGeometry>(obj);
+	}
+
+	return TJS_S_OK;
+}
+
+NCB_REGISTER_THREE_SUBCLASS(ShapeGeometry)
+Factory(ShapeGeometryFactory);
+};
+
+// ======================================================================
+// ExtrudeGeometry
+// ======================================================================
+
+static tjs_error
+ExtrudeGeometryFactory(ThreeWrapper<ExtrudeGeometry> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	if (numparams < 1 || params[0]->Type() != tvtObject) {
+		return TJS_E_INVALIDPARAM;
+	}
+
+	ExtrudeGeometry::Options options;
+
+	// オプションを解析
+	if (numparams > 1 && params[1]->Type() == tvtObject) {
+		ncbPropAccessor opt(*params[1]);
+		if (opt.HasValue(TJS_W("curveSegments"))) options.curveSegments = (unsigned int)opt.getIntValue(TJS_W("curveSegments"));
+		if (opt.HasValue(TJS_W("steps"))) options.steps = (unsigned int)opt.getIntValue(TJS_W("steps"));
+		if (opt.HasValue(TJS_W("depth"))) options.depth = (float)opt.getRealValue(TJS_W("depth"));
+		if (opt.HasValue(TJS_W("bevelEnabled"))) options.bevelEnabled = (bool)opt.getIntValue(TJS_W("bevelEnabled"));
+		if (opt.HasValue(TJS_W("bevelThickness"))) options.bevelThickness = (float)opt.getRealValue(TJS_W("bevelThickness"));
+		if (opt.HasValue(TJS_W("bevelSize"))) options.bevelSize = (float)opt.getRealValue(TJS_W("bevelSize"));
+		if (opt.HasValue(TJS_W("bevelOffset"))) options.bevelOffset = (float)opt.getRealValue(TJS_W("bevelOffset"));
+		if (opt.HasValue(TJS_W("bevelSegments"))) options.bevelSegments = (unsigned int)opt.getIntValue(TJS_W("bevelSegments"));
+		// extrudePathは後で対応が必要（Curve3への参照）
+	}
+
+	// 単一のShapeかShapeの配列かを判定
+	ncbPropAccessor arr(*params[0]);
+	
+	// Shapeラッパーかどうかチェック
+	ThreeWrapper<Shape> *shapeWrapper = ncbInstanceAdaptor<ThreeWrapper<Shape>>::GetNativeInstance(params[0]->AsObjectNoAddRef());
+	
+	std::vector<Shape> shapes;
+	if (shapeWrapper && shapeWrapper->getObject()) {
+		// 単一のShape
+		shapes.push_back(*shapeWrapper->getObject());
+	} else {
+		// Shapeの配列
+		tjs_int count = arr.GetArrayCount();
+		for (tjs_int i = 0; i < count; i++) {
+			tTJSVariant v;
+			arr.checkArrayGet(i, v);
+			if (v.Type() == tvtObject) {
+				ThreeWrapper<Shape> *sw = ncbInstanceAdaptor<ThreeWrapper<Shape>>::GetNativeInstance(v.AsObjectNoAddRef());
+				if (sw && sw->getObject()) {
+					shapes.push_back(*sw->getObject());
+				}
+			}
+		}
+	}
+
+	if (shapes.empty()) {
+		return TJS_E_INVALIDPARAM;
+	}
+
+	auto obj = ExtrudeGeometry::create(shapes, options);
+	*result = new ThreeWrapper<ExtrudeGeometry>(obj);
+	return TJS_S_OK;
+}
+
+NCB_REGISTER_THREE_SUBCLASS(ExtrudeGeometry)
+Factory(ExtrudeGeometryFactory);
+};
+
+// ======================================================================
 // CatmullRomCurve3
 // ======================================================================
 
@@ -3402,7 +4293,21 @@ NCB_REGISTER_CLASS(Threepp)
 	THREE_SUBCLASS(GLRenderer);
 
 	// ====== Curves ======
+	THREE_SUBCLASS(LineCurve);
+	THREE_SUBCLASS(LineCurve3);
+	THREE_SUBCLASS(QuadraticBezierCurve);
+	THREE_SUBCLASS(QuadraticBezierCurve3);
+	THREE_SUBCLASS(CubicBezierCurve);
+	THREE_SUBCLASS(CubicBezierCurve3);
+	THREE_SUBCLASS(SplineCurve);
+	THREE_SUBCLASS(EllipseCurve);
 	THREE_SUBCLASS(CatmullRomCurve3);
+	THREE_SUBCLASS(Path);
+	THREE_SUBCLASS(Shape);
+
+	// ====== Shape-based Geometries ======
+	THREE_SUBCLASS(ShapeGeometry);
+	THREE_SUBCLASS(ExtrudeGeometry);
 
 	// ====== CurveType Enum ======
 	ENUM(CatmullRomCurve3::CurveType::centripetal);

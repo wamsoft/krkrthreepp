@@ -96,6 +96,8 @@ threepp (C++ port of three.js) を吉里吉里で使用するためのプラグ�
 | `LatheGeometry` | 旋盤形状 |
 | `EdgesGeometry` | エッジ抽出 |
 | `WireframeGeometry` | ワイヤーフレーム |
+| `ShapeGeometry` | 2D形状ジオメトリ |
+| `ExtrudeGeometry` | 押し出しジオメトリ |
 
 ### Object クラス
 | クラス名 | 説明 |
@@ -143,7 +145,17 @@ threepp (C++ port of three.js) を吉里吉里で使用するためのプラグ�
 ### Curve クラス
 | クラス名 | 説明 |
 |---------|------|
+| `LineCurve` | 2D直線カーブ |
+| `LineCurve3` | 3D直線カーブ |
+| `QuadraticBezierCurve` | 2D二次ベジェカーブ |
+| `QuadraticBezierCurve3` | 3D二次ベジェカーブ |
+| `CubicBezierCurve` | 2D三次ベジェカーブ |
+| `CubicBezierCurve3` | 3D三次ベジェカーブ |
+| `SplineCurve` | 2Dスプラインカーブ |
+| `EllipseCurve` | 楕円カーブ |
 | `CatmullRomCurve3` | CatmullRomスプライン曲線 |
+| `Path` | 2Dパス（複数カーブの結合） |
+| `Shape` | 2D形状（穴付きパス、ExtrudeGeometry用） |
 
 ### Renderer クラス
 | クラス名 | 説明 |
@@ -167,8 +179,6 @@ threepp (C++ port of three.js) を吉里吉里で使用するためのプラグ�
 | クラス名 | 保留理由 |
 |---------|---------|
 | `TubeGeometry` | `Curve3` パスを必要とする複雑な依存関係 |
-| `ExtrudeGeometry` | `Shape` クラスへの依存、複雑なオプション構造 |
-| `ShapeGeometry` | `Shape` クラスへの依存 |
 | `TextGeometry` | フォントデータへの依存 |
 | `ExtrudeTextGeometry` | フォントデータへの依存 |
 | `ConvexGeometry` | 凸包計算の複雑さ |
@@ -180,23 +190,14 @@ threepp (C++ port of three.js) を吉里吉里で使用するためのプラグ�
 ### Extras/Core（曲線・パス系）
 | クラス名 | 保留理由 |
 |---------|---------|
-| `Curve` | 基底クラス（テンプレート） |
-| `CurvePath` | 複数カーブの管理 |
-| `Path` | 2Dパス描画 |
-| `Shape` | 2D形状定義 |
+| `Curve` | 基底クラス（テンプレート）、具体的なカーブクラスを使用 |
+| `CurvePath` | 基底クラス（Pathを使用） |
 | `Font` | フォントデータ管理 |
 
 ### Extras/Curves（2Dカーブ）
 | クラス名 | 保留理由 |
 |---------|---------|
-| `CubicBezierCurve` | 需要に応じて追加可能 |
-| `CubicBezierCurve3` | 需要に応じて追加可能 |
-| `QuadraticBezierCurve` | 需要に応じて追加可能 |
-| `QuadraticBezierCurve3` | 需要に応じて追加可能 |
-| `EllipseCurve` | 需要に応じて追加可能 |
-| `LineCurve` | 需要に応じて追加可能 |
-| `LineCurve3` | 需要に応じて追加可能 |
-| `SplineCurve` | 需要に応じて追加可能 |
+| `ArcCurve` | EllipseCurveのエイリアス（必要であれば追加可能） |
 
 ### Math（追加）
 | クラス名 | 保留理由 |

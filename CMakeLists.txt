@@ -8,7 +8,7 @@ add_compile_options("$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<COMPILE_LANGUAGE:CXX>>:/Z
 # MSVC static runtime
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-set(PROJECT_NAME threepp)
+set(PROJECT_NAME krkrthreepp)
 set(PROJECT_VERSION 1.00)
 
 project(${PROJECT_NAME} VERSION ${PROJECT_VERSION})
@@ -23,7 +23,7 @@ option(THREEPP_WITH_SVG "Build with SVGLoader" ON)
 option(THREEPP_WITH_AUDIO "Build with Audio" OFF)
 option(THREEPP_WITH_GENERIC "Build with Generic frontend (user-provided interface)" ON)
 
-add_subdirectory(threepp ${CMAKE_CURRENT_BINARY_DIR}/threepp)
+add_subdirectory(threepp)
 
 add_library(${PROJECT_NAME} SHARED
 	main.cpp
