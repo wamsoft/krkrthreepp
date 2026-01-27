@@ -1,0 +1,2214 @@
+/**
+ * threepp プラグイン 擬似コードによるマニュアル
+ * 
+ * threepp は three.js の C++ ポートです。
+ * 3D グラフィックスのレンダリング機能を提供します。
+ * 
+ * @see https://github.com/markaren/threepp
+ */
+class Threepp {
+
+	// ============================================================
+	// Side 定義 (マテリアルの描画面)
+	// ============================================================
+	const Side_Front = 0;   // 表面のみ描画
+	const Side_Back = 1;    // 裏面のみ描画
+	const Side_Double = 2;  // 両面描画
+
+	// ============================================================
+	// Blending 定義 (ブレンドモード)
+	// ============================================================
+	const Blending_None = 0;
+	const Blending_Normal = 1;
+	const Blending_Additive = 2;
+	const Blending_Subtractive = 3;
+	const Blending_Multiply = 4;
+	const Blending_Custom = 5;
+
+	// ============================================================
+	// CullFace 定義 (カリング)
+	// ============================================================
+	const CullFace_None = 0;
+	const CullFace_Back = 1;
+	const CullFace_Front = 2;
+	const CullFace_FrontBack = 3;
+
+	// ============================================================
+	// ShadowMap 定義 (シャドウマップ種別)
+	// ============================================================
+	const ShadowMap_Basic = 0;
+	const ShadowMap_PFC = 1;
+	const ShadowMap_PFCSoft = 2;
+	const ShadowMap_VSM = 3;
+
+	// ============================================================
+	// ToneMapping 定義 (トーンマッピング)
+	// ============================================================
+	const ToneMapping_None = 0;
+	const ToneMapping_Linear = 1;
+	const ToneMapping_Reinhard = 2;
+	const ToneMapping_Cineon = 3;
+	const ToneMapping_ACESFilmic = 4;
+	const ToneMapping_Custom = 5;
+
+	// ============================================================
+	// Encoding 定義 (出力エンコーディング)
+	// ============================================================
+	const Encoding_Linear = 3000;
+	const Encoding_sRGB = 3001;
+	const Encoding_Gamma = 3007;
+
+	// ============================================================
+	// TextureWrapping 定義 (テクスチャラッピング)
+	// ============================================================
+	const TextureWrapping_Repeat = 1000;
+	const TextureWrapping_ClampToEdge = 1001;
+	const TextureWrapping_MirroredRepeat = 1002;
+
+	// ============================================================
+	// Filter 定義 (テクスチャフィルタ)
+	// ============================================================
+	const Filter_Nearest = 1003;
+	const Filter_Linear = 1006;
+	const Filter_NearestMipmapNearest = 1004;
+	const Filter_NearestMipmapLinear = 1005;
+	const Filter_LinearMipmapNearest = 1007;
+	const Filter_LinearMipmapLinear = 1008;
+
+	// ============================================================
+	// Loop 定義 (アニメーションループ)
+	// ============================================================
+	const Loop_Once = 2200;
+	const Loop_Repeat = 2201;
+	const Loop_PingPong = 2202;
+
+	// ============================================================
+	// Math クラス
+	// ============================================================
+
+	/**
+	 * 2D ベクトルクラス
+	 * @description 2次元ベクトルを表現します。配列 [x, y] や辞書 %[x:, y:] からも変換可能です。
+	 */
+	class Vector2 {
+		/**
+		 * コンストラクタ
+		 * @param x X成分
+		 * @param y Y成分
+		 */
+		function Vector2(x=0, y=0);
+		
+		property x;  // X成分
+		property y;  // Y成分
+		
+		function set(x, y);           // 値を設定
+		function setScalar(value);    // すべての成分を同じ値に設定
+		function copy(v);             // 別のベクトルからコピー
+		function add(v);              // ベクトルを加算
+		function addScalar(s);        // スカラーを加算
+		function sub(v);              // ベクトルを減算
+		function subScalar(s);        // スカラーを減算
+		function multiplyScalar(s);   // スカラー乗算
+		function divideScalar(s);     // スカラー除算
+		function negate();            // 符号反転
+		function dot(v);              // 内積
+		function cross(v);            // 外積（スカラー値を返す）
+		function lengthSq();          // 長さの二乗
+		function length();            // 長さ
+		function normalize();         // 正規化
+		function distanceTo(v);       // 別のベクトルとの距離
+		function distanceToSquared(v); // 距離の二乗
+		function lerp(v, alpha);      // 線形補間
+		function equals(v);           // 等価判定
+		function floor();             // 各成分を切り捨て
+		function ceil();              // 各成分を切り上げ
+		function round();             // 各成分を四捨五入
+	}
+
+	/**
+	 * 3D ベクトルクラス
+	 * @description 3次元ベクトルを表現します。配列 [x, y, z] や辞書 %[x:, y:, z:] からも変換可能です。
+	 */
+	class Vector3 {
+		/**
+		 * コンストラクタ
+		 * @param x X成分
+		 * @param y Y成分
+		 * @param z Z成分
+		 */
+		function Vector3(x=0, y=0, z=0);
+		
+		property x;  // X成分
+		property y;  // Y成分
+		property z;  // Z成分
+		
+		function set(x, y, z);        // 値を設定
+		function setScalar(value);    // すべての成分を同じ値に設定
+		function setX(value);         // X成分を設定
+		function setY(value);         // Y成分を設定
+		function setZ(value);         // Z成分を設定
+		function copy(v);             // 別のベクトルからコピー
+		function add(v);              // ベクトルを加算
+		function addScalar(s);        // スカラーを加算
+		function addVectors(a, b);    // 2つのベクトルの和を設定
+		function addScaledVector(v, s); // スケーリングして加算
+		function sub(v);              // ベクトルを減算
+		function subScalar(s);        // スカラーを減算
+		function subVectors(a, b);    // 2つのベクトルの差を設定
+		function multiply(v);         // ベクトル同士の成分ごとの乗算
+		function multiplyScalar(s);   // スカラー乗算
+		function multiplyVectors(a, b); // 2つのベクトルの成分ごとの積を設定
+		function applyAxisAngle(axis, angle); // 軸と角度で回転
+		function applyEuler(euler);   // オイラー角で回転
+		function applyMatrix3(m);     // 3x3行列を適用
+		function applyMatrix4(m);     // 4x4行列を適用
+		function applyQuaternion(q);  // クォータニオンで回転
+		function project(camera);     // カメラに投影
+		function unproject(camera);   // 投影を解除
+		function transformDirection(m); // 方向ベクトルを変換
+		function divide(v);           // ベクトル同士の成分ごとの除算
+		function divideScalar(s);     // スカラー除算
+		function min(v);              // 各成分の最小値
+		function max(v);              // 各成分の最大値
+		function clamp(min, max);     // 各成分をクランプ
+		function clampScalar(min, max); // スカラー範囲でクランプ
+		function clampLength(min, max); // 長さをクランプ
+		function floor();             // 各成分を切り捨て
+		function ceil();              // 各成分を切り上げ
+		function round();             // 各成分を四捨五入
+		function negate();            // 符号反転
+		function dot(v);              // 内積
+		function lengthSq();          // 長さの二乗
+		function length();            // 長さ
+		function manhattanLength();   // マンハッタン距離
+		function normalize();         // 正規化
+		function setLength(length);   // 長さを設定
+		function lerp(v, alpha);      // 線形補間
+		function lerpVectors(a, b, alpha); // 2つのベクトル間の線形補間
+		function cross(v);            // 外積
+		function crossVectors(a, b);  // 2つのベクトルの外積
+		function reflect(normal);     // 反射
+		function angleTo(v);          // 別のベクトルとの角度
+		function distanceTo(v);       // 別のベクトルとの距離
+		function distanceToSquared(v); // 距離の二乗
+		function manhattanDistanceTo(v); // マンハッタン距離
+		function setFromMatrixPosition(m); // 行列の位置成分を取得
+		function setFromMatrixScale(m); // 行列のスケール成分を取得
+		function equals(v);           // 等価判定
+	}
+
+	/**
+	 * 色クラス
+	 * @description RGB色を表現します。配列 [r, g, b] や辞書 %[r:, g:, b:]、整数(0xRRGGBB)からも変換可能です。
+	 */
+	class Color {
+		/**
+		 * コンストラクタ
+		 * @param r 赤成分 (0.0-1.0) または hex値 (0xRRGGBB)
+		 * @param g 緑成分 (0.0-1.0)
+		 * @param b 青成分 (0.0-1.0)
+		 */
+		function Color(r=1, g=1, b=1);
+		
+		property r;  // 赤成分 (0.0-1.0)
+		property g;  // 緑成分 (0.0-1.0)
+		property b;  // 青成分 (0.0-1.0)
+		
+		function setScalar(s);        // すべての成分を同じ値に設定
+		function setRGB(r, g, b);     // RGB値を設定
+		function setHSL(h, s, l);     // HSL値から設定
+		function setHex(hex);         // 16進数から設定
+		function copy(color);         // 別の色からコピー
+		function add(color);          // 色を加算
+		function addColors(c1, c2);   // 2つの色の和を設定
+		function addScalar(s);        // スカラーを加算
+		function sub(color);          // 色を減算
+		function multiply(color);     // 色を乗算
+		function multiplyScalar(s);   // スカラー乗算
+		function lerp(color, alpha);  // 線形補間
+		function lerpColors(c1, c2, alpha); // 2つの色間の線形補間
+		function lerpHSL(color, alpha); // HSL空間での線形補間
+		function randomize();         // ランダムな色を生成
+		function getHex();            // 16進数値を取得
+		function getHexString();      // 16進数文字列を取得
+		function getStyle();          // CSS形式の文字列を取得
+		function equals(color);       // 等価判定
+	}
+
+	/**
+	 * オイラー角クラス
+	 * @description 回転を表現するオイラー角です。
+	 */
+	class Euler {
+		/**
+		 * コンストラクタ
+		 * @param x X軸回転（ラジアン）
+		 * @param y Y軸回転（ラジアン）
+		 * @param z Z軸回転（ラジアン）
+		 */
+		function Euler(x=0, y=0, z=0);
+		
+		property x;  // X軸回転（読み取り専用）
+		property y;  // Y軸回転（読み取り専用）
+		property z;  // Z軸回転（読み取り専用）
+		
+		function getOrder();          // 回転順序を取得
+		function setOrder(order);     // 回転順序を設定
+		function set(x, y, z);        // 値を設定
+		function copy(euler);         // コピー
+		function setFromRotationMatrix(m); // 回転行列から設定
+		function setFromQuaternion(q); // クォータニオンから設定
+		function setFromVector3(v);   // Vector3から設定
+		function equals(euler);       // 等価判定
+	}
+
+	/**
+	 * クォータニオン（四元数）クラス
+	 * @description 回転を表現するクォータニオンです。ジンバルロックが発生しません。
+	 */
+	class Quaternion {
+		/**
+		 * コンストラクタ
+		 * @param x X成分
+		 * @param y Y成分
+		 * @param z Z成分
+		 * @param w W成分
+		 */
+		function Quaternion(x=0, y=0, z=0, w=1);
+		
+		property x;  // X成分（読み取り専用）
+		property y;  // Y成分（読み取り専用）
+		property z;  // Z成分（読み取り専用）
+		property w;  // W成分（読み取り専用）
+		
+		function set(x, y, z, w);     // 値を設定
+		function copy(q);             // コピー
+		function setFromEuler(euler); // オイラー角から設定
+		function setFromAxisAngle(axis, angle); // 軸と角度から設定
+		function setFromRotationMatrix(m); // 回転行列から設定
+		function setFromUnitVectors(vFrom, vTo); // 2つの単位ベクトルから設定
+		function angleTo(q);          // 別のクォータニオンとの角度
+		function rotateTowards(q, step); // 別のクォータニオンへ回転
+		function identity();          // 単位クォータニオンに設定
+		function invert();            // 逆クォータニオン
+		function conjugate();         // 共役
+		function dot(q);              // 内積
+		function lengthSq();          // 長さの二乗
+		function length();            // 長さ
+		function normalize();         // 正規化
+		function multiply(q);         // 乗算
+		function premultiply(q);      // 前置乗算
+		function multiplyQuaternions(a, b); // 2つのクォータニオンの積
+		function slerp(q, t);         // 球面線形補間
+		function slerpQuaternions(qa, qb, t); // 2つのクォータニオン間の球面線形補間
+		function equals(q);           // 等価判定
+	}
+
+	/**
+	 * 4x4 行列クラス
+	 * @description 変換行列を表現します。
+	 */
+	class Matrix4 {
+		/**
+		 * コンストラクタ
+		 * @description 単位行列を生成します
+		 */
+		function Matrix4();
+		
+		function set(n11, n12, n13, n14, n21, n22, n23, n24, n31, n32, n33, n34, n41, n42, n43, n44); // 要素を設定
+		function identity();          // 単位行列に設定
+		function copy(m);             // コピー
+		function copyPosition(m);     // 位置成分のみコピー
+		function extractBasis(xAxis, yAxis, zAxis); // 基底ベクトルを抽出
+		function makeBasis(xAxis, yAxis, zAxis); // 基底ベクトルから行列を生成
+		function extractRotation(m);  // 回転成分を抽出
+		function makeRotationFromEuler(euler); // オイラー角から回転行列を生成
+		function makeRotationFromQuaternion(q); // クォータニオンから回転行列を生成
+		function lookAt(eye, target, up); // 視線行列を生成
+		function multiply(m);         // 乗算
+		function premultiply(m);      // 前置乗算
+		function multiplyMatrices(a, b); // 2つの行列の積
+		function multiplyScalar(s);   // スカラー乗算
+		function determinant();       // 行列式
+		function transpose();         // 転置
+		function setPosition(v);      // 位置を設定
+		function invert();            // 逆行列
+		function scale(v);            // スケーリング
+		function getMaxScaleOnAxis(); // 軸の最大スケール値
+		function makeTranslation(v);  // 平行移動行列を生成
+		function makeRotationX(theta); // X軸回転行列を生成
+		function makeRotationY(theta); // Y軸回転行列を生成
+		function makeRotationZ(theta); // Z軸回転行列を生成
+		function makeRotationAxis(axis, angle); // 任意軸回転行列を生成
+		function makeScale(x, y, z);  // スケーリング行列を生成
+		function makeShear(xy, xz, yx, yz, zx, zy); // せん断行列を生成
+		function compose(position, quaternion, scale); // 位置・回転・スケールから合成
+		function decompose(position, quaternion, scale); // 位置・回転・スケールに分解
+		function makePerspective(left, right, top, bottom, near, far); // 透視投影行列を生成
+		function makeOrthographic(left, right, top, bottom, near, far); // 正射影行列を生成
+		function equals(m);           // 等価判定
+	}
+
+	/**
+	 * 3x3 行列クラス
+	 */
+	class Matrix3 {
+		/**
+		 * コンストラクタ
+		 */
+		function Matrix3();
+		
+		function set(n11, n12, n13, n21, n22, n23, n31, n32, n33); // 要素を設定
+		function identity();          // 単位行列に設定
+		function copy(m);             // コピー
+		function setFromMatrix4(m);   // Matrix4から設定
+		function multiply(m);         // 乗算
+		function premultiply(m);      // 前置乗算
+		function multiplyMatrices(a, b); // 2つの行列の積
+		function multiplyScalar(s);   // スカラー乗算
+		function determinant();       // 行列式
+		function invert();            // 逆行列
+		function transpose();         // 転置
+		function getNormalMatrix(m);  // 法線行列を取得
+		function scale(sx, sy);       // スケーリング
+		function rotate(theta);       // 回転
+		function translate(tx, ty);   // 平行移動
+		function equals(m);           // 等価判定
+	}
+
+	/**
+	 * 軸平行境界ボックス (AABB) クラス
+	 */
+	class Box3 {
+		/**
+		 * コンストラクタ
+		 * @param min 最小座標 (Vector3)
+		 * @param max 最大座標 (Vector3)
+		 */
+		function Box3(min, max);
+		
+		property min;  // 最小座標（読み取り専用）
+		property max;  // 最大座標（読み取り専用）
+		
+		function set(min, max);       // 値を設定
+		function clone();             // クローン
+		function copy(box);           // コピー
+		function makeEmpty();         // 空にする
+		function isEmpty();           // 空かどうか
+		function getCenter();         // 中心を取得
+		function getSize();           // サイズを取得
+		function expandByPoint(point); // 点で拡張
+		function expandByVector(vector); // ベクトルで拡張
+		function expandByScalar(scalar); // スカラーで拡張
+		function containsPoint(point); // 点を含むか
+		function containsBox(box);    // ボックスを含むか
+		function intersectsBox(box);  // ボックスと交差するか
+		function intersectsSphere(sphere); // 球と交差するか
+		function intersectsPlane(plane); // 平面と交差するか
+		function distanceToPoint(point); // 点との距離
+		function intersect(box);      // 交差部分を取得
+		function union_(box);         // 和集合を取得
+		function applyMatrix4(m);     // 行列を適用
+		function translate(offset);   // 平行移動
+		function equals(box);         // 等価判定
+	}
+
+	/**
+	 * 球クラス
+	 */
+	class Sphere {
+		/**
+		 * コンストラクタ
+		 * @param center 中心座標 (Vector3)
+		 * @param radius 半径
+		 */
+		function Sphere(center, radius);
+		
+		function set(center, radius); // 値を設定
+		function clone();             // クローン
+		function copy(sphere);        // コピー
+		function isEmpty();           // 空かどうか
+		function makeEmpty();         // 空にする
+		function containsPoint(point); // 点を含むか
+		function distanceToPoint(point); // 点との距離
+		function intersectsSphere(sphere); // 球と交差するか
+		function intersectsBox(box);  // ボックスと交差するか
+		function intersectsPlane(plane); // 平面と交差するか
+		function expandByPoint(point); // 点で拡張
+		function translate(offset);   // 平行移動
+		function equals(sphere);      // 等価判定
+	}
+
+	/**
+	 * 光線クラス
+	 */
+	class Ray {
+		/**
+		 * コンストラクタ
+		 * @param origin 原点 (Vector3)
+		 * @param direction 方向 (Vector3)
+		 */
+		function Ray(origin, direction);
+		
+		function set(origin, direction); // 値を設定
+		function clone();             // クローン
+		function copy(ray);           // コピー
+		function at(t);               // 光線上の点を取得
+		function lookAt(v);           // 方向を設定
+		function recast(t);           // 原点を移動
+		function closestPointToPoint(point); // 最近点を取得
+		function distanceToPoint(point); // 点との距離
+		function distanceSqToPoint(point); // 距離の二乗
+		function distanceSqToSegment(v0, v1); // 線分との距離の二乗
+		function intersectSphere(sphere); // 球との交点
+		function intersectsSphere(sphere); // 球と交差するか
+		function intersectBox(box);   // ボックスとの交点
+		function intersectsBox(box);  // ボックスと交差するか
+		function intersectPlane(plane); // 平面との交点
+		function intersectsPlane(plane); // 平面と交差するか
+		function applyMatrix4(m);     // 行列を適用
+		function equals(ray);         // 等価判定
+	}
+
+	/**
+	 * 平面クラス
+	 */
+	class Plane {
+		/**
+		 * コンストラクタ
+		 * @param normal 法線 (Vector3)
+		 * @param constant 定数
+		 */
+		function Plane(normal, constant);
+		
+		function set(normal, constant); // 値を設定
+		function setComponents(x, y, z, w); // 成分で設定
+		function setFromNormalAndCoplanarPoint(normal, point); // 法線と点から設定
+		function clone();             // クローン
+		function copy(plane);         // コピー
+		function normalize();         // 正規化
+		function negate();            // 反転
+		function distanceToPoint(point); // 点との距離
+		function distanceToSphere(sphere); // 球との距離
+		function coplanarPoint();     // 平面上の点を取得
+		function applyMatrix4(m);     // 行列を適用
+		function translate(offset);   // 平行移動
+		function equals(plane);       // 等価判定
+	}
+
+	// ============================================================
+	// Core クラス
+	// ============================================================
+
+	/**
+	 * 3Dオブジェクトの基底クラス
+	 * @description シーングラフ内のすべての3Dオブジェクトの基底となるクラスです。
+	 */
+	class Object3D {
+		/**
+		 * コンストラクタ
+		 */
+		function Object3D();
+		
+		property type;        // オブジェクトの種類（読み取り専用）
+		property id;          // オブジェクトID（読み取り専用）
+		property name;        // オブジェクト名
+		property visible;     // 表示/非表示
+		property castShadow;  // 影を落とすか
+		property receiveShadow; // 影を受けるか
+		property frustumCulled; // 視錐台カリングを行うか
+		property renderOrder; // 描画順序
+		property position;    // 位置 (Vector3、読み取り専用 - 各成分は変更可)
+		property rotation;    // 回転 (Euler、読み取り専用)
+		property quaternion;  // 回転 (Quaternion、読み取り専用)
+		property scale;       // スケール (Vector3、読み取り専用 - 各成分は変更可)
+		property up;          // 上方向ベクトル (Vector3、読み取り専用)
+		
+		/**
+		 * 子オブジェクトを追加
+		 * @param object 追加するObject3D
+		 */
+		function add(object);
+		
+		/**
+		 * 子オブジェクトを削除
+		 * @param object 削除するObject3D
+		 */
+		function remove(object);
+		
+		/**
+		 * 親から自身を削除
+		 */
+		function removeFromParent();
+		
+		/**
+		 * すべての子オブジェクトを削除
+		 */
+		function clear();
+		
+		/**
+		 * 指定した点を向く
+		 * @param x X座標
+		 * @param y Y座標
+		 * @param z Z座標
+		 */
+		function lookAt(x, y, z);
+		
+		function rotateX(angle);      // X軸回転
+		function rotateY(angle);      // Y軸回転
+		function rotateZ(angle);      // Z軸回転
+		function rotateOnAxis(axis, angle); // 任意軸回転（ローカル）
+		function rotateOnWorldAxis(axis, angle); // 任意軸回転（ワールド）
+		function translateX(distance); // X軸移動
+		function translateY(distance); // Y軸移動
+		function translateZ(distance); // Z軸移動
+		function translateOnAxis(axis, distance); // 任意軸移動
+		function updateMatrix();      // ローカル行列を更新
+		function updateMatrixWorld(force); // ワールド行列を更新
+	}
+
+	/**
+	 * グループクラス
+	 * @description 複数のオブジェクトをグループ化するためのクラスです。
+	 */
+	class Group {
+		/**
+		 * コンストラクタ
+		 */
+		function Group();
+		
+		property type;  // "Group"（読み取り専用）
+		// Object3D のプロパティ・メソッドを継承
+	}
+
+	/**
+	 * バッファジオメトリ基底クラス
+	 * @description 頂点データを格納するジオメトリの基底クラスです。
+	 */
+	class BufferGeometry {
+		/**
+		 * コンストラクタ
+		 */
+		function BufferGeometry();
+		
+		property type;  // ジオメトリの種類（読み取り専用）
+		property id;    // ID（読み取り専用）
+		property name;  // 名前
+		
+		function hasIndex();          // インデックスを持つか
+		function hasAttribute(name);  // 指定した属性を持つか
+		function computeBoundingBox(); // 境界ボックスを計算
+		function computeBoundingSphere(); // 境界球を計算
+		function computeVertexNormals(); // 頂点法線を計算
+		function normalizeNormals();  // 法線を正規化
+		function rotateX(angle);      // X軸回転
+		function rotateY(angle);      // Y軸回転
+		function rotateZ(angle);      // Z軸回転
+		function translate(x, y, z);  // 平行移動
+		function scale(x, y, z);      // スケーリング
+		function center();            // 中心に移動
+		function dispose();           // リソースを解放
+	}
+
+	/**
+	 * タイマークラス
+	 */
+	class Clock {
+		/**
+		 * コンストラクタ
+		 * @param autoStart 自動開始するか
+		 */
+		function Clock(autoStart=true);
+		
+		property autoStart;    // 自動開始するか
+		property running;      // 動作中か（読み取り専用）
+		property elapsedTime;  // 経過時間（読み取り専用）
+		
+		function start();      // 開始
+		function stop();       // 停止
+		function getElapsedTime(); // 経過時間を取得
+		function getDelta();   // 前回からの経過時間を取得
+	}
+
+	// ============================================================
+	// Camera クラス
+	// ============================================================
+
+	/**
+	 * カメラ基底クラス
+	 */
+	class Camera {
+		property type;      // カメラの種類（読み取り専用）
+		property zoom;      // ズーム
+		property nearPlane; // ニアクリップ面
+		property farPlane;  // ファークリップ面
+		
+		function updateProjectionMatrix(); // 投影行列を更新
+		// Object3D のプロパティ・メソッドを継承
+	}
+
+	/**
+	 * 透視投影カメラ
+	 * @description 人間の目のような透視投影を行うカメラです。
+	 */
+	class PerspectiveCamera {
+		/**
+		 * コンストラクタ
+		 * @param fov 視野角（度）
+		 * @param aspect アスペクト比
+		 * @param near ニアクリップ面
+		 * @param far ファークリップ面
+		 */
+		function PerspectiveCamera(fov=60, aspect=1, near=0.1, far=2000);
+		
+		property type;       // "PerspectiveCamera"（読み取り専用）
+		property fov;        // 視野角（度）
+		property aspect;     // アスペクト比
+		property focus;      // フォーカス距離
+		property filmGauge;  // フィルムゲージ（mm）
+		property filmOffset; // フィルムオフセット
+		
+		function setFocalLength(focalLength); // 焦点距離を設定
+		function getFocalLength();  // 焦点距離を取得
+		function getEffectiveFOV(); // 実効視野角を取得
+		function getFilmWidth();    // フィルム幅を取得
+		function getFilmHeight();   // フィルム高さを取得
+		function setViewOffset(fullWidth, fullHeight, x, y, width, height); // ビューオフセットを設定
+		function clearViewOffset(); // ビューオフセットをクリア
+		function updateProjectionMatrix(); // 投影行列を更新
+	}
+
+	/**
+	 * 正射影カメラ
+	 * @description 2Dシーンやアイソメトリックビューに適したカメラです。
+	 */
+	class OrthographicCamera {
+		/**
+		 * コンストラクタ
+		 * @param left 左端
+		 * @param right 右端
+		 * @param top 上端
+		 * @param bottom 下端
+		 * @param near ニアクリップ面
+		 * @param far ファークリップ面
+		 */
+		function OrthographicCamera(left=-1, right=1, top=1, bottom=-1, near=0.1, far=2000);
+		
+		property type;    // "OrthographicCamera"（読み取り専用）
+		property left;    // 左端
+		property right;   // 右端
+		property top;     // 上端
+		property bottom;  // 下端
+		
+		function setViewOffset(fullWidth, fullHeight, x, y, width, height); // ビューオフセットを設定
+		function clearViewOffset(); // ビューオフセットをクリア
+		function updateProjectionMatrix(); // 投影行列を更新
+	}
+
+	// ============================================================
+	// Scene クラス
+	// ============================================================
+
+	/**
+	 * シーンクラス
+	 * @description 3Dオブジェクトを配置するシーンです。
+	 */
+	class Scene {
+		/**
+		 * コンストラクタ
+		 */
+		function Scene();
+		
+		property type;       // "Scene"（読み取り専用）
+		property autoUpdate; // 自動更新するか
+		// Object3D のプロパティ・メソッドを継承
+	}
+
+	// ============================================================
+	// Light クラス
+	// ============================================================
+
+	/**
+	 * ライト基底クラス
+	 */
+	class Light {
+		property type;      // ライトの種類（読み取り専用）
+		property color;     // 光の色 (Color、読み取り専用)
+		property intensity; // 光の強度
+		// Object3D のプロパティ・メソッドを継承
+	}
+
+	/**
+	 * 環境光
+	 * @description シーン全体を均一に照らす光源です。
+	 */
+	class AmbientLight {
+		/**
+		 * コンストラクタ
+		 * @param color 光の色 (0xRRGGBB)
+		 * @param intensity 光の強度
+		 */
+		function AmbientLight(color=0xffffff, intensity=void);
+		
+		property type;  // "AmbientLight"（読み取り専用）
+	}
+
+	/**
+	 * 平行光源（太陽光のような光）
+	 * @description 無限遠から平行に照射される光源です。影を落とすことができます。
+	 */
+	class DirectionalLight {
+		/**
+		 * コンストラクタ
+		 * @param color 光の色 (0xRRGGBB)
+		 * @param intensity 光の強度
+		 */
+		function DirectionalLight(color=0xffffff, intensity=void);
+		
+		property type;  // "DirectionalLight"（読み取り専用）
+		
+		function dispose(); // リソースを解放
+	}
+
+	/**
+	 * 点光源
+	 * @description 一点から全方向に照射される光源です。
+	 */
+	class PointLight {
+		/**
+		 * コンストラクタ
+		 * @param color 光の色 (0xRRGGBB)
+		 * @param intensity 光の強度
+		 * @param distance 光が届く距離（0で無限）
+		 * @param decay 減衰率
+		 */
+		function PointLight(color=0xffffff, intensity=void, distance=0, decay=1);
+		
+		property type;     // "PointLight"（読み取り専用）
+		property distance; // 光が届く距離
+		property decay;    // 減衰率
+		
+		function getPower(); // 光のパワーを取得
+		function setPower(power); // 光のパワーを設定
+		function dispose(); // リソースを解放
+	}
+
+	/**
+	 * スポットライト
+	 * @description 一点から円錐状に照射される光源です。
+	 */
+	class SpotLight {
+		/**
+		 * コンストラクタ
+		 * @param color 光の色 (0xRRGGBB)
+		 * @param intensity 光の強度
+		 * @param distance 光が届く距離
+		 * @param angle 照射角度（ラジアン）
+		 * @param penumbra ペナンブラ（ぼかし）
+		 * @param decay 減衰率
+		 */
+		function SpotLight(color=0xffffff, intensity=void, distance=0, angle=PI/3, penumbra=0, decay=1);
+		
+		property type;     // "SpotLight"（読み取り専用）
+		property distance; // 光が届く距離
+		property angle;    // 照射角度
+		property penumbra; // ペナンブラ
+		property decay;    // 減衰率
+		
+		function getPower(); // 光のパワーを取得
+		function setPower(power); // 光のパワーを設定
+		function dispose(); // リソースを解放
+	}
+
+	/**
+	 * 半球ライト
+	 * @description 空と地面からの環境光をシミュレートします。
+	 */
+	class HemisphereLight {
+		/**
+		 * コンストラクタ
+		 * @param skyColor 空の色 (0xRRGGBB)
+		 * @param groundColor 地面の色 (0xRRGGBB)
+		 * @param intensity 光の強度
+		 */
+		function HemisphereLight(skyColor=0xffffff, groundColor=0xffffff, intensity=void);
+		
+		property type;        // "HemisphereLight"（読み取り専用）
+		property groundColor; // 地面の色（読み取り専用）
+	}
+
+	// ============================================================
+	// Material クラス
+	// ============================================================
+
+	/**
+	 * マテリアル基底クラス
+	 */
+	class Material {
+		property type;         // マテリアルの種類（読み取り専用）
+		property id;           // ID（読み取り専用）
+		property name;         // 名前
+		property fog;          // フォグの影響を受けるか
+		property opacity;      // 不透明度 (0.0-1.0)
+		property transparent;  // 透明か
+		property depthTest;    // 深度テストを行うか
+		property depthWrite;   // 深度バッファに書き込むか
+		property colorWrite;   // カラーバッファに書き込むか
+		property visible;      // 可視か
+		property side;         // 描画面 (Side_Front, Side_Back, Side_Double)
+		property blending;     // ブレンドモード
+		property alphaTest;    // アルファテスト閾値
+		
+		function dispose();    // リソースを解放
+		function needsUpdate(); // 更新が必要
+	}
+
+	/**
+	 * 基本マテリアル
+	 * @description ライティングを考慮しない最もシンプルなマテリアルです。
+	 */
+	class MeshBasicMaterial {
+		/**
+		 * コンストラクタ
+		 */
+		function MeshBasicMaterial();
+		
+		property type;      // "MeshBasicMaterial"（読み取り専用）
+		property color;     // 色 (0xRRGGBB)
+		property wireframe; // ワイヤーフレーム表示
+		property wireframeLinewidth; // ワイヤーフレームの線幅
+	}
+
+	/**
+	 * Lambert マテリアル
+	 * @description 拡散反射のみを考慮したマテリアルです。光沢のない表面に適しています。
+	 */
+	class MeshLambertMaterial {
+		/**
+		 * コンストラクタ
+		 */
+		function MeshLambertMaterial();
+		
+		property type;      // "MeshLambertMaterial"（読み取り専用）
+		property color;     // 色 (0xRRGGBB)
+		property wireframe; // ワイヤーフレーム表示
+		property wireframeLinewidth; // ワイヤーフレームの線幅
+	}
+
+	/**
+	 * Phong マテリアル
+	 * @description 拡散反射と鏡面反射を考慮したマテリアルです。光沢のある表面に適しています。
+	 */
+	class MeshPhongMaterial {
+		/**
+		 * コンストラクタ
+		 */
+		function MeshPhongMaterial();
+		
+		property type;      // "MeshPhongMaterial"（読み取り専用）
+		property color;     // 色 (0xRRGGBB)
+		property emissive;  // 発光色 (0xRRGGBB)
+		property specular;  // 鏡面反射色 (0xRRGGBB)
+		property shininess; // 光沢度
+		property wireframe; // ワイヤーフレーム表示
+		property wireframeLinewidth; // ワイヤーフレームの線幅
+		property flatShading; // フラットシェーディング
+	}
+
+	/**
+	 * Standard PBR マテリアル
+	 * @description 物理ベースレンダリング（PBR）のマテリアルです。リアルな質感を表現できます。
+	 */
+	class MeshStandardMaterial {
+		/**
+		 * コンストラクタ
+		 */
+		function MeshStandardMaterial();
+		
+		property type;      // "MeshStandardMaterial"（読み取り専用）
+		property color;     // 色 (0xRRGGBB)
+		property emissive;  // 発光色 (0xRRGGBB)
+		property roughness; // 粗さ (0.0-1.0)
+		property metalness; // 金属度 (0.0-1.0)
+		property wireframe; // ワイヤーフレーム表示
+		property wireframeLinewidth; // ワイヤーフレームの線幅
+		property flatShading; // フラットシェーディング
+	}
+
+	// ============================================================
+	// Geometry クラス
+	// ============================================================
+
+	/**
+	 * ボックス（立方体）ジオメトリ
+	 */
+	class BoxGeometry {
+		/**
+		 * コンストラクタ
+		 * @param width 幅
+		 * @param height 高さ
+		 * @param depth 奥行き
+		 * @param widthSegments 幅の分割数
+		 * @param heightSegments 高さの分割数
+		 * @param depthSegments 奥行きの分割数
+		 */
+		function BoxGeometry(width=1, height=1, depth=1, widthSegments=1, heightSegments=1, depthSegments=1);
+		
+		property type;   // "BoxGeometry"（読み取り専用）
+		property width;  // 幅（読み取り専用）
+		property height; // 高さ（読み取り専用）
+		property depth;  // 奥行き（読み取り専用）
+	}
+
+	/**
+	 * 球ジオメトリ
+	 */
+	class SphereGeometry {
+		/**
+		 * コンストラクタ
+		 * @param radius 半径
+		 * @param widthSegments 水平方向の分割数
+		 * @param heightSegments 垂直方向の分割数
+		 * @param phiStart 水平方向の開始角度
+		 * @param phiLength 水平方向の角度範囲
+		 * @param thetaStart 垂直方向の開始角度
+		 * @param thetaLength 垂直方向の角度範囲
+		 */
+		function SphereGeometry(radius=1, widthSegments=16, heightSegments=12, phiStart=0, phiLength=TWO_PI, thetaStart=0, thetaLength=PI);
+		
+		property type;   // "SphereGeometry"（読み取り専用）
+		property radius; // 半径（読み取り専用）
+	}
+
+	/**
+	 * 平面ジオメトリ
+	 */
+	class PlaneGeometry {
+		/**
+		 * コンストラクタ
+		 * @param width 幅
+		 * @param height 高さ
+		 * @param widthSegments 幅の分割数
+		 * @param heightSegments 高さの分割数
+		 */
+		function PlaneGeometry(width=1, height=1, widthSegments=1, heightSegments=1);
+		
+		property type;   // "PlaneGeometry"（読み取り専用）
+		property width;  // 幅（読み取り専用）
+		property height; // 高さ（読み取り専用）
+		property widthSegments;  // 幅の分割数（読み取り専用）
+		property heightSegments; // 高さの分割数（読み取り専用）
+	}
+
+	/**
+	 * 円柱ジオメトリ
+	 */
+	class CylinderGeometry {
+		/**
+		 * コンストラクタ
+		 * @param radiusTop 上面の半径
+		 * @param radiusBottom 下面の半径
+		 * @param height 高さ
+		 * @param radialSegments 周方向の分割数
+		 * @param heightSegments 高さ方向の分割数
+		 * @param openEnded 上下面を開けるか
+		 * @param thetaStart 周方向の開始角度
+		 * @param thetaLength 周方向の角度範囲
+		 */
+		function CylinderGeometry(radiusTop=1, radiusBottom=1, height=1, radialSegments=16, heightSegments=1, openEnded=false, thetaStart=0, thetaLength=TWO_PI);
+		
+		property type;  // "CylinderGeometry"（読み取り専用）
+	}
+
+	/**
+	 * 円錐ジオメトリ
+	 */
+	class ConeGeometry {
+		/**
+		 * コンストラクタ
+		 * @param radius 底面の半径
+		 * @param height 高さ
+		 * @param radialSegments 周方向の分割数
+		 * @param heightSegments 高さ方向の分割数
+		 * @param openEnded 底面を開けるか
+		 * @param thetaStart 周方向の開始角度
+		 * @param thetaLength 周方向の角度範囲
+		 */
+		function ConeGeometry(radius=1, height=1, radialSegments=16, heightSegments=1, openEnded=false, thetaStart=0, thetaLength=TWO_PI);
+		
+		property type;  // "ConeGeometry"（読み取り専用）
+	}
+
+	/**
+	 * トーラス（ドーナツ形状）ジオメトリ
+	 */
+	class TorusGeometry {
+		/**
+		 * コンストラクタ
+		 * @param radius トーラスの半径
+		 * @param tube チューブの半径
+		 * @param radialSegments 周方向の分割数
+		 * @param tubularSegments チューブ方向の分割数
+		 * @param arc 角度範囲
+		 */
+		function TorusGeometry(radius=1, tube=0.4, radialSegments=20, tubularSegments=64, arc=TWO_PI);
+		
+		property type;  // "TorusGeometry"（読み取り専用）
+	}
+
+	/**
+	 * トーラスノットジオメトリ
+	 */
+	class TorusKnotGeometry {
+		/**
+		 * コンストラクタ
+		 * @param radius 半径
+		 * @param tube チューブの半径
+		 * @param tubularSegments チューブ方向の分割数
+		 * @param radialSegments 周方向の分割数
+		 * @param p ノットのパラメータp
+		 * @param q ノットのパラメータq
+		 */
+		function TorusKnotGeometry(radius=1, tube=0.4, tubularSegments=64, radialSegments=16, p=2, q=3);
+		
+		property type;  // "TorusKnotGeometry"（読み取り専用）
+	}
+
+	/**
+	 * 円（ディスク）ジオメトリ
+	 */
+	class CircleGeometry {
+		/**
+		 * コンストラクタ
+		 * @param radius 半径
+		 * @param segments 分割数
+		 * @param thetaStart 開始角度
+		 * @param thetaLength 角度範囲
+		 */
+		function CircleGeometry(radius=1, segments=16, thetaStart=0, thetaLength=TWO_PI);
+		
+		property type;  // "CircleGeometry"（読み取り専用）
+	}
+
+	/**
+	 * リング（環状）ジオメトリ
+	 */
+	class RingGeometry {
+		/**
+		 * コンストラクタ
+		 * @param innerRadius 内側の半径
+		 * @param outerRadius 外側の半径
+		 * @param thetaSegments 周方向の分割数
+		 * @param phiSegments 半径方向の分割数
+		 * @param thetaStart 開始角度
+		 * @param thetaLength 角度範囲
+		 */
+		function RingGeometry(innerRadius=0.5, outerRadius=1, thetaSegments=16, phiSegments=2, thetaStart=0, thetaLength=TWO_PI);
+		
+		property type;  // "RingGeometry"（読み取り専用）
+	}
+
+	/**
+	 * 正二十面体ジオメトリ
+	 */
+	class IcosahedronGeometry {
+		/**
+		 * コンストラクタ
+		 * @param radius 半径
+		 * @param detail 分割レベル
+		 */
+		function IcosahedronGeometry(radius=1, detail=0);
+		
+		property type;  // "IcosahedronGeometry"（読み取り専用）
+	}
+
+	/**
+	 * 正八面体ジオメトリ
+	 */
+	class OctahedronGeometry {
+		/**
+		 * コンストラクタ
+		 * @param radius 半径
+		 * @param detail 分割レベル
+		 */
+		function OctahedronGeometry(radius=1, detail=0);
+		
+		property type;  // "OctahedronGeometry"（読み取り専用）
+	}
+
+	// ============================================================
+	// Object クラス
+	// ============================================================
+
+	/**
+	 * メッシュクラス
+	 * @description ジオメトリとマテリアルを組み合わせて3Dオブジェクトを作成します。
+	 */
+	class Mesh {
+		/**
+		 * コンストラクタ
+		 * @param geometry ジオメトリ (BufferGeometry)
+		 * @param material マテリアル (Material)
+		 */
+		function Mesh(geometry=void, material=void);
+		
+		property type;  // "Mesh"（読み取り専用）
+		
+		/**
+		 * ジオメトリを設定
+		 * @param geometry 新しいジオメトリ
+		 */
+		function setGeometry(geometry);
+		// Object3D のプロパティ・メソッドを継承
+	}
+
+	/**
+	 * 線オブジェクト
+	 * @description 連続した線を描画します。
+	 */
+	class Line {
+		/**
+		 * コンストラクタ
+		 * @param geometry ジオメトリ (BufferGeometry)
+		 * @param material マテリアル (LineBasicMaterial)
+		 */
+		function Line(geometry=void, material=void);
+		
+		property type;  // "Line"（読み取り専用）
+		
+		function computeLineDistances(); // 線の距離を計算
+		function setGeometry(geometry);  // ジオメトリを設定
+	}
+
+	/**
+	 * 線分オブジェクト
+	 * @description 独立した線分を描画します。
+	 */
+	class LineSegments {
+		/**
+		 * コンストラクタ
+		 * @param geometry ジオメトリ (BufferGeometry)
+		 * @param material マテリアル (LineBasicMaterial)
+		 */
+		function LineSegments(geometry=void, material=void);
+		
+		property type;  // "LineSegments"（読み取り専用）
+	}
+
+	/**
+	 * 点群オブジェクト
+	 * @description 点の集合を描画します。
+	 */
+	class Points {
+		/**
+		 * コンストラクタ
+		 * @param geometry ジオメトリ (BufferGeometry)
+		 * @param material マテリアル (PointsMaterial)
+		 */
+		function Points(geometry=void, material=void);
+		
+		property type;  // "Points"（読み取り専用）
+		
+		function setGeometry(geometry);  // ジオメトリを設定
+	}
+
+	/**
+	 * スプライトオブジェクト
+	 * @description 常にカメラを向く2D平面です。
+	 */
+	class Sprite {
+		/**
+		 * コンストラクタ
+		 * @param material マテリアル (SpriteMaterial)
+		 */
+		function Sprite(material=void);
+		
+		property type;   // "Sprite"（読み取り専用）
+		property center; // 中心位置 (Vector2、読み取り専用)
+	}
+
+	/**
+	 * インスタンスメッシュ
+	 * @description 同じジオメトリとマテリアルを複数インスタンス描画します。
+	 */
+	class InstancedMesh {
+		/**
+		 * コンストラクタ
+		 * @param geometry ジオメトリ (BufferGeometry)
+		 * @param material マテリアル (Material)
+		 * @param count インスタンス数
+		 */
+		function InstancedMesh(geometry, material, count);
+		
+		property type;  // "InstancedMesh"（読み取り専用）
+		property count; // インスタンス数
+		
+		function getMatrixAt(index, matrix); // インスタンスの変換行列を取得
+		function setMatrixAt(index, matrix); // インスタンスの変換行列を設定
+		function getColorAt(index, color);   // インスタンスの色を取得
+		function setColorAt(index, color);   // インスタンスの色を設定
+		function computeBoundingBox();       // 境界ボックスを計算
+		function computeBoundingSphere();    // 境界球を計算
+		function dispose();                  // リソースを解放
+	}
+
+	// ============================================================
+	// 追加マテリアル クラス
+	// ============================================================
+
+	/**
+	 * シェーダーマテリアル
+	 * @description カスタムGLSLシェーダーを使用するマテリアルです。
+	 */
+	class ShaderMaterial {
+		/**
+		 * コンストラクタ
+		 */
+		function ShaderMaterial();
+		
+		property type;           // "ShaderMaterial"（読み取り専用）
+		property vertexShader;   // 頂点シェーダーコード
+		property fragmentShader; // フラグメントシェーダーコード
+		property uniformsNeedUpdate; // uniformの更新が必要か
+		property wireframe;      // ワイヤーフレーム表示
+		property wireframeLinewidth; // ワイヤーフレームの線幅
+		property lights;         // ライティングを使用するか
+		property clipping;       // クリッピングを使用するか
+	}
+
+	/**
+	 * Raw シェーダーマテリアル
+	 * @description threepp組み込みのuniformやattributeなしのカスタムシェーダーです。
+	 */
+	class RawShaderMaterial {
+		/**
+		 * コンストラクタ
+		 */
+		function RawShaderMaterial();
+		
+		property type;           // "RawShaderMaterial"（読み取り専用）
+		property vertexShader;   // 頂点シェーダーコード
+		property fragmentShader; // フラグメントシェーダーコード
+		property uniformsNeedUpdate; // uniformの更新が必要か
+	}
+
+	/**
+	 * 線用基本マテリアル
+	 * @description Line, LineSegments用のシンプルなマテリアルです。
+	 */
+	class LineBasicMaterial {
+		/**
+		 * コンストラクタ
+		 */
+		function LineBasicMaterial();
+		
+		property type;      // "LineBasicMaterial"（読み取り専用）
+		property color;     // 色 (0xRRGGBB)
+		property linewidth; // 線幅
+	}
+
+	/**
+	 * 点群用マテリアル
+	 * @description Points用のマテリアルです。
+	 */
+	class PointsMaterial {
+		/**
+		 * コンストラクタ
+		 */
+		function PointsMaterial();
+		
+		property type;            // "PointsMaterial"（読み取り専用）
+		property color;           // 色 (0xRRGGBB)
+		property size;            // 点のサイズ
+		property sizeAttenuation; // 距離による減衰を行うか
+	}
+
+	/**
+	 * スプライト用マテリアル
+	 * @description Sprite用のマテリアルです。
+	 */
+	class SpriteMaterial {
+		/**
+		 * コンストラクタ
+		 */
+		function SpriteMaterial();
+		
+		property type;            // "SpriteMaterial"（読み取り専用）
+		property color;           // 色 (0xRRGGBB)
+		property rotation;        // 回転（ラジアン）
+		property sizeAttenuation; // 距離による減衰を行うか
+	}
+
+	/**
+	 * 法線マテリアル
+	 * @description 法線を色として表示するマテリアルです。デバッグに便利です。
+	 */
+	class MeshNormalMaterial {
+		/**
+		 * コンストラクタ
+		 */
+		function MeshNormalMaterial();
+		
+		property type;      // "MeshNormalMaterial"（読み取り専用）
+		property wireframe; // ワイヤーフレーム表示
+		property wireframeLinewidth; // ワイヤーフレームの線幅
+		property flatShading; // フラットシェーディング
+	}
+
+	/**
+	 * 深度マテリアル
+	 * @description 深度を色として表示するマテリアルです。
+	 */
+	class MeshDepthMaterial {
+		/**
+		 * コンストラクタ
+		 */
+		function MeshDepthMaterial();
+		
+		property type;      // "MeshDepthMaterial"（読み取り専用）
+		property wireframe; // ワイヤーフレーム表示
+		property wireframeLinewidth; // ワイヤーフレームの線幅
+	}
+
+	/**
+	 * トゥーン（セルシェーディング）マテリアル
+	 * @description アニメ調のレンダリングを行うマテリアルです。
+	 */
+	class MeshToonMaterial {
+		/**
+		 * コンストラクタ
+		 */
+		function MeshToonMaterial();
+		
+		property type;      // "MeshToonMaterial"（読み取り専用）
+		property color;     // 色 (0xRRGGBB)
+		property emissive;  // 発光色 (0xRRGGBB)
+		property wireframe; // ワイヤーフレーム表示
+		property wireframeLinewidth; // ワイヤーフレームの線幅
+	}
+
+	/**
+	 * マットキャップマテリアル
+	 * @description マットキャップテクスチャを使用するマテリアルです。
+	 */
+	class MeshMatcapMaterial {
+		/**
+		 * コンストラクタ
+		 */
+		function MeshMatcapMaterial();
+		
+		property type;        // "MeshMatcapMaterial"（読み取り専用）
+		property color;       // 色 (0xRRGGBB)
+		property flatShading; // フラットシェーディング
+	}
+
+	// ============================================================
+	// Texture クラス
+	// ============================================================
+
+	/**
+	 * テクスチャ基底クラス
+	 * @description 画像テクスチャを表現します。
+	 */
+	class Texture {
+		/**
+		 * コンストラクタ
+		 */
+		function Texture();
+		
+		property id;              // ID（読み取り専用）
+		property name;            // 名前
+		property mapping;         // マッピング種別
+		property wrapS;           // S方向のラッピング
+		property wrapT;           // T方向のラッピング
+		property magFilter;       // 拡大フィルタ
+		property minFilter;       // 縮小フィルタ
+		property anisotropy;      // 異方性フィルタリング
+		property format;          // フォーマット
+		property offset;          // オフセット (Vector2、読み取り専用)
+		property repeat;          // 繰り返し (Vector2、読み取り専用)
+		property center;          // 中心 (Vector2、読み取り専用)
+		property rotation;        // 回転
+		property matrixAutoUpdate; // 行列の自動更新
+		property generateMipmaps; // ミップマップを生成するか
+		property premultiplyAlpha; // 事前アルファ乗算
+		property unpackAlignment; // アンパックアラインメント
+		property encoding;        // エンコーディング
+		
+		function updateMatrix();  // 行列を更新
+		function dispose();       // リソースを解放
+		function needsUpdate();   // 更新フラグを立てる
+		function version();       // バージョンを取得
+	}
+
+	/**
+	 * データテクスチャ
+	 * @description ピクセルデータから生成するテクスチャです。
+	 */
+	class DataTexture {
+		/**
+		 * コンストラクタ
+		 * @param channels チャンネル数
+		 * @param width 幅
+		 * @param height 高さ
+		 */
+		function DataTexture(channels=4, width=1, height=1);
+	}
+
+	/**
+	 * テクスチャローダー
+	 * @description ファイルからテクスチャを読み込みます。
+	 */
+	class TextureLoader {
+		/**
+		 * コンストラクタ
+		 * @param useCache キャッシュを使用するか
+		 */
+		function TextureLoader(useCache=true);
+		
+		/**
+		 * テクスチャを読み込む
+		 * @param path ファイルパス
+		 * @param flipY Y軸を反転するか
+		 * @return Texture
+		 */
+		function load(path, flipY=true);
+		
+		/**
+		 * キャッシュをクリア
+		 */
+		function clearCache();
+	}
+
+	// ============================================================
+	// Helper クラス
+	// ============================================================
+
+	/**
+	 * 軸ヘルパー
+	 * @description X(赤), Y(緑), Z(青)の軸を表示します。
+	 */
+	class AxesHelper {
+		/**
+		 * コンストラクタ
+		 * @param size 軸の長さ
+		 */
+		function AxesHelper(size=1);
+		
+		property type;  // "AxesHelper"（読み取り専用）
+	}
+
+	/**
+	 * グリッドヘルパー
+	 * @description 格子状のグリッドを表示します。
+	 */
+	class GridHelper {
+		/**
+		 * コンストラクタ
+		 * @param size グリッドのサイズ
+		 * @param divisions 分割数
+		 * @param color1 主線の色
+		 * @param color2 副線の色
+		 */
+		function GridHelper(size=10, divisions=10, color1=0x444444, color2=0x888888);
+		
+		property type;  // "GridHelper"（読み取り専用）
+	}
+
+	/**
+	 * 矢印ヘルパー
+	 * @description 方向を示す矢印を表示します。
+	 */
+	class ArrowHelper {
+		/**
+		 * コンストラクタ
+		 * @param dir 方向ベクトル [x, y, z]
+		 * @param origin 原点 [x, y, z]
+		 * @param length 長さ
+		 * @param color 色 (0xRRGGBB)
+		 */
+		function ArrowHelper(dir=[0,0,1], origin=[0,0,0], length=1, color=0xffff00);
+		
+		function setDirection(dir);    // 方向を設定
+		function setLength(length, headLength=void, headWidth=void); // 長さを設定
+		function setColor(color);      // 色を設定
+	}
+
+	/**
+	 * ボックスヘルパー
+	 * @description オブジェクトの境界ボックスを表示します。
+	 */
+	class BoxHelper {
+		/**
+		 * コンストラクタ
+		 * @param object 対象のObject3D
+		 * @param color 色 (0xRRGGBB)
+		 */
+		function BoxHelper(object, color=0xffff00);
+		
+		property type;  // "BoxHelper"（読み取り専用）
+		
+		function update();  // 更新
+	}
+
+	// ============================================================
+	// Scene 補助クラス
+	// ============================================================
+
+	/**
+	 * フォグ（線形）
+	 * @description 線形フォグを設定します。
+	 */
+	class Fog {
+		/**
+		 * コンストラクタ
+		 * @param color フォグの色
+		 * @param near フォグ開始距離
+		 * @param far フォグ終了距離
+		 */
+		function Fog(color, near=1, far=1000);
+		
+		property color;     // フォグの色
+		property nearPlane; // 開始距離
+		property farPlane;  // 終了距離
+	}
+
+	/**
+	 * フォグ（指数関数）
+	 * @description 指数関数フォグを設定します。
+	 */
+	class FogExp2 {
+		/**
+		 * コンストラクタ
+		 * @param color フォグの色
+		 * @param density 密度
+		 */
+		function FogExp2(color, density=0.00025);
+		
+		property color;   // フォグの色
+		property density; // 密度
+	}
+
+	/**
+	 * レイキャスター
+	 * @description レイを使ってオブジェクトとの交差判定を行います。
+	 */
+	class Raycaster {
+		/**
+		 * コンストラクタ
+		 * @param origin 原点
+		 * @param direction 方向
+		 * @param near ニアクリップ
+		 * @param far ファークリップ
+		 */
+		function Raycaster(origin, direction, near=0, far=Infinity);
+		
+		property nearPlane; // ニアクリップ
+		property farPlane;  // ファークリップ
+		
+		function set(origin, direction); // 原点と方向を設定
+	}
+
+	// ============================================================
+	// Renderer クラス
+	// ============================================================
+
+	/**
+	 * OpenGL レンダラー
+	 * @description シーンをレンダリングするためのレンダラーです。
+	 */
+	class GLRenderer {
+		/**
+		 * コンストラクタ
+		 * @param width レンダリング幅
+		 * @param height レンダリング高さ
+		 */
+		function GLRenderer(width=800, height=600);
+		
+		property autoClear;        // 自動クリアするか
+		property autoClearColor;   // カラーバッファを自動クリアするか
+		property autoClearDepth;   // 深度バッファを自動クリアするか
+		property autoClearStencil; // ステンシルバッファを自動クリアするか
+		property sortObjects;      // オブジェクトをソートするか
+		property physicallyCorrectLights; // 物理的に正確なライティング
+		property toneMappingExposure; // トーンマッピングの露出
+		
+		/**
+		 * シーンをレンダリング
+		 * @param scene シーン
+		 * @param camera カメラ
+		 */
+		function render(scene, camera);
+		
+		/**
+		 * クリアカラーを設定
+		 * @param color 色 (0xRRGGBB)
+		 * @param alpha アルファ値
+		 */
+		function setClearColor(color, alpha=1);
+		
+		function setPixelRatio(ratio); // ピクセル比を設定
+		function setSize(width, height); // サイズを設定
+		function setScissorTest(enabled); // シザーテストの有効/無効
+		function clear(color=true, depth=true, stencil=true); // バッファをクリア
+		function clearColor();     // カラーバッファをクリア
+		function clearDepth();     // 深度バッファをクリア
+		function clearStencil();   // ステンシルバッファをクリア
+		function dispose();        // リソースを解放
+		function resetState();     // 状態をリセット
+	}
+
+	// ============================================================
+	// 追加 Math クラス
+	// ============================================================
+
+	/**
+	 * 2D 軸平行境界ボックスクラス
+	 */
+	class Box2 {
+		/**
+		 * コンストラクタ
+		 * @param min 最小座標 (Vector2)
+		 * @param max 最大座標 (Vector2)
+		 */
+		function Box2(min, max);
+		
+		property min;  // 最小座標（読み取り専用）
+		property max;  // 最大座標（読み取り専用）
+		
+		function set(min, max);       // 値を設定
+		function clone();             // クローン
+		function copy(box);           // コピー
+		function makeEmpty();         // 空にする
+		function isEmpty();           // 空かどうか
+		function expandByPoint(point); // 点で拡張
+		function expandByVector(v);   // ベクトルで拡張
+		function expandByScalar(s);   // スカラーで拡張
+		function containsPoint(point); // 点を含むか
+		function containsBox(box);    // ボックスを含むか
+		function intersectsBox(box);  // ボックスと交差するか
+		function distanceToPoint(point); // 点との距離
+		function intersect(box);      // 交差部分を取得
+		function union_(box);         // 和集合
+		function translate(offset);   // 平行移動
+		function equals(box);         // 等価判定
+	}
+
+	/**
+	 * 3D 線分クラス
+	 */
+	class Line3 {
+		/**
+		 * コンストラクタ
+		 * @param start 始点 (Vector3)
+		 * @param end 終点 (Vector3)
+		 */
+		function Line3(start, end);
+		
+		property start;  // 始点（読み取り専用）
+		property end;    // 終点（読み取り専用）
+		
+		function set(start, end);     // 値を設定
+		function clone();             // クローン
+		function copy(line);          // コピー
+		function getCenter();         // 中心を取得
+		function delta();             // 方向ベクトルを取得
+		function distanceSq();        // 長さの二乗
+		function distance();          // 長さ
+		function at(t);               // パラメータ位置の点を取得
+		function closestPointToPoint(point, clamp); // 最近点を取得
+		function closestPointToPointParameter(point, clamp); // 最近点のパラメータ
+		function applyMatrix4(m);     // 行列を適用
+		function equals(line);        // 等価判定
+	}
+
+	/**
+	 * 三角形クラス
+	 */
+	class Triangle {
+		/**
+		 * コンストラクタ
+		 * @param a 頂点A (Vector3)
+		 * @param b 頂点B (Vector3)
+		 * @param c 頂点C (Vector3)
+		 */
+		function Triangle(a, b, c);
+		
+		property a;  // 頂点A（読み取り専用）
+		property b;  // 頂点B（読み取り専用）
+		property c;  // 頂点C（読み取り専用）
+		
+		function set(a, b, c);        // 値を設定
+		function clone();             // クローン
+		function copy(triangle);      // コピー
+		function getArea();           // 面積
+		function getMidpoint();       // 重心
+		function getNormal();         // 法線
+		function getPlane();          // 三角形を含む平面
+		function getBarycoord(point); // 重心座標を取得
+		function containsPoint(point); // 点を含むか
+		function isFrontFacing(direction); // 前面を向いているか
+		function closestPointToPoint(point); // 最近点
+		function equals(triangle);    // 等価判定
+	}
+
+	/**
+	 * 球面座標クラス
+	 */
+	class Spherical {
+		/**
+		 * コンストラクタ
+		 * @param radius 半径
+		 * @param phi 極角 (ラジアン)
+		 * @param theta 方位角 (ラジアン)
+		 */
+		function Spherical(radius=1, phi=0, theta=0);
+		
+		property radius;  // 半径
+		property phi;     // 極角
+		property theta;   // 方位角
+		
+		function set(radius, phi, theta); // 値を設定
+		function clone();             // クローン
+		function copy(s);             // コピー
+		function makeSafe();          // 安全な値に補正
+		function setFromVector3(v);   // Vector3から設定
+		function setFromCartesianCoords(x, y, z); // 直交座標から設定
+	}
+
+	/**
+	 * 円柱座標クラス
+	 */
+	class Cylindrical {
+		/**
+		 * コンストラクタ
+		 * @param radius 半径
+		 * @param theta 角度 (ラジアン)
+		 * @param y 高さ
+		 */
+		function Cylindrical(radius=1, theta=0, y=0);
+		
+		property radius;  // 半径
+		property theta;   // 角度
+		property y;       // 高さ
+		
+		function set(radius, theta, y); // 値を設定
+		function clone();             // クローン
+		function copy(c);             // コピー
+		function setFromVector3(v);   // Vector3から設定
+		function setFromCartesianCoords(x, y, z); // 直交座標から設定
+	}
+
+	// ============================================================
+	// 追加 Geometry クラス
+	// ============================================================
+
+	/**
+	 * カプセルジオメトリ
+	 * @description カプセル形状（両端が半球の円柱）を生成します。
+	 */
+	class CapsuleGeometry {
+		/**
+		 * コンストラクタ
+		 * @param radius 半径
+		 * @param length 円柱部分の長さ
+		 * @param capSegments キャップのセグメント数
+		 * @param radialSegments 周方向のセグメント数
+		 */
+		function CapsuleGeometry(radius=0.5, length=1, capSegments=8, radialSegments=16);
+		
+		property type;  // 型名（読み取り専用）
+	}
+
+	/**
+	 * 旋盤ジオメトリ
+	 * @description 2D輪郭を回転軸周りに回転させて3D形状を生成します。
+	 */
+	class LatheGeometry {
+		/**
+		 * コンストラクタ
+		 * @param points 輪郭点の配列 (Vector2の配列または [x,y] の配列)
+		 * @param segments セグメント数
+		 * @param phiStart 開始角度 (ラジアン)
+		 * @param phiLength 回転角度 (ラジアン)
+		 */
+		function LatheGeometry(points, segments=12, phiStart=0, phiLength=Math.PI*2);
+		
+		property type;  // 型名（読み取り専用）
+	}
+
+	/**
+	 * エッジジオメトリ
+	 * @description 元のジオメトリからエッジ（輪郭線）を抽出します。
+	 */
+	class EdgesGeometry {
+		/**
+		 * コンストラクタ
+		 * @param geometry 元のジオメトリ
+		 * @param thresholdAngle エッジとみなす角度閾値 (度)
+		 */
+		function EdgesGeometry(geometry, thresholdAngle=1);
+		
+		property type;  // 型名（読み取り専用）
+	}
+
+	/**
+	 * ワイヤーフレームジオメトリ
+	 * @description 元のジオメトリからワイヤーフレームを生成します。
+	 */
+	class WireframeGeometry {
+		/**
+		 * コンストラクタ
+		 * @param geometry 元のジオメトリ
+		 */
+		function WireframeGeometry(geometry);
+		
+		property type;  // 型名（読み取り専用）
+	}
+
+	// ============================================================
+	// 追加 Helper クラス
+	// ============================================================
+
+	/**
+	 * カメラヘルパー
+	 * @description カメラの視錐台を可視化します。
+	 */
+	class CameraHelper {
+		/**
+		 * コンストラクタ
+		 * @param camera 可視化するカメラ
+		 */
+		function CameraHelper(camera);
+		
+		property type;  // 型名（読み取り専用）
+		
+		function update();  // ヘルパーを更新
+	}
+
+	/**
+	 * ディレクショナルライトヘルパー
+	 * @description 平行光源の方向を可視化します。
+	 */
+	class DirectionalLightHelper {
+		/**
+		 * コンストラクタ
+		 * @param light 可視化するライト
+		 * @param size ヘルパーのサイズ
+		 * @param color ヘルパーの色（省略時はライトの色）
+		 */
+		function DirectionalLightHelper(light, size=1, color);
+		
+		property type;  // 型名（読み取り専用）
+		
+		function update();  // ヘルパーを更新
+	}
+
+	/**
+	 * ポイントライトヘルパー
+	 * @description 点光源を可視化します。
+	 */
+	class PointLightHelper {
+		/**
+		 * コンストラクタ
+		 * @param light 可視化するライト
+		 * @param sphereSize 球のサイズ
+		 * @param color ヘルパーの色（省略時はライトの色）
+		 */
+		function PointLightHelper(light, sphereSize=1, color);
+		
+		property type;  // 型名（読み取り専用）
+		
+		function update();  // ヘルパーを更新
+	}
+
+	/**
+	 * スポットライトヘルパー
+	 * @description スポットライトのコーンを可視化します。
+	 */
+	class SpotLightHelper {
+		/**
+		 * コンストラクタ
+		 * @param light 可視化するライト
+		 * @param color ヘルパーの色（省略時はライトの色）
+		 */
+		function SpotLightHelper(light, color);
+		
+		property type;  // 型名（読み取り専用）
+		
+		function update();  // ヘルパーを更新
+	}
+
+	/**
+	 * 極座標グリッドヘルパー
+	 * @description 極座標系のグリッドを表示します。
+	 */
+	class PolarGridHelper {
+		/**
+		 * コンストラクタ
+		 * @param radius 半径
+		 * @param sectors セクター数
+		 * @param rings リング数
+		 * @param divisions 分割数
+		 * @param color1 メインカラー
+		 * @param color2 セカンダリカラー
+		 */
+		function PolarGridHelper(radius=10, sectors=16, rings=8, divisions=64, color1=0x444444, color2=0x888888);
+		
+		property type;  // 型名（読み取り専用）
+	}
+
+	/**
+	 * 平面ヘルパー
+	 * @description 平面を可視化します。
+	 */
+	class PlaneHelper {
+		/**
+		 * コンストラクタ
+		 * @param plane 可視化する平面
+		 * @param size ヘルパーのサイズ
+		 * @param color ヘルパーの色
+		 */
+		function PlaneHelper(plane, size=1, color=0xffff00);
+		
+		property type;  // 型名（読み取り専用）
+		property size;  // サイズ
+	}
+
+	// ============================================================
+	// 追加 Object クラス
+	// ============================================================
+
+	/**
+	 * LOD (Level of Detail)
+	 * @description 距離に応じて異なる詳細度のオブジェクトを切り替えます。
+	 */
+	class LOD {
+		/**
+		 * コンストラクタ
+		 */
+		function LOD();
+		
+		property type;       // 型名（読み取り専用）
+		property autoUpdate; // 自動更新フラグ
+		
+		function addLevel(object, distance);  // レベルを追加
+		function getCurrentLevel();           // 現在のレベルを取得
+		function update(camera);              // カメラに基づいて更新
+	}
+
+	/**
+	 * ボーン
+	 * @description スケルトンアニメーション用のボーンです。
+	 */
+	class Bone {
+		/**
+		 * コンストラクタ
+		 */
+		function Bone();
+		
+		property type;  // 型名（読み取り専用）
+	}
+
+	/**
+	 * スケルトン
+	 * @description ボーンの集合を管理します。
+	 */
+	class Skeleton {
+		/**
+		 * コンストラクタ
+		 * @param bones ボーンの配列
+		 */
+		function Skeleton(bones);
+		
+		property uuid;   // UUID（読み取り専用）
+		property frame;  // フレーム
+		
+		function init();              // 初期化
+		function calculateInverses(); // 逆行列を計算
+		function pose();              // ポーズを設定
+		function update();            // 更新
+		function computeBoneTexture(); // ボーンテクスチャを計算
+		function dispose();           // リソースを解放
+	}
+
+	/**
+	 * スキニングメッシュ
+	 * @description スケルトンアニメーション対応のメッシュです。
+	 */
+	class SkinnedMesh {
+		/**
+		 * コンストラクタ
+		 * @param geometry ジオメトリ
+		 * @param material マテリアル
+		 */
+		function SkinnedMesh(geometry, material);
+		
+		property type;  // 型名（読み取り専用）
+		
+		function bind(skeleton);       // スケルトンをバインド
+		function pose();               // ポーズを設定
+		function normalizeSkinWeights(); // スキンウェイトを正規化
+	}
+
+	/**
+	 * 空オブジェクト
+	 * @description 大気散乱シミュレーションによる空を表現します。
+	 */
+	class Sky {
+		/**
+		 * コンストラクタ
+		 */
+		function Sky();
+		
+		property type;  // 型名（読み取り専用）
+	}
+
+	/**
+	 * 水面オブジェクト
+	 * @description 反射と屈折を持つ水面を表現します。
+	 */
+	class Water {
+		/**
+		 * コンストラクタ
+		 * @param geometry ジオメトリ（通常は平面）
+		 */
+		function Water(geometry);
+		
+		property type;  // 型名（読み取り専用）
+	}
+
+	/**
+	 * 反射面オブジェクト
+	 * @description 鏡面反射を持つオブジェクトです。
+	 */
+	class Reflector {
+		/**
+		 * コンストラクタ
+		 * @param geometry ジオメトリ
+		 */
+		function Reflector(geometry);
+		
+		property type;  // 型名（読み取り専用）
+	}
+
+	// ============================================================
+	// Curve クラス
+	// ============================================================
+
+	/**
+	 * CatmullRom スプライン曲線
+	 * @description 制御点を通過する滑らかな曲線を生成します。
+	 */
+	class CatmullRomCurve3 {
+		/**
+		 * コンストラクタ
+		 * @param points 制御点の配列 (Vector3の配列または [x,y,z] の配列)
+		 * @param closed 閉曲線かどうか
+		 * @param curveType 曲線タイプ (centripetal, chordal, catmullrom)
+		 * @param tension テンション値 (catmullrom タイプ用)
+		 */
+		function CatmullRomCurve3(points, closed=false, curveType=0, tension=0.5);
+		
+		property closed;   // 閉曲線フラグ
+		property tension;  // テンション
+		
+		function getLength();      // 曲線の長さを取得
+		function getPoint(t);      // パラメータ t (0-1) の点を取得
+	}
+
+	// CurveType 定数
+	const CatmullRomCurve3_CurveType_centripetal = 0;
+	const CatmullRomCurve3_CurveType_chordal = 1;
+	const CatmullRomCurve3_CurveType_catmullrom = 2;
+}
+
+/**
+ * 使用例
+ * 
+ * // シーンとカメラの作成
+ * var scene = new Threepp.Scene();
+ * var camera = new Threepp.PerspectiveCamera(75, 16/9, 0.1, 1000);
+ * camera.position.z = 5;
+ * 
+ * // ジオメトリとマテリアルの作成
+ * var geometry = new Threepp.BoxGeometry(1, 1, 1);
+ * var material = new Threepp.MeshPhongMaterial();
+ * material.color = 0x00ff00;
+ * 
+ * // メッシュを作成してシーンに追加
+ * var mesh = new Threepp.Mesh(geometry, material);
+ * scene.add(mesh);
+ * 
+ * // ライト追加
+ * var light = new Threepp.DirectionalLight(0xffffff, 1.0);
+ * light.position.set(1, 1, 1);
+ * scene.add(light);
+ * 
+ * // 環境光も追加
+ * var ambient = new Threepp.AmbientLight(0x404040);
+ * scene.add(ambient);
+ * 
+ * // レンダラー作成と描画
+ * var renderer = new Threepp.GLRenderer(800, 600);
+ * renderer.setClearColor(0x000000);
+ * renderer.render(scene, camera);
+ * 
+ * // アニメーション例
+ * var clock = new Threepp.Clock();
+ * function animate() {
+ *     var delta = clock.getDelta();
+ *     mesh.rotateY(delta);
+ *     renderer.render(scene, camera);
+ * }
+ * 
+ * // ヘルパーの使用例
+ * var axes = new Threepp.AxesHelper(5);
+ * scene.add(axes);
+ * 
+ * var grid = new Threepp.GridHelper(10, 10);
+ * scene.add(grid);
+ * 
+ * // テクスチャの読み込み例
+ * var loader = new Threepp.TextureLoader();
+ * var texture = loader.load("texture.png");
+ * 
+ * // シェーダーマテリアルの例
+ * var shaderMat = new Threepp.ShaderMaterial();
+ * shaderMat.vertexShader = "...";
+ * shaderMat.fragmentShader = "...";
+ * 
+ * // LODの使用例
+ * var lod = new Threepp.LOD();
+ * var highDetail = new Threepp.Mesh(new Threepp.SphereGeometry(1, 64, 64), material);
+ * var medDetail = new Threepp.Mesh(new Threepp.SphereGeometry(1, 32, 32), material);
+ * var lowDetail = new Threepp.Mesh(new Threepp.SphereGeometry(1, 16, 16), material);
+ * lod.addLevel(highDetail, 0);
+ * lod.addLevel(medDetail, 50);
+ * lod.addLevel(lowDetail, 100);
+ * scene.add(lod);
+ * 
+ * // CatmullRomCurve3 の使用例
+ * var points = [
+ *     [0, 0, 0],
+ *     [1, 1, 0],
+ *     [2, 0, 0],
+ *     [3, 1, 0]
+ * ];
+ * var curve = new Threepp.CatmullRomCurve3(points, false);
+ * var point = curve.getPoint(0.5);  // 曲線の中間点を取得
+ * 
+ * // LatheGeometry の使用例（花瓶のような形状）
+ * var lathePoints = [
+ *     [0.0, 0.0],
+ *     [0.5, 0.0],
+ *     [0.5, 0.5],
+ *     [0.3, 1.0],
+ *     [0.4, 1.5],
+ *     [0.2, 2.0],
+ *     [0.0, 2.0]
+ * ];
+ * var vaseGeometry = new Threepp.LatheGeometry(lathePoints, 32);
+ * var vaseMesh = new Threepp.Mesh(vaseGeometry, material);
+ * scene.add(vaseMesh);
+ */
