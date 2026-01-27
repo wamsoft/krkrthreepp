@@ -1,0 +1,4 @@
+[submodule "threepp"]
+	path = threepp
+	url = https://github.com/wtnbgo/threepp.git
+	branch = work_sdl3
