@@ -4,18 +4,12 @@ cmake_minimum_required(VERSION 3.16)
 add_compile_options("$<$<AND:$<C_COMPILER_ID:MSVC>,$<COMPILE_LANGUAGE:C>>:/utf-8>")
 add_compile_options("$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<COMPILE_LANGUAGE:CXX>>:/utf-8>")
 add_compile_options("$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<COMPILE_LANGUAGE:CXX>>:/Zc:__cplusplus>")
+add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/bigobj>")
 
-# MSVC static runtime
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+project(krkr_threepp)
 
-set(PROJECT_NAME krkrthreepp)
-set(PROJECT_VERSION 1.00)
-
-project(${PROJECT_NAME} VERSION ${PROJECT_VERSION})
-
-if(NOT TARGET ncbind)
-add_subdirectory(../ncbind ${CMAKE_CURRENT_BINARY_DIR}/ncbind)
-endif()
+set(TPSTUB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../tp_stub CACHE PATH "Path to tp_stub directory")
+include(${TPSTUB_DIR}/krkrz.cmake)
 
 option(THREEPP_BUILD_EXAMPLES "Build examples" OFF)
 option(THREEPP_BUILD_TESTS "Build test suite" OFF)
@@ -25,11 +19,10 @@ option(THREEPP_WITH_GENERIC "Build with Generic frontend (user-provided interfac
 
 add_subdirectory(threepp)
 
-add_library(${PROJECT_NAME} SHARED
-	main.cpp
-)
-
-target_link_libraries(${PROJECT_NAME} PUBLIC
-    ncbind
-    threepp
+krkrz_plugin(richtext
+    NCBIND
+    SOURCES
+        main.cpp
+    LIBRARIES
+        threepp
 )

@@ -1,3 +1,8 @@
+// Windowsのmin/maxマクロを無効化（threeppのstd::min/maxとの衝突を防ぐ）
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include "ncbind.hpp"
 #include "LayerExBase.hpp"
 #include <vector>
@@ -179,6 +184,63 @@ bool IsArray(const tTJSVariant &var)
 	return false;
 }
 
+// T& 戻り値メソッドを void に変換するプロキシマクロ（値型クラス用）
+// NCB_METHOD_VOID0(name) - 引数なしメソッド
+// NCB_METHOD_VOID1(name, T1) - 引数1つ
+// etc.
+#define NCB_METHOD_VOID0(name) \
+	struct VoidProxy_ ## name { static void Proxy(Class *inst) { inst->name(); } }; \
+	NCB_METHOD_PROXY(name, VoidProxy_ ## name::Proxy)
+
+#define NCB_METHOD_VOID1(name, T1) \
+	struct VoidProxy_ ## name { static void Proxy(Class *inst, T1 a1) { inst->name(a1); } }; \
+	NCB_METHOD_PROXY(name, VoidProxy_ ## name::Proxy)
+
+#define NCB_METHOD_VOID2(name, T1, T2) \
+	struct VoidProxy_ ## name { static void Proxy(Class *inst, T1 a1, T2 a2) { inst->name(a1, a2); } }; \
+	NCB_METHOD_PROXY(name, VoidProxy_ ## name::Proxy)
+
+#define NCB_METHOD_VOID3(name, T1, T2, T3) \
+	struct VoidProxy_ ## name { static void Proxy(Class *inst, T1 a1, T2 a2, T3 a3) { inst->name(a1, a2, a3); } }; \
+	NCB_METHOD_PROXY(name, VoidProxy_ ## name::Proxy)
+
+#define NCB_METHOD_VOID4(name, T1, T2, T3, T4) \
+	struct VoidProxy_ ## name { static void Proxy(Class *inst, T1 a1, T2 a2, T3 a3, T4 a4) { inst->name(a1, a2, a3, a4); } }; \
+	NCB_METHOD_PROXY(name, VoidProxy_ ## name::Proxy)
+
+#define NCB_METHOD_VOID5(name, T1, T2, T3, T4, T5) \
+	struct VoidProxy_ ## name { static void Proxy(Class *inst, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5) { inst->name(a1, a2, a3, a4, a5); } }; \
+	NCB_METHOD_PROXY(name, VoidProxy_ ## name::Proxy)
+
+#define NCB_METHOD_VOID6(name, T1, T2, T3, T4, T5, T6) \
+	struct VoidProxy_ ## name { static void Proxy(Class *inst, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6) { inst->name(a1, a2, a3, a4, a5, a6); } }; \
+	NCB_METHOD_PROXY(name, VoidProxy_ ## name::Proxy)
+
+#define NCB_METHOD_VOID9(name, T1, T2, T3, T4, T5, T6, T7, T8, T9) \
+	struct VoidProxy_ ## name { static void Proxy(Class *inst, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6, T7 a7, T8 a8, T9 a9) { inst->name(a1, a2, a3, a4, a5, a6, a7, a8, a9); } }; \
+	NCB_METHOD_PROXY(name, VoidProxy_ ## name::Proxy)
+
+#define NCB_METHOD_VOID16(name, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16) \
+	struct VoidProxy_ ## name { static void Proxy(Class *inst, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6, T7 a7, T8 a8, T9 a9, T10 a10, T11 a11, T12 a12, T13 a13, T14 a14, T15 a15, T16 a16) { inst->name(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16); } }; \
+	NCB_METHOD_PROXY(name, VoidProxy_ ## name::Proxy)
+
+// ThreeWrapper 用の T& 戻り値メソッド void 変換マクロ
+#define NCB_THREE_METHOD_VOID0(name) \
+	struct ThreeVoidProxy_ ## name { static void Proxy(ThreeWrapper<ThreeClass> *inst) { if (inst && inst->getObject()) inst->getObject()->name(); } }; \
+	NCB_METHOD_PROXY(name, ThreeVoidProxy_ ## name::Proxy)
+
+#define NCB_THREE_METHOD_VOID1(name, T1) \
+	struct ThreeVoidProxy_ ## name { static void Proxy(ThreeWrapper<ThreeClass> *inst, T1 a1) { if (inst && inst->getObject()) inst->getObject()->name(a1); } }; \
+	NCB_METHOD_PROXY(name, ThreeVoidProxy_ ## name::Proxy)
+
+#define NCB_THREE_METHOD_VOID2(name, T1, T2) \
+	struct ThreeVoidProxy_ ## name { static void Proxy(ThreeWrapper<ThreeClass> *inst, T1 a1, T2 a2) { if (inst && inst->getObject()) inst->getObject()->name(a1, a2); } }; \
+	NCB_METHOD_PROXY(name, ThreeVoidProxy_ ## name::Proxy)
+
+#define NCB_THREE_METHOD_VOID3(name, T1, T2, T3) \
+	struct ThreeVoidProxy_ ## name { static void Proxy(ThreeWrapper<ThreeClass> *inst, T1 a1, T2 a2, T3 a3) { if (inst && inst->getObject()) inst->getObject()->name(a1, a2, a3); } }; \
+	NCB_METHOD_PROXY(name, ThreeVoidProxy_ ## name::Proxy)
+
 // メンバ変数をプロパティとして登録
 #define NCB_MEMBER_PROPERTY(name, type, membername) \
 	struct AutoProp_ ## name { \
@@ -202,6 +264,29 @@ bool IsArray(const tTJSVariant &var)
 // 型コンバータ登録
 // ------------------------------------------------------
 
+// std::string ←→ tTJSVariant コンバータ
+struct StdStringConvertor {
+	void operator ()(tTJSVariant &dst, const std::string &src) {
+		std::wstring ws(src.begin(), src.end());
+		dst = ttstr(ws.c_str());
+	}
+	void operator ()(std::string &dst, const tTJSVariant &src) {
+		if (src.Type() == tvtString) {
+			const tjs_char *ws = src.GetString();
+			std::string s;
+			while (*ws) {
+				if (*ws < 128) s += (char)*ws; else s += '?';
+				ws++;
+			}
+			dst = s;
+		} else {
+			dst.clear();
+		}
+	}
+};
+NCB_SET_CONVERTOR(std::string, StdStringConvertor);
+
+NCB_TYPECONV_CAST_INTEGER(size_t);
 NCB_TYPECONV_CAST_INTEGER(Side);
 NCB_TYPECONV_CAST_INTEGER(Blending);
 NCB_TYPECONV_CAST_INTEGER(BlendEquation);
@@ -222,6 +307,7 @@ NCB_TYPECONV_CAST_INTEGER(NormalMapType);
 NCB_TYPECONV_CAST_INTEGER(StencilOp);
 NCB_TYPECONV_CAST_INTEGER(StencilFunc);
 NCB_TYPECONV_CAST_INTEGER(DrawUsage);
+NCB_TYPECONV_CAST_INTEGER(Euler::RotationOrders);
 
 // ------------------------------------------------------- Vector2
 template <class T>
@@ -257,28 +343,28 @@ NCB_REGISTER_SUBCLASS_DELAY(Vector2) {
 	NCB_CONSTRUCTOR((float, float));
 	NCB_MEMBER_PROPERTY(x, float, x);
 	NCB_MEMBER_PROPERTY(y, float, y);
-	NCB_METHOD(set);
-	NCB_METHOD(setScalar);
-	NCB_METHOD(copy);
-	NCB_METHOD(add);
-	NCB_METHOD(addScalar);
-	NCB_METHOD(sub);
-	NCB_METHOD(subScalar);
-	NCB_METHOD(multiplyScalar);
-	NCB_METHOD(divideScalar);
-	NCB_METHOD(negate);
+	NCB_METHOD_VOID2(set, float, float);
+	NCB_METHOD_VOID1(setScalar, float);
+	NCB_METHOD_VOID1(copy, const Vector2&);
+	NCB_METHOD_VOID1(add, const Vector2&);
+	NCB_METHOD_VOID1(addScalar, float);
+	NCB_METHOD_VOID1(sub, const Vector2&);
+	NCB_METHOD_VOID1(subScalar, float);
+	NCB_METHOD_VOID1(multiplyScalar, float);
+	NCB_METHOD_VOID1(divideScalar, float);
+	NCB_METHOD_VOID0(negate);
 	NCB_METHOD(dot);
 	NCB_METHOD(cross);
 	NCB_METHOD(lengthSq);
 	NCB_METHOD(length);
-	NCB_METHOD(normalize);
+	NCB_METHOD_VOID0(normalize);
 	NCB_METHOD(distanceTo);
 	NCB_METHOD(distanceToSquared);
-	NCB_METHOD(lerp);
+	NCB_METHOD_VOID2(lerp, const Vector2&, float);
 	NCB_METHOD(equals);
-	NCB_METHOD(floor);
-	NCB_METHOD(ceil);
-	NCB_METHOD(round);
+	NCB_METHOD_VOID0(floor);
+	NCB_METHOD_VOID0(ceil);
+	NCB_METHOD_VOID0(round);
 };
 
 // ------------------------------------------------------- Vector3
@@ -318,58 +404,58 @@ NCB_REGISTER_SUBCLASS_DELAY(Vector3) {
 	NCB_MEMBER_PROPERTY(x, float, x);
 	NCB_MEMBER_PROPERTY(y, float, y);
 	NCB_MEMBER_PROPERTY(z, float, z);
-	NCB_METHOD(set);
-	NCB_METHOD(setScalar);
-	NCB_METHOD(setX);
-	NCB_METHOD(setY);
-	NCB_METHOD(setZ);
-	NCB_METHOD(copy);
-	NCB_METHOD(add);
-	NCB_METHOD(addScalar);
-	NCB_METHOD(addVectors);
-	NCB_METHOD(addScaledVector);
-	NCB_METHOD(sub);
-	NCB_METHOD(subScalar);
-	NCB_METHOD(subVectors);
-	NCB_METHOD(multiply);
-	NCB_METHOD(multiplyScalar);
-	NCB_METHOD(multiplyVectors);
-	NCB_METHOD(applyAxisAngle);
-	NCB_METHOD(applyEuler);
-	NCB_METHOD(applyMatrix3);
-	NCB_METHOD(applyMatrix4);
-	NCB_METHOD(applyQuaternion);
-	NCB_METHOD(project);
-	NCB_METHOD(unproject);
-	NCB_METHOD(transformDirection);
-	NCB_METHOD(divide);
-	NCB_METHOD(divideScalar);
-	NCB_METHOD(min);
-	NCB_METHOD(max);
-	NCB_METHOD(clamp);
-	NCB_METHOD(clampScalar);
-	NCB_METHOD(clampLength);
-	NCB_METHOD(floor);
-	NCB_METHOD(ceil);
-	NCB_METHOD(round);
-	NCB_METHOD(negate);
+	NCB_METHOD_VOID3(set, float, float, float);
+	NCB_METHOD_VOID1(setScalar, float);
+	NCB_METHOD_VOID1(setX, float);
+	NCB_METHOD_VOID1(setY, float);
+	NCB_METHOD_VOID1(setZ, float);
+	NCB_METHOD_VOID1(copy, const Vector3&);
+	NCB_METHOD_VOID1(add, const Vector3&);
+	NCB_METHOD_VOID1(addScalar, float);
+	NCB_METHOD_VOID2(addVectors, const Vector3&, const Vector3&);
+	NCB_METHOD_VOID2(addScaledVector, const Vector3&, float);
+	NCB_METHOD_VOID1(sub, const Vector3&);
+	NCB_METHOD_VOID1(subScalar, float);
+	NCB_METHOD_VOID2(subVectors, const Vector3&, const Vector3&);
+	NCB_METHOD_VOID1(multiply, const Vector3&);
+	NCB_METHOD_VOID1(multiplyScalar, float);
+	NCB_METHOD_VOID2(multiplyVectors, const Vector3&, const Vector3&);
+	NCB_METHOD_VOID2(applyAxisAngle, const Vector3&, float);
+	NCB_METHOD_VOID1(applyEuler, const Euler&);
+	NCB_METHOD_VOID1(applyMatrix3, const Matrix3&);
+	NCB_METHOD_VOID1(applyMatrix4, const Matrix4&);
+	NCB_METHOD_VOID1(applyQuaternion, const Quaternion&);
+	NCB_METHOD_VOID1(project, const Camera&);
+	NCB_METHOD_VOID1(unproject, const Camera&);
+	NCB_METHOD_VOID1(transformDirection, const Matrix4&);
+	NCB_METHOD_VOID1(divide, const Vector3&);
+	NCB_METHOD_VOID1(divideScalar, float);
+	NCB_METHOD_VOID1(min, const Vector3&);
+	NCB_METHOD_VOID1(max, const Vector3&);
+	NCB_METHOD_VOID2(clamp, const Vector3&, const Vector3&);
+	NCB_METHOD_VOID2(clampScalar, float, float);
+	NCB_METHOD_VOID2(clampLength, float, float);
+	NCB_METHOD_VOID0(floor);
+	NCB_METHOD_VOID0(ceil);
+	NCB_METHOD_VOID0(round);
+	NCB_METHOD_VOID0(negate);
 	NCB_METHOD(dot);
 	NCB_METHOD(lengthSq);
 	NCB_METHOD(length);
 	NCB_METHOD(manhattanLength);
-	NCB_METHOD(normalize);
-	NCB_METHOD(setLength);
-	NCB_METHOD(lerp);
-	NCB_METHOD(lerpVectors);
-	NCB_METHOD(cross);
-	NCB_METHOD(crossVectors);
-	NCB_METHOD(reflect);
+	NCB_METHOD_VOID0(normalize);
+	NCB_METHOD_VOID1(setLength, float);
+	NCB_METHOD_VOID2(lerp, const Vector3&, float);
+	NCB_METHOD_VOID3(lerpVectors, const Vector3&, const Vector3&, float);
+	NCB_METHOD_VOID1(cross, const Vector3&);
+	NCB_METHOD_VOID2(crossVectors, const Vector3&, const Vector3&);
+	NCB_METHOD_VOID1(reflect, const Vector3&);
 	NCB_METHOD(angleTo);
 	NCB_METHOD(distanceTo);
 	NCB_METHOD(distanceToSquared);
 	NCB_METHOD(manhattanDistanceTo);
-	NCB_METHOD(setFromMatrixPosition);
-	NCB_METHOD(setFromMatrixScale);
+	NCB_METHOD_VOID1(setFromMatrixPosition, const Matrix4&);
+	NCB_METHOD_VOID1(setFromMatrixScale, const Matrix4&);
 	NCB_METHOD(equals);
 };
 
@@ -412,21 +498,21 @@ NCB_REGISTER_SUBCLASS_DELAY(Color) {
 	NCB_MEMBER_PROPERTY(r, float, r);
 	NCB_MEMBER_PROPERTY(g, float, g);
 	NCB_MEMBER_PROPERTY(b, float, b);
-	NCB_METHOD(setScalar);
-	NCB_METHOD(setRGB);
-	NCB_METHOD(setHSL);
-	NCB_METHOD(setHex);
-	NCB_METHOD(copy);
-	NCB_METHOD(add);
-	NCB_METHOD(addColors);
-	NCB_METHOD(addScalar);
-	NCB_METHOD(sub);
-	NCB_METHOD(multiply);
-	NCB_METHOD(multiplyScalar);
-	NCB_METHOD(lerp);
-	NCB_METHOD(lerpColors);
-	NCB_METHOD(lerpHSL);
-	NCB_METHOD(randomize);
+	NCB_METHOD_VOID1(setScalar, float);
+	NCB_METHOD_VOID3(setRGB, float, float, float);
+	NCB_METHOD_VOID3(setHSL, float, float, float);
+	NCB_METHOD_VOID1(setHex, unsigned int);
+	NCB_METHOD_VOID1(copy, const Color&);
+	NCB_METHOD_VOID1(add, const Color&);
+	NCB_METHOD_VOID2(addColors, const Color&, const Color&);
+	NCB_METHOD_VOID1(addScalar, float);
+	NCB_METHOD_VOID1(sub, const Color&);
+	NCB_METHOD_VOID1(multiply, const Color&);
+	NCB_METHOD_VOID1(multiplyScalar, float);
+	NCB_METHOD_VOID2(lerp, const Color&, float);
+	NCB_METHOD_VOID3(lerpColors, const Color&, const Color&, float);
+	NCB_METHOD_VOID2(lerpHSL, const Color&, float);
+	NCB_METHOD_VOID0(randomize);
 	NCB_METHOD(getHex);
 	NCB_METHOD(getHexString);
 	NCB_METHOD(getStyle);
@@ -434,283 +520,340 @@ NCB_REGISTER_SUBCLASS_DELAY(Color) {
 };
 
 // ------------------------------------------------------- Euler
-NCB_REGISTER_SUBCLASS_DELAY(Euler) {
+
+// Euler proxy functions (avoid std::optional params and Euler& return)
+static void Euler_set(Euler *self, float x, float y, float z) { self->set(x, y, z); }
+static void Euler_setFromRotationMatrix(Euler *self, const Matrix4& m) { self->setFromRotationMatrix(m); }
+static void Euler_setFromQuaternion(Euler *self, const Quaternion& q) { self->setFromQuaternion(q); }
+static void Euler_setFromVector3(Euler *self, const Vector3& v) { self->setFromVector3(v); }
+
+NCB_REGISTER_SUBCLASS(Euler) {
 	NCB_CONSTRUCTOR((float, float, float));
 	NCB_MEMBER_PROPERTY_RO(x, float, x);
 	NCB_MEMBER_PROPERTY_RO(y, float, y);
 	NCB_MEMBER_PROPERTY_RO(z, float, z);
 	NCB_METHOD(getOrder);
 	NCB_METHOD(setOrder);
-	NCB_METHOD(set);
-	NCB_METHOD(copy);
-	NCB_METHOD(setFromRotationMatrix);
-	NCB_METHOD(setFromQuaternion);
-	NCB_METHOD(setFromVector3);
+	NCB_METHOD_PROXY(set, Euler_set);
+	NCB_METHOD_VOID1(copy, const Euler&);
+	NCB_METHOD_PROXY(setFromRotationMatrix, Euler_setFromRotationMatrix);
+	NCB_METHOD_PROXY(setFromQuaternion, Euler_setFromQuaternion);
+	NCB_METHOD_PROXY(setFromVector3, Euler_setFromVector3);
 	NCB_METHOD(equals);
 };
 
 // ------------------------------------------------------- Quaternion
-NCB_REGISTER_SUBCLASS_DELAY(Quaternion) {
+NCB_REGISTER_SUBCLASS(Quaternion) {
 	NCB_CONSTRUCTOR((float, float, float, float));
 	NCB_MEMBER_PROPERTY_RO(x, float, x);
 	NCB_MEMBER_PROPERTY_RO(y, float, y);
 	NCB_MEMBER_PROPERTY_RO(z, float, z);
 	NCB_MEMBER_PROPERTY_RO(w, float, w);
-	NCB_METHOD(set);
-	NCB_METHOD(copy);
-	NCB_METHOD(setFromEuler);
-	NCB_METHOD(setFromAxisAngle);
-	NCB_METHOD(setFromRotationMatrix);
-	NCB_METHOD(setFromUnitVectors);
+	NCB_METHOD_VOID4(set, float, float, float, float);
+	NCB_METHOD_VOID1(copy, const Quaternion&);
+	NCB_METHOD_VOID2(setFromEuler, const Euler&, bool);
+	NCB_METHOD_VOID2(setFromAxisAngle, const Vector3&, float);
+	NCB_METHOD_VOID1(setFromRotationMatrix, const Matrix4&);
+	NCB_METHOD_VOID2(setFromUnitVectors, const Vector3&, const Vector3&);
 	NCB_METHOD(angleTo);
-	NCB_METHOD(rotateTowards);
-	NCB_METHOD(identity);
-	NCB_METHOD(invert);
-	NCB_METHOD(conjugate);
+	NCB_METHOD_VOID2(rotateTowards, const Quaternion&, float);
+	NCB_METHOD_VOID0(identity);
+	NCB_METHOD_VOID0(invert);
+	NCB_METHOD_VOID0(conjugate);
 	NCB_METHOD(dot);
 	NCB_METHOD(lengthSq);
 	NCB_METHOD(length);
-	NCB_METHOD(normalize);
-	NCB_METHOD(multiply);
-	NCB_METHOD(premultiply);
-	NCB_METHOD(multiplyQuaternions);
-	NCB_METHOD(slerp);
-	NCB_METHOD(slerpQuaternions);
+	NCB_METHOD_VOID0(normalize);
+	NCB_METHOD_VOID1(multiply, const Quaternion&);
+	NCB_METHOD_VOID1(premultiply, const Quaternion&);
+	NCB_METHOD_VOID2(multiplyQuaternions, const Quaternion&, const Quaternion&);
+	NCB_METHOD_VOID2(slerp, const Quaternion&, float);
+	NCB_METHOD_VOID3(slerpQuaternions, const Quaternion&, const Quaternion&, float);
 	NCB_METHOD(equals);
 };
 
 // ------------------------------------------------------- Matrix4
-NCB_REGISTER_SUBCLASS_DELAY(Matrix4) {
+// Matrix4 proxy for setPosition(const Vector3&) overload
+static void Matrix4_setPosition(Matrix4 *self, const Vector3& v) { self->setPosition(v); }
+// Matrix4 proxy for makeTranslation(const Vector3&) overload
+static void Matrix4_makeTranslation(Matrix4 *self, const Vector3& v) { self->makeTranslation(v); }
+
+NCB_REGISTER_SUBCLASS(Matrix4) {
 	NCB_CONSTRUCTOR(());
-	NCB_METHOD(set);
-	NCB_METHOD(identity);
-	NCB_METHOD(copy);
-	NCB_METHOD(copyPosition);
-	NCB_METHOD(extractBasis);
-	NCB_METHOD(makeBasis);
-	NCB_METHOD(extractRotation);
-	NCB_METHOD(makeRotationFromEuler);
-	NCB_METHOD(makeRotationFromQuaternion);
-	NCB_METHOD(lookAt);
-	NCB_METHOD(multiply);
-	NCB_METHOD(premultiply);
-	NCB_METHOD(multiplyMatrices);
-	NCB_METHOD(multiplyScalar);
+	NCB_METHOD_VOID16(set, float, float, float, float, float, float, float, float, float, float, float, float, float, float, float, float);
+	NCB_METHOD_VOID0(identity);
+	NCB_METHOD_VOID1(copy, const Matrix4&);
+	NCB_METHOD_VOID1(copyPosition, const Matrix4&);
+	NCB_METHOD_VOID3(extractBasis, Vector3&, Vector3&, Vector3&);
+	NCB_METHOD_VOID3(makeBasis, const Vector3&, const Vector3&, const Vector3&);
+	NCB_METHOD_VOID1(extractRotation, const Matrix4&);
+	NCB_METHOD_VOID1(makeRotationFromEuler, const Euler&);
+	NCB_METHOD_VOID1(makeRotationFromQuaternion, const Quaternion&);
+	NCB_METHOD_VOID3(lookAt, const Vector3&, const Vector3&, const Vector3&);
+	NCB_METHOD_VOID1(multiply, const Matrix4&);
+	NCB_METHOD_VOID1(premultiply, const Matrix4&);
+	NCB_METHOD_VOID2(multiplyMatrices, const Matrix4&, const Matrix4&);
+	NCB_METHOD_VOID1(multiplyScalar, float);
 	NCB_METHOD(determinant);
-	NCB_METHOD(transpose);
-	NCB_METHOD_DETAIL(setPosition, Class, Matrix4&, Class::setPosition, (const Vector3&));
-	NCB_METHOD(invert);
-	NCB_METHOD(scale);
+	NCB_METHOD_VOID0(transpose);
+	NCB_METHOD_PROXY(setPosition, Matrix4_setPosition);
+	NCB_METHOD_VOID0(invert);
+	NCB_METHOD_VOID1(scale, const Vector3&);
 	NCB_METHOD(getMaxScaleOnAxis);
-	NCB_METHOD_DETAIL(makeTranslation, Class, Matrix4&, Class::makeTranslation, (const Vector3&));
-	NCB_METHOD(makeRotationX);
-	NCB_METHOD(makeRotationY);
-	NCB_METHOD(makeRotationZ);
-	NCB_METHOD(makeRotationAxis);
-	NCB_METHOD(makeScale);
-	NCB_METHOD(makeShear);
-	NCB_METHOD(compose);
+	NCB_METHOD_PROXY(makeTranslation, Matrix4_makeTranslation);
+	NCB_METHOD_VOID1(makeRotationX, float);
+	NCB_METHOD_VOID1(makeRotationY, float);
+	NCB_METHOD_VOID1(makeRotationZ, float);
+	NCB_METHOD_VOID2(makeRotationAxis, const Vector3&, float);
+	NCB_METHOD_VOID3(makeScale, float, float, float);
+	NCB_METHOD_VOID6(makeShear, float, float, float, float, float, float);
+	NCB_METHOD_VOID3(compose, const Vector3&, const Quaternion&, const Vector3&);
 	NCB_METHOD(decompose);
-	NCB_METHOD(makePerspective);
-	NCB_METHOD(makeOrthographic);
+	NCB_METHOD_VOID6(makePerspective, float, float, float, float, float, float);
+	NCB_METHOD_VOID6(makeOrthographic, float, float, float, float, float, float);
 	NCB_METHOD(equals);
 };
 
 // ------------------------------------------------------- Matrix3
-NCB_REGISTER_SUBCLASS_DELAY(Matrix3) {
+NCB_REGISTER_SUBCLASS(Matrix3) {
 	NCB_CONSTRUCTOR(());
-	NCB_METHOD(set);
-	NCB_METHOD(identity);
-	NCB_METHOD(copy);
-	NCB_METHOD(setFromMatrix4);
-	NCB_METHOD(multiply);
-	NCB_METHOD(premultiply);
-	NCB_METHOD(multiplyMatrices);
-	NCB_METHOD(multiplyScalar);
+	NCB_METHOD_VOID9(set, float, float, float, float, float, float, float, float, float);
+	NCB_METHOD_VOID0(identity);
+	NCB_METHOD_VOID1(copy, const Matrix3&);
+	NCB_METHOD_VOID1(setFromMatrix4, const Matrix4&);
+	NCB_METHOD_VOID1(multiply, const Matrix3&);
+	NCB_METHOD_VOID1(premultiply, const Matrix3&);
+	NCB_METHOD_VOID2(multiplyMatrices, const Matrix3&, const Matrix3&);
+	NCB_METHOD_VOID1(multiplyScalar, float);
 	NCB_METHOD(determinant);
-	NCB_METHOD(invert);
-	NCB_METHOD(transpose);
-	NCB_METHOD(getNormalMatrix);
-	NCB_METHOD(scale);
-	NCB_METHOD(rotate);
-	NCB_METHOD(translate);
+	NCB_METHOD_VOID0(invert);
+	NCB_METHOD_VOID0(transpose);
+	NCB_METHOD_VOID1(getNormalMatrix, const Matrix4&);
+	NCB_METHOD_VOID2(scale, float, float);
+	NCB_METHOD_VOID1(rotate, float);
+	NCB_METHOD_VOID2(translate, float, float);
 	NCB_METHOD(equals);
 };
 
 // ------------------------------------------------------- Box3
-NCB_REGISTER_SUBCLASS_DELAY(Box3) {
+
+static Vector3 Box3_getCenter(Box3 *self) { return self->getCenter(); }
+static Vector3 Box3_getSize(Box3 *self) { return self->getSize(); }
+
+static Vector3 Box3_getMin(Box3 *self) { return self->min(); }
+static Vector3 Box3_getMax(Box3 *self) { return self->max(); }
+
+NCB_REGISTER_SUBCLASS(Box3) {
 	NCB_CONSTRUCTOR((const Vector3&, const Vector3&));
-	NCB_PROPERTY_RO(min, min);
-	NCB_PROPERTY_RO(max, max);
-	NCB_METHOD_DETAIL(set, Class, Box3&, Class::set, (const Vector3&, const Vector3&));
+	Property(TJS_W("min"), &Box3_getMin, (int)0, Proxy);
+	Property(TJS_W("max"), &Box3_getMax, (int)0, Proxy);
+	NCB_METHOD_VOID2(set, const Vector3&, const Vector3&);
 	NCB_METHOD(clone);
-	NCB_METHOD(copy);
-	NCB_METHOD(makeEmpty);
+	NCB_METHOD_VOID1(copy, const Box3&);
+	NCB_METHOD_VOID0(makeEmpty);
 	NCB_METHOD(isEmpty);
-	NCB_METHOD_DETAIL(getCenter, Class, Vector3, Class::getCenter, () const);
-	NCB_METHOD_DETAIL(getSize, Class, Vector3, Class::getSize, () const);
-	NCB_METHOD(expandByPoint);
-	NCB_METHOD(expandByVector);
-	NCB_METHOD(expandByScalar);
+	NCB_METHOD_PROXY(getCenter, Box3_getCenter);
+	NCB_METHOD_PROXY(getSize, Box3_getSize);
+	NCB_METHOD_VOID1(expandByPoint, const Vector3&);
+	NCB_METHOD_VOID1(expandByVector, const Vector3&);
+	NCB_METHOD_VOID1(expandByScalar, float);
 	NCB_METHOD(containsPoint);
 	NCB_METHOD(containsBox);
 	NCB_METHOD(intersectsBox);
 	NCB_METHOD(intersectsSphere);
 	NCB_METHOD(intersectsPlane);
 	NCB_METHOD(distanceToPoint);
-	NCB_METHOD(intersect);
-	NCB_METHOD(union_);
-	NCB_METHOD(applyMatrix4);
-	NCB_METHOD(translate);
+	NCB_METHOD_VOID1(intersect, const Box3&);
+	NCB_METHOD_VOID1(union_, const Box3&);
+	NCB_METHOD_VOID1(applyMatrix4, const Matrix4&);
+	NCB_METHOD_VOID1(translate, const Vector3&);
 	NCB_METHOD(equals);
 };
 
 // ------------------------------------------------------- Sphere
-NCB_REGISTER_SUBCLASS_DELAY(Sphere) {
+NCB_REGISTER_SUBCLASS(Sphere) {
 	NCB_CONSTRUCTOR((const Vector3&, float));
-	NCB_METHOD(set);
+	NCB_METHOD_VOID2(set, const Vector3&, float);
 	NCB_METHOD(clone);
-	NCB_METHOD(copy);
+	NCB_METHOD_VOID1(copy, const Sphere&);
 	NCB_METHOD(isEmpty);
-	NCB_METHOD(makeEmpty);
+	NCB_METHOD_VOID0(makeEmpty);
 	NCB_METHOD(containsPoint);
 	NCB_METHOD(distanceToPoint);
 	NCB_METHOD(intersectsSphere);
 	NCB_METHOD(intersectsBox);
 	NCB_METHOD(intersectsPlane);
-	NCB_METHOD(expandByPoint);
-	NCB_METHOD(translate);
+	NCB_METHOD_VOID1(expandByPoint, const Vector3&);
+	NCB_METHOD_VOID1(translate, const Vector3&);
 	NCB_METHOD(equals);
 };
 
 // ------------------------------------------------------- Ray
-NCB_REGISTER_SUBCLASS_DELAY(Ray) {
+
+static Vector3 Ray_at(Ray *self, float t) { Vector3 target; self->at(t, target); return target; }
+static Vector3 Ray_closestPointToPoint(Ray *self, const Vector3& point) { Vector3 target; self->closestPointToPoint(point, target); return target; }
+static Vector3 Ray_intersectSphere(Ray *self, const Sphere& sphere) { Vector3 target; self->intersectSphere(sphere, target); return target; }
+static Vector3 Ray_intersectBox(Ray *self, const Box3& box) { Vector3 target; self->intersectBox(box, target); return target; }
+static Vector3 Ray_intersectPlane(Ray *self, const Plane& plane) { Vector3 target; self->intersectPlane(plane, target); return target; }
+
+NCB_REGISTER_SUBCLASS(Ray) {
 	NCB_CONSTRUCTOR((const Vector3&, const Vector3&));
-	NCB_METHOD(set);
+	NCB_METHOD_VOID2(set, const Vector3&, const Vector3&);
 	NCB_METHOD(clone);
-	NCB_METHOD(copy);
-	NCB_METHOD(at);
-	NCB_METHOD(lookAt);
-	NCB_METHOD(recast);
-	NCB_METHOD(closestPointToPoint);
+	NCB_METHOD_VOID1(copy, const Ray&);
+	NCB_METHOD_PROXY(at, Ray_at);
+	NCB_METHOD_VOID1(lookAt, const Vector3&);
+	NCB_METHOD_VOID1(recast, float);
+	NCB_METHOD_PROXY(closestPointToPoint, Ray_closestPointToPoint);
 	NCB_METHOD(distanceToPoint);
 	NCB_METHOD(distanceSqToPoint);
-	NCB_METHOD(distanceSqToSegment);
-	NCB_METHOD(intersectSphere);
+	NCB_METHOD_PROXY(intersectSphere, Ray_intersectSphere);
 	NCB_METHOD(intersectsSphere);
-	NCB_METHOD(intersectBox);
+	NCB_METHOD_PROXY(intersectBox, Ray_intersectBox);
 	NCB_METHOD(intersectsBox);
-	NCB_METHOD(intersectPlane);
+	NCB_METHOD_PROXY(intersectPlane, Ray_intersectPlane);
 	NCB_METHOD(intersectsPlane);
-	NCB_METHOD(applyMatrix4);
+	NCB_METHOD_VOID1(applyMatrix4, const Matrix4&);
 	NCB_METHOD(equals);
 };
 
 // ------------------------------------------------------- Plane
-NCB_REGISTER_SUBCLASS_DELAY(Plane) {
+
+static Vector3 Plane_coplanarPoint(Plane *self) { Vector3 t; self->coplanarPoint(t); return t; }
+
+// Plane proxy for applyMatrix4 overload
+static void Plane_applyMatrix4(Plane *self, const Matrix4& m) { self->applyMatrix4(m); }
+
+NCB_REGISTER_SUBCLASS(Plane) {
 	NCB_CONSTRUCTOR((const Vector3&, float));
-	NCB_METHOD(set);
-	NCB_METHOD(setComponents);
-	NCB_METHOD(setFromNormalAndCoplanarPoint);
-	NCB_METHOD(clone);
-	NCB_METHOD(copy);
-	NCB_METHOD(normalize);
-	NCB_METHOD(negate);
+	NCB_METHOD_VOID2(set, const Vector3&, float);
+	NCB_METHOD_VOID4(setComponents, float, float, float, float);
+	NCB_METHOD_VOID2(setFromNormalAndCoplanarPoint, const Vector3&, const Vector3&);
+	NCB_METHOD_VOID1(copy, const Plane&);
+	NCB_METHOD_VOID0(normalize);
+	NCB_METHOD_VOID0(negate);
 	NCB_METHOD(distanceToPoint);
 	NCB_METHOD(distanceToSphere);
-	NCB_METHOD(coplanarPoint);
-	NCB_METHOD(applyMatrix4);
-	NCB_METHOD(translate);
+	NCB_METHOD_PROXY(coplanarPoint, Plane_coplanarPoint);
+	NCB_METHOD_PROXY(applyMatrix4, Plane_applyMatrix4);
+	NCB_METHOD_VOID1(translate, const Vector3&);
 	NCB_METHOD(equals);
 };
 
 // ------------------------------------------------------- Box2
-NCB_REGISTER_SUBCLASS_DELAY(Box2) {
+
+static Vector2 Box2_getCenter(Box2 *self) { return self->getCenter(); }
+static Vector2 Box2_getSize(Box2 *self) { return self->getSize(); }
+static void Box2_union(Box2 *self, const Box2& box) { self->_union(box); }
+
+static Vector2 Box2_getMin(Box2 *self) { return self->getMin(); }
+static Vector2 Box2_getMax(Box2 *self) { return self->getMax(); }
+
+NCB_REGISTER_SUBCLASS(Box2) {
 	NCB_CONSTRUCTOR((const Vector2&, const Vector2&));
-	NCB_PROPERTY_RO(min, min);
-	NCB_PROPERTY_RO(max, max);
-	NCB_METHOD_DETAIL(set, Class, Box2&, Class::set, (const Vector2&, const Vector2&));
+	Property(TJS_W("min"), &Box2_getMin, (int)0, Proxy);
+	Property(TJS_W("max"), &Box2_getMax, (int)0, Proxy);
+	NCB_METHOD_VOID2(set, const Vector2&, const Vector2&);
 	NCB_METHOD(clone);
-	NCB_METHOD(copy);
-	NCB_METHOD(makeEmpty);
+	NCB_METHOD_VOID1(copy, const Box2&);
+	NCB_METHOD_VOID0(makeEmpty);
 	NCB_METHOD(isEmpty);
-	NCB_METHOD(expandByPoint);
-	NCB_METHOD(expandByVector);
-	NCB_METHOD(expandByScalar);
+	NCB_METHOD_PROXY(getCenter, Box2_getCenter);
+	NCB_METHOD_PROXY(getSize, Box2_getSize);
+	NCB_METHOD_VOID1(expandByPoint, const Vector2&);
+	NCB_METHOD_VOID1(expandByVector, const Vector2&);
+	NCB_METHOD_VOID1(expandByScalar, float);
 	NCB_METHOD(containsPoint);
 	NCB_METHOD(containsBox);
 	NCB_METHOD(intersectsBox);
 	NCB_METHOD(distanceToPoint);
-	NCB_METHOD(intersect);
-	NCB_METHOD(union_);
-	NCB_METHOD(translate);
+	NCB_METHOD_VOID1(intersect, const Box2&);
+	NCB_METHOD_PROXY(union_, Box2_union);
+	NCB_METHOD_VOID1(translate, const Vector2&);
 	NCB_METHOD(equals);
 };
 
 // ------------------------------------------------------- Line3
-NCB_REGISTER_SUBCLASS_DELAY(Line3) {
+
+static Vector3 Line3_getCenter(Line3 *self) { return self->getCenter(); }
+static Vector3 Line3_delta(Line3 *self) { return self->delta(); }
+static Vector3 Line3_at(Line3 *self, float t) { Vector3 target; self->at(t, target); return target; }
+static Vector3 Line3_closestPointToPoint(Line3 *self, const Vector3& point, bool clampToLine) {
+	Vector3 target;
+	self->closestPointToPoint(point, clampToLine, target);
+	return target;
+}
+
+static Vector3 Line3_getStart(Line3 *self) { return self->start(); }
+static Vector3 Line3_getEnd(Line3 *self) { return self->end(); }
+
+NCB_REGISTER_SUBCLASS(Line3) {
 	NCB_CONSTRUCTOR((const Vector3&, const Vector3&));
-	NCB_MEMBER_PROPERTY_RO(start, Vector3&, start);
-	NCB_MEMBER_PROPERTY_RO(end, Vector3&, end);
-	NCB_METHOD(set);
-	NCB_METHOD(clone);
-	NCB_METHOD(copy);
-	NCB_METHOD_DETAIL(getCenter, Class, Vector3, Class::getCenter, () const);
-	NCB_METHOD_DETAIL(delta, Class, Vector3, Class::delta, () const);
+	Property(TJS_W("start"), &Line3_getStart, (int)0, Proxy);
+	Property(TJS_W("end"), &Line3_getEnd, (int)0, Proxy);
+	NCB_METHOD_VOID2(set, const Vector3&, const Vector3&);
+	NCB_METHOD_VOID1(copy, const Line3&);
+	NCB_METHOD_PROXY(getCenter, Line3_getCenter);
+	NCB_METHOD_PROXY(delta, Line3_delta);
 	NCB_METHOD(distanceSq);
 	NCB_METHOD(distance);
-	NCB_METHOD(at);
-	NCB_METHOD_DETAIL(closestPointToPoint, Class, Vector3, Class::closestPointToPoint, (const Vector3&, bool) const);
+	NCB_METHOD_PROXY(at, Line3_at);
+	NCB_METHOD_PROXY(closestPointToPoint, Line3_closestPointToPoint);
 	NCB_METHOD(closestPointToPointParameter);
-	NCB_METHOD(applyMatrix4);
-	NCB_METHOD(equals);
+	NCB_METHOD_VOID1(applyMatrix4, const Matrix4&);
 };
 
 // ------------------------------------------------------- Triangle
-NCB_REGISTER_SUBCLASS_DELAY(Triangle) {
+
+static Vector3 Triangle_getMidpoint(Triangle *self) { Vector3 t; self->getMidpoint(t); return t; }
+static Vector3 Triangle_getNormal(Triangle *self) { Vector3 t; self->getNormal(t); return t; }
+static Vector3 Triangle_getBarycoord(Triangle *self, Vector3 point) { Vector3 t; self->getBarycoord(point, t); return t; }
+static Vector3 Triangle_closestPointToPoint(Triangle *self, const Vector3& p) { Vector3 t; self->closestPointToPoint(p, t); return t; }
+static bool Triangle_containsPoint(Triangle *self, const Vector3& point) { return self->containsPoint(point); }
+static bool Triangle_isFrontFacing(Triangle *self, const Vector3& dir) { return self->isFrontFacing(dir); }
+
+static Vector3 Triangle_getA(Triangle *self) { return self->a(); }
+static Vector3 Triangle_getB(Triangle *self) { return self->b(); }
+static Vector3 Triangle_getC(Triangle *self) { return self->c(); }
+
+NCB_REGISTER_SUBCLASS(Triangle) {
 	NCB_CONSTRUCTOR((const Vector3&, const Vector3&, const Vector3&));
-	NCB_MEMBER_PROPERTY_RO(a, Vector3&, a);
-	NCB_MEMBER_PROPERTY_RO(b, Vector3&, b);
-	NCB_MEMBER_PROPERTY_RO(c, Vector3&, c);
-	NCB_METHOD(set);
-	NCB_METHOD(clone);
-	NCB_METHOD(copy);
+	Property(TJS_W("a"), &Triangle_getA, (int)0, Proxy);
+	Property(TJS_W("b"), &Triangle_getB, (int)0, Proxy);
+	Property(TJS_W("c"), &Triangle_getC, (int)0, Proxy);
+	NCB_METHOD_VOID3(set, const Vector3&, const Vector3&, const Vector3&);
 	NCB_METHOD(getArea);
-	NCB_METHOD_DETAIL(getMidpoint, Class, Vector3, Class::getMidpoint, () const);
-	NCB_METHOD_DETAIL(getNormal, Class, Vector3, Class::getNormal, () const);
-	NCB_METHOD_DETAIL(getPlane, Class, Plane, Class::getPlane, () const);
-	NCB_METHOD_DETAIL(getBarycoord, Class, Vector3, Class::getBarycoord, (const Vector3&) const);
-	NCB_METHOD(containsPoint);
-	NCB_METHOD(isFrontFacing);
-	NCB_METHOD_DETAIL(closestPointToPoint, Class, Vector3, Class::closestPointToPoint, (const Vector3&) const);
-	NCB_METHOD(equals);
+	NCB_METHOD_PROXY(getMidpoint, Triangle_getMidpoint);
+	NCB_METHOD_PROXY(getNormal, Triangle_getNormal);
+	NCB_METHOD_PROXY(getBarycoord, Triangle_getBarycoord);
+	NCB_METHOD_PROXY(containsPoint, Triangle_containsPoint);
+	NCB_METHOD_PROXY(isFrontFacing, Triangle_isFrontFacing);
+	NCB_METHOD_PROXY(closestPointToPoint, Triangle_closestPointToPoint);
 };
 
 // ------------------------------------------------------- Spherical
-NCB_REGISTER_SUBCLASS_DELAY(Spherical) {
+NCB_REGISTER_SUBCLASS(Spherical) {
 	NCB_CONSTRUCTOR((float, float, float));
 	NCB_MEMBER_PROPERTY(radius, float, radius);
 	NCB_MEMBER_PROPERTY(phi, float, phi);
 	NCB_MEMBER_PROPERTY(theta, float, theta);
-	NCB_METHOD(set);
-	NCB_METHOD(clone);
-	NCB_METHOD(copy);
-	NCB_METHOD(makeSafe);
-	NCB_METHOD(setFromVector3);
-	NCB_METHOD(setFromCartesianCoords);
+	NCB_METHOD_VOID3(set, float, float, float);
+	NCB_METHOD_VOID1(copy, const Spherical&);
+	NCB_METHOD_VOID0(makeSafe);
+	NCB_METHOD_VOID1(setFromVector3, const Vector3&);
+	NCB_METHOD_VOID3(setFromCartesianCoords, float, float, float);
 };
 
 // ------------------------------------------------------- Cylindrical
-NCB_REGISTER_SUBCLASS_DELAY(Cylindrical) {
+NCB_REGISTER_SUBCLASS(Cylindrical) {
 	NCB_CONSTRUCTOR((float, float, float));
-	NCB_MEMBER_PROPERTY(radius, float, radius);
-	NCB_MEMBER_PROPERTY(theta, float, theta);
-	NCB_MEMBER_PROPERTY(y, float, y);
-	NCB_METHOD(set);
-	NCB_METHOD(clone);
-	NCB_METHOD(copy);
-	NCB_METHOD(setFromVector3);
-	NCB_METHOD(setFromCartesianCoords);
+	NCB_PROPERTY_RO(radius, radius);
+	NCB_PROPERTY_RO(theta, theta);
+	NCB_PROPERTY_RO(y, y);
+	NCB_METHOD_VOID3(set, float, float, float);
+	NCB_METHOD_VOID1(copy, const Cylindrical&);
+	NCB_METHOD_VOID1(setFromVector3, const Vector3&);
+	NCB_METHOD_VOID3(setFromCartesianCoords, float, float, float);
 };
 
 // ======================================================================
@@ -818,7 +961,7 @@ public:
 #define NCB_THREE_MCAST(ret, method, args) static_cast<ret (ThreeClass::*) args>(&ThreeClass::method)
 #define NCB_THREE_METHOD2(name, ret, method, args) Method(TJS_W(# name), NCB_THREE_MCAST(ret, method, args), Bridge<ThreeWrapper<ThreeClass>::BridgeFunctor>())
 #define NCB_THREE_PROPERTY(name, get, set)  Property(TJS_W(# name), &ThreeClass::get, &ThreeClass::set, Bridge<ThreeWrapper<ThreeClass>::BridgeFunctor>())
-#define NCB_THREE_PROPERTY_RO(name, get)  Property(TJS_W(# name), &ThreeClass::get, (int)0, Bridge<ThreeWrapper<ThreeClass>::BridgeFunctor>())
+#define NCB_THREE_PROPERTY_RO(name, get)  Property(TJS_W(# name), &ThreeClass::get, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()))
 #define NCB_THREE_MEMBER_PROPERTY(name, type, membername) \
 	struct AutoProp_ ## name { \
 		static void ProxySet(ThreeClass *inst, type value) { inst->membername = value; } \
@@ -827,7 +970,7 @@ public:
 #define NCB_THREE_MEMBER_PROPERTY_RO(name, type, membername) \
 	struct AutoProp_ ## name { \
 		static type ProxyGet(ThreeClass *inst) {      return inst->membername; } }; \
-	Property(TJS_W(#name), AutoProp_ ## name::ProxyGet, (int)0, Bridge<ThreeWrapper<ThreeClass>::BridgeFunctor>())
+	Property(TJS_W(#name), &AutoProp_ ## name::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()))
 
 // ======================================================================
 // Object3D (基底クラス)
@@ -863,35 +1006,94 @@ static void Object3DLookAt(ThreeWrapper<Object3D> *self, float x, float y, float
 	}
 }
 
+// Object3D proxy functions for methods returning Object3D& (chaining)
+static void Object3D_rotateX(ThreeWrapper<Object3D> *self, float angle) { if (self && self->getObject()) self->getObject()->rotateX(angle); }
+static void Object3D_rotateY(ThreeWrapper<Object3D> *self, float angle) { if (self && self->getObject()) self->getObject()->rotateY(angle); }
+static void Object3D_rotateZ(ThreeWrapper<Object3D> *self, float angle) { if (self && self->getObject()) self->getObject()->rotateZ(angle); }
+static void Object3D_rotateOnAxis(ThreeWrapper<Object3D> *self, const Vector3& axis, float angle) { if (self && self->getObject()) self->getObject()->rotateOnAxis(axis, angle); }
+static void Object3D_rotateOnWorldAxis(ThreeWrapper<Object3D> *self, const Vector3& axis, float angle) { if (self && self->getObject()) self->getObject()->rotateOnWorldAxis(axis, angle); }
+static void Object3D_translateX(ThreeWrapper<Object3D> *self, float distance) { if (self && self->getObject()) self->getObject()->translateX(distance); }
+static void Object3D_translateY(ThreeWrapper<Object3D> *self, float distance) { if (self && self->getObject()) self->getObject()->translateY(distance); }
+static void Object3D_translateZ(ThreeWrapper<Object3D> *self, float distance) { if (self && self->getObject()) self->getObject()->translateZ(distance); }
+static void Object3D_translateOnAxis(ThreeWrapper<Object3D> *self, const Vector3& axis, float distance) { if (self && self->getObject()) self->getObject()->translateOnAxis(axis, distance); }
+
+// Object3D のプロキシ取得関数
+static ttstr Object3DGetType(ThreeWrapper<Object3D> *self) {
+	if (self && self->getObject()) {
+		return ttstr(self->getObject()->type().c_str());
+	}
+	return TJS_W("");
+}
+
+static unsigned int Object3DGetId(ThreeWrapper<Object3D> *self) {
+	if (self && self->getObject()) {
+		return self->getObject()->id;
+	}
+	return 0;
+}
+
+static ttstr Object3DGetName(ThreeWrapper<Object3D> *self) {
+	if (self && self->getObject()) {
+		// std::string -> ttstr
+		const auto& s = self->getObject()->name;
+		std::wstring ws(s.begin(), s.end());
+		return ttstr(ws.c_str());
+	}
+	return TJS_W("");
+}
+
+static void Object3DSetName(ThreeWrapper<Object3D> *self, ttstr name) {
+	if (self && self->getObject()) {
+		const tjs_char* ws = name.c_str();
+		std::string s;
+		while (*ws) {
+			if (*ws < 128) {
+				s += (char)*ws;
+			} else {
+				s += '?';
+			}
+			ws++;
+		}
+		self->getObject()->name = s;
+	}
+}
+
+// position, rotation, quaternion, scale, up は参照型の戻り値で ncbind に対応できないため省略
+
 NCB_REGISTER_THREE_SUBCLASS(Object3D)
 Factory(Object3DFactory);
-NCB_THREE_PROPERTY_RO(type, type);
-NCB_THREE_PROPERTY_RO(id, id);
-NCB_THREE_MEMBER_PROPERTY(name, std::string, name);
+NCB_METHOD_PROXY(type, Object3DGetType);
+NCB_METHOD_PROXY(id, Object3DGetId);
+NCB_PROPERTY_PROXY(name, Object3DGetName, Object3DSetName);
 NCB_THREE_MEMBER_PROPERTY(visible, bool, visible);
 NCB_THREE_MEMBER_PROPERTY(castShadow, bool, castShadow);
 NCB_THREE_MEMBER_PROPERTY(receiveShadow, bool, receiveShadow);
 NCB_THREE_MEMBER_PROPERTY(frustumCulled, bool, frustumCulled);
 NCB_THREE_MEMBER_PROPERTY(renderOrder, unsigned int, renderOrder);
-NCB_THREE_MEMBER_PROPERTY_RO(position, Vector3&, position);
-NCB_THREE_MEMBER_PROPERTY_RO(rotation, Euler&, rotation);
-NCB_THREE_MEMBER_PROPERTY_RO(quaternion, Quaternion&, quaternion);
-NCB_THREE_MEMBER_PROPERTY_RO(scale, Vector3&, scale);
-NCB_THREE_MEMBER_PROPERTY_RO(up, Vector3&, up);
+struct AutoProp_position { static Vector3 ProxyGet(ThreeClass *inst) { return inst->position; } };
+Property(TJS_W("position"), &AutoProp_position::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
+struct AutoProp_rotation { static Euler ProxyGet(ThreeClass *inst) { return inst->rotation; } };
+Property(TJS_W("rotation"), &AutoProp_rotation::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
+struct AutoProp_quaternion { static Quaternion ProxyGet(ThreeClass *inst) { return inst->quaternion; } };
+Property(TJS_W("quaternion"), &AutoProp_quaternion::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
+struct AutoProp_scale { static Vector3 ProxyGet(ThreeClass *inst) { return inst->scale; } };
+Property(TJS_W("scale"), &AutoProp_scale::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
+struct AutoProp_up { static Vector3 ProxyGet(ThreeClass *inst) { return inst->up; } };
+Property(TJS_W("up"), &AutoProp_up::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
 NCB_METHOD_PROXY(add, Object3DAdd);
 NCB_METHOD_PROXY(remove, Object3DRemove);
 NCB_THREE_METHOD(removeFromParent);
 NCB_THREE_METHOD(clear);
 NCB_METHOD_PROXY(lookAt, Object3DLookAt);
-NCB_THREE_METHOD(rotateX);
-NCB_THREE_METHOD(rotateY);
-NCB_THREE_METHOD(rotateZ);
-NCB_THREE_METHOD(rotateOnAxis);
-NCB_THREE_METHOD(rotateOnWorldAxis);
-NCB_THREE_METHOD(translateX);
-NCB_THREE_METHOD(translateY);
-NCB_THREE_METHOD(translateZ);
-NCB_THREE_METHOD(translateOnAxis);
+NCB_METHOD_PROXY(rotateX, Object3D_rotateX);
+NCB_METHOD_PROXY(rotateY, Object3D_rotateY);
+NCB_METHOD_PROXY(rotateZ, Object3D_rotateZ);
+NCB_METHOD_PROXY(rotateOnAxis, Object3D_rotateOnAxis);
+NCB_METHOD_PROXY(rotateOnWorldAxis, Object3D_rotateOnWorldAxis);
+NCB_METHOD_PROXY(translateX, Object3D_translateX);
+NCB_METHOD_PROXY(translateY, Object3D_translateY);
+NCB_METHOD_PROXY(translateZ, Object3D_translateZ);
+NCB_METHOD_PROXY(translateOnAxis, Object3D_translateOnAxis);
 NCB_THREE_METHOD2(updateMatrix, void, updateMatrix, ());
 NCB_THREE_METHOD2(updateMatrixWorld, void, updateMatrixWorld, (bool));
 };
@@ -1027,7 +1229,8 @@ NCB_THREE_METHOD(updateProjectionMatrix);
 
 NCB_REGISTER_THREE_SUBCLASS(Light)
 NCB_THREE_PROPERTY_RO(type, type);
-NCB_THREE_MEMBER_PROPERTY_RO(color, Color&, color);
+struct AutoProp_color { static Color ProxyGet(ThreeClass *inst) { return inst->color; } };
+Property(TJS_W("color"), &AutoProp_color::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
 NCB_THREE_MEMBER_PROPERTY(intensity, float, intensity);
 };
 
@@ -1195,7 +1398,8 @@ HemisphereLightFactory(ThreeWrapper<HemisphereLight> **result, tjs_int numparams
 NCB_REGISTER_THREE_SUBCLASS(HemisphereLight)
 Factory(HemisphereLightFactory);
 NCB_THREE_PROPERTY_RO(type, type);
-NCB_THREE_MEMBER_PROPERTY_RO(groundColor, Color&, groundColor);
+struct AutoProp_groundColor { static Color ProxyGet(ThreeClass *inst) { return inst->groundColor; } };
+Property(TJS_W("groundColor"), &AutoProp_groundColor::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
 };
 
 // ======================================================================
@@ -1204,7 +1408,7 @@ NCB_THREE_MEMBER_PROPERTY_RO(groundColor, Color&, groundColor);
 
 NCB_REGISTER_THREE_SUBCLASS(Material)
 NCB_THREE_PROPERTY_RO(type, type);
-NCB_THREE_PROPERTY_RO(id, id);
+NCB_THREE_MEMBER_PROPERTY_RO(id, unsigned int, id);
 NCB_THREE_MEMBER_PROPERTY(name, std::string, name);
 NCB_THREE_MEMBER_PROPERTY(fog, bool, fog);
 NCB_THREE_MEMBER_PROPERTY(opacity, float, opacity);
@@ -1425,23 +1629,32 @@ BufferGeometryFactory(ThreeWrapper<BufferGeometry> **result, tjs_int numparams, 
 	return TJS_S_OK;
 }
 
+// BufferGeometry proxy functions for methods returning BufferGeometry& (chaining) and const std::string& params
+static bool BufferGeometry_hasAttribute(ThreeWrapper<BufferGeometry> *self, std::string name) { if (self && self->getObject()) return self->getObject()->hasAttribute(name); return false; }
+static void BufferGeometry_rotateX(ThreeWrapper<BufferGeometry> *self, float angle) { if (self && self->getObject()) self->getObject()->rotateX(angle); }
+static void BufferGeometry_rotateY(ThreeWrapper<BufferGeometry> *self, float angle) { if (self && self->getObject()) self->getObject()->rotateY(angle); }
+static void BufferGeometry_rotateZ(ThreeWrapper<BufferGeometry> *self, float angle) { if (self && self->getObject()) self->getObject()->rotateZ(angle); }
+static void BufferGeometry_translate(ThreeWrapper<BufferGeometry> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->translate(x, y, z); }
+static void BufferGeometry_scale(ThreeWrapper<BufferGeometry> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->scale(x, y, z); }
+static void BufferGeometry_center(ThreeWrapper<BufferGeometry> *self) { if (self && self->getObject()) self->getObject()->center(); }
+
 NCB_REGISTER_THREE_SUBCLASS(BufferGeometry)
 Factory(BufferGeometryFactory);
 NCB_THREE_PROPERTY_RO(type, type);
-NCB_THREE_PROPERTY_RO(id, id);
+NCB_THREE_MEMBER_PROPERTY_RO(id, unsigned int, id);
 NCB_THREE_MEMBER_PROPERTY(name, std::string, name);
 NCB_THREE_METHOD(hasIndex);
-NCB_THREE_METHOD2(hasAttribute, bool, hasAttribute, (const std::string&) const);
+NCB_METHOD_PROXY(hasAttribute, BufferGeometry_hasAttribute);
 NCB_THREE_METHOD(computeBoundingBox);
 NCB_THREE_METHOD(computeBoundingSphere);
 NCB_THREE_METHOD(computeVertexNormals);
 NCB_THREE_METHOD(normalizeNormals);
-NCB_THREE_METHOD2(rotateX, BufferGeometry&, rotateX, (float));
-NCB_THREE_METHOD2(rotateY, BufferGeometry&, rotateY, (float));
-NCB_THREE_METHOD2(rotateZ, BufferGeometry&, rotateZ, (float));
-NCB_THREE_METHOD2(translate, BufferGeometry&, translate, (float, float, float));
-NCB_THREE_METHOD2(scale, BufferGeometry&, scale, (float, float, float));
-NCB_THREE_METHOD2(center, BufferGeometry&, center, ());
+NCB_METHOD_PROXY(rotateX, BufferGeometry_rotateX);
+NCB_METHOD_PROXY(rotateY, BufferGeometry_rotateY);
+NCB_METHOD_PROXY(rotateZ, BufferGeometry_rotateZ);
+NCB_METHOD_PROXY(translate, BufferGeometry_translate);
+NCB_METHOD_PROXY(scale, BufferGeometry_scale);
+NCB_METHOD_PROXY(center, BufferGeometry_center);
 NCB_THREE_METHOD(dispose);
 };
 
@@ -1821,7 +2034,7 @@ LatheGeometryFactory(ThreeWrapper<LatheGeometry> **result, tjs_int numparams, tT
 		tjs_int count = arr.GetArrayCount();
 		for (tjs_int i = 0; i < count; i++) {
 			tTJSVariant v;
-			arr.checkArrayGet(i, v);
+			if (!arr.checkVariant(i, v)) continue;
 			if (v.Type() == tvtObject) {
 				ncbPropAccessor pt(v);
 				if (IsArray(v)) {
@@ -1838,10 +2051,10 @@ LatheGeometryFactory(ThreeWrapper<LatheGeometry> **result, tjs_int numparams, tT
 
 	if (points.empty()) {
 		// デフォルトの点を追加
-		points.push_back(Vector2(0, 0));
-		points.push_back(Vector2(0.5f, 0));
-		points.push_back(Vector2(0.5f, 1));
-		points.push_back(Vector2(0, 1));
+		points.push_back(Vector2(0.0f, 0.0f));
+		points.push_back(Vector2(0.5f, 0.0f));
+		points.push_back(Vector2(0.5f, 1.0f));
+		points.push_back(Vector2(0.0f, 1.0f));
 	}
 
 	auto obj = LatheGeometry::create(points, segments, phiStart, phiLength);
@@ -1936,10 +2149,14 @@ MeshFactory(ThreeWrapper<Mesh> **result, tjs_int numparams, tTJSVariant **params
 	return TJS_S_OK;
 }
 
+static void Mesh_setGeometry(ThreeWrapper<Mesh> *self, ThreeWrapper<BufferGeometry> *geo) {
+	if (self && self->getObject() && geo && geo->getObject()) self->getObject()->setGeometry(geo->getObject());
+}
+
 NCB_REGISTER_THREE_SUBCLASS(Mesh)
 Factory(MeshFactory);
 NCB_THREE_PROPERTY_RO(type, type);
-NCB_THREE_METHOD(setGeometry);
+NCB_METHOD_PROXY(setGeometry, Mesh_setGeometry);
 };
 
 // ======================================================================
@@ -2000,6 +2217,8 @@ static void GLRendererSetClearColor(ThreeWrapper<GLRenderer> *self, unsigned int
 	}
 }
 
+static void GLRenderer_setSize(ThreeWrapper<GLRenderer> *self, int w, int h) { if (self && self->getObject()) self->getObject()->setSize({w, h}); }
+
 NCB_REGISTER_THREE_SUBCLASS(GLRenderer)
 Factory(GLRendererFactory);
 NCB_THREE_MEMBER_PROPERTY(autoClear, bool, autoClear);
@@ -2010,7 +2229,7 @@ NCB_THREE_MEMBER_PROPERTY(sortObjects, bool, sortObjects);
 NCB_THREE_MEMBER_PROPERTY(physicallyCorrectLights, bool, physicallyCorrectLights);
 NCB_THREE_MEMBER_PROPERTY(toneMappingExposure, float, toneMappingExposure);
 NCB_THREE_METHOD(setPixelRatio);
-NCB_THREE_METHOD2(setSize, void, setSize, (const std::pair<int, int>&));
+NCB_METHOD_PROXY(setSize, GLRenderer_setSize);
 NCB_THREE_METHOD(setScissorTest);
 NCB_THREE_METHOD2(clear, void, clear, (bool, bool, bool));
 NCB_THREE_METHOD(clearColor);
@@ -2036,7 +2255,7 @@ TextureFactory(ThreeWrapper<Texture> **result, tjs_int numparams, tTJSVariant **
 
 NCB_REGISTER_THREE_SUBCLASS(Texture)
 Factory(TextureFactory);
-NCB_THREE_PROPERTY_RO(id, id);
+NCB_THREE_MEMBER_PROPERTY_RO(id, unsigned int, id);
 NCB_THREE_MEMBER_PROPERTY(name, std::string, name);
 NCB_THREE_MEMBER_PROPERTY(mapping, Mapping, mapping);
 NCB_THREE_MEMBER_PROPERTY(wrapS, TextureWrapping, wrapS);
@@ -2045,9 +2264,6 @@ NCB_THREE_MEMBER_PROPERTY(magFilter, Filter, magFilter);
 NCB_THREE_MEMBER_PROPERTY(minFilter, Filter, minFilter);
 NCB_THREE_MEMBER_PROPERTY(anisotropy, int, anisotropy);
 NCB_THREE_MEMBER_PROPERTY(format, Format, format);
-NCB_THREE_MEMBER_PROPERTY_RO(offset, Vector2&, offset);
-NCB_THREE_MEMBER_PROPERTY_RO(repeat, Vector2&, repeat);
-NCB_THREE_MEMBER_PROPERTY_RO(center, Vector2&, center);
 NCB_THREE_MEMBER_PROPERTY(rotation, float, rotation);
 NCB_THREE_MEMBER_PROPERTY(matrixAutoUpdate, bool, matrixAutoUpdate);
 NCB_THREE_MEMBER_PROPERTY(generateMipmaps, bool, generateMipmaps);
@@ -2095,8 +2311,8 @@ protected:
 public:
 	TextureLoaderWrapper(bool useCache = true) : loader(std::make_unique<TextureLoader>(useCache)) {}
 	
-	ThreeWrapper<Texture>* load(const std::wstring& path, bool flipY = true) {
-		std::filesystem::path fsPath(path);
+	ThreeWrapper<Texture>* load(ttstr path, bool flipY = true) {
+		std::filesystem::path fsPath(path.c_str());
 		auto tex = loader->load(fsPath, flipY);
 		if (tex) {
 			return new ThreeWrapper<Texture>(tex);
@@ -2118,18 +2334,17 @@ TextureLoaderFactory(TextureLoaderWrapper **result, tjs_int numparams, tTJSVaria
 	return TJS_S_OK;
 }
 
-NCB_REGISTER_CLASS(TextureLoaderWrapper)
-{
+NCB_REGISTER_SUBCLASS(TextureLoaderWrapper) {
 	Factory(TextureLoaderFactory);
 	NCB_METHOD(load);
 	NCB_METHOD(clearCache);
-}
+};
 
 // ======================================================================
 // Fog
 // ======================================================================
 
-NCB_REGISTER_SUBCLASS_DELAY(Fog) {
+NCB_REGISTER_SUBCLASS(Fog) {
 	NCB_CONSTRUCTOR((const Color&, float, float));
 	NCB_MEMBER_PROPERTY(color, Color, color);
 	NCB_MEMBER_PROPERTY(nearPlane, float, nearPlane);
@@ -2140,7 +2355,7 @@ NCB_REGISTER_SUBCLASS_DELAY(Fog) {
 // FogExp2
 // ======================================================================
 
-NCB_REGISTER_SUBCLASS_DELAY(FogExp2) {
+NCB_REGISTER_SUBCLASS(FogExp2) {
 	NCB_CONSTRUCTOR((const Color&, float));
 	NCB_MEMBER_PROPERTY(color, Color, color);
 	NCB_MEMBER_PROPERTY(density, float, density);
@@ -2150,7 +2365,7 @@ NCB_REGISTER_SUBCLASS_DELAY(FogExp2) {
 // Raycaster
 // ======================================================================
 
-NCB_REGISTER_SUBCLASS_DELAY(Raycaster) {
+NCB_REGISTER_SUBCLASS(Raycaster) {
 	NCB_CONSTRUCTOR((const Vector3&, const Vector3&, float, float));
 	NCB_MEMBER_PROPERTY(nearPlane, float, nearPlane);
 	NCB_MEMBER_PROPERTY(farPlane, float, farPlane);
@@ -2169,38 +2384,55 @@ ShaderMaterialFactory(ThreeWrapper<ShaderMaterial> **result, tjs_int numparams, 
 	return TJS_S_OK;
 }
 
-static void ShaderMaterialSetVertexShader(ThreeWrapper<ShaderMaterial> *self, const std::wstring& shader)
+static void ShaderMaterialSetVertexShader(ThreeWrapper<ShaderMaterial> *self, ttstr shader)
 {
 	if (self && self->getObject()) {
-		std::string s(shader.begin(), shader.end());
+		const tjs_char* ws = shader.c_str();
+		std::string s;
+		while (*ws) {
+			if (*ws < 128) s += (char)*ws; else s += '?';
+			ws++;
+		}
 		self->getObject()->vertexShader = s;
 	}
 }
 
-static std::wstring ShaderMaterialGetVertexShader(ThreeWrapper<ShaderMaterial> *self)
+static ttstr ShaderMaterialGetVertexShader(ThreeWrapper<ShaderMaterial> *self)
 {
 	if (self && self->getObject()) {
 		const auto& s = self->getObject()->vertexShader;
-		return std::wstring(s.begin(), s.end());
+		// std::string から ttstr へ変換
+		std::wstring ws(s.begin(), s.end());
+		return ttstr(ws.c_str());
 	}
-	return L"";
+	return TJS_W("");
 }
 
-static void ShaderMaterialSetFragmentShader(ThreeWrapper<ShaderMaterial> *self, const std::wstring& shader)
+static void ShaderMaterialSetFragmentShader(ThreeWrapper<ShaderMaterial> *self, ttstr shader)
 {
 	if (self && self->getObject()) {
-		std::string s(shader.begin(), shader.end());
+		const tjs_char* ws = shader.c_str();
+		std::string s;
+		while (*ws) {
+			if (*ws < 128) {
+				s += (char)*ws;
+			} else {
+				s += '?';
+			}
+			ws++;
+		}
 		self->getObject()->fragmentShader = s;
 	}
 }
 
-static std::wstring ShaderMaterialGetFragmentShader(ThreeWrapper<ShaderMaterial> *self)
+static ttstr ShaderMaterialGetFragmentShader(ThreeWrapper<ShaderMaterial> *self)
 {
 	if (self && self->getObject()) {
 		const auto& s = self->getObject()->fragmentShader;
-		return std::wstring(s.begin(), s.end());
+		std::wstring ws(s.begin(), s.end());
+		return ttstr(ws.c_str());
 	}
-	return L"";
+	return TJS_W("");
 }
 
 NCB_REGISTER_THREE_SUBCLASS(ShaderMaterial)
@@ -2227,43 +2459,63 @@ RawShaderMaterialFactory(ThreeWrapper<RawShaderMaterial> **result, tjs_int numpa
 	return TJS_S_OK;
 }
 
-static void RawShaderMaterialSetVertexShader(ThreeWrapper<RawShaderMaterial> *self, const std::wstring& shader)
+static void RawShaderMaterialSetVertexShader(ThreeWrapper<RawShaderMaterial> *self, ttstr shader)
 {
 	if (self && self->getObject()) {
-		std::string s(shader.begin(), shader.end());
+		const tjs_char* ws = shader.c_str();
+		std::string s;
+		while (*ws) {
+			if (*ws < 128) {
+				s += (char)*ws;
+			} else {
+				s += '?';
+			}
+			ws++;
+		}
 		self->getObject()->vertexShader = s;
 	}
 }
 
-static std::wstring RawShaderMaterialGetVertexShader(ThreeWrapper<RawShaderMaterial> *self)
+static ttstr RawShaderMaterialGetVertexShader(ThreeWrapper<RawShaderMaterial> *self)
 {
 	if (self && self->getObject()) {
 		const auto& s = self->getObject()->vertexShader;
-		return std::wstring(s.begin(), s.end());
+		std::wstring ws(s.begin(), s.end());
+		return ttstr(ws.c_str());
 	}
-	return L"";
+	return TJS_W("");
 }
 
-static void RawShaderMaterialSetFragmentShader(ThreeWrapper<RawShaderMaterial> *self, const std::wstring& shader)
+static void RawShaderMaterialSetFragmentShader(ThreeWrapper<RawShaderMaterial> *self, ttstr shader)
 {
 	if (self && self->getObject()) {
-		std::string s(shader.begin(), shader.end());
+		const tjs_char* ws = shader.c_str();
+		std::string s;
+		while (*ws) {
+			if (*ws < 128) {
+				s += (char)*ws;
+			} else {
+				s += '?';
+			}
+			ws++;
+		}
 		self->getObject()->fragmentShader = s;
 	}
 }
 
-static std::wstring RawShaderMaterialGetFragmentShader(ThreeWrapper<RawShaderMaterial> *self)
+static ttstr RawShaderMaterialGetFragmentShader(ThreeWrapper<RawShaderMaterial> *self)
 {
 	if (self && self->getObject()) {
 		const auto& s = self->getObject()->fragmentShader;
-		return std::wstring(s.begin(), s.end());
+		std::wstring ws(s.begin(), s.end());
+		return ttstr(ws.c_str());
 	}
-	return L"";
+	return TJS_W("");
 }
 
 NCB_REGISTER_THREE_SUBCLASS(RawShaderMaterial)
 Factory(RawShaderMaterialFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 NCB_PROPERTY_PROXY(vertexShader, RawShaderMaterialGetVertexShader, RawShaderMaterialSetVertexShader);
 NCB_PROPERTY_PROXY(fragmentShader, RawShaderMaterialGetFragmentShader, RawShaderMaterialSetFragmentShader);
 NCB_THREE_MEMBER_PROPERTY(uniformsNeedUpdate, bool, uniformsNeedUpdate);
@@ -2298,7 +2550,7 @@ static unsigned int LineBasicMaterialGetColor(ThreeWrapper<LineBasicMaterial> *s
 
 NCB_REGISTER_THREE_SUBCLASS(LineBasicMaterial)
 Factory(LineBasicMaterialFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 NCB_PROPERTY_PROXY(color, LineBasicMaterialGetColor, LineBasicMaterialSetColor);
 NCB_THREE_MEMBER_PROPERTY(linewidth, float, linewidth);
 };
@@ -2521,11 +2773,15 @@ LineFactory(ThreeWrapper<Line> **result, tjs_int numparams, tTJSVariant **params
 	return TJS_S_OK;
 }
 
+static void Line_setGeometry(ThreeWrapper<Line> *self, ThreeWrapper<BufferGeometry> *geo) {
+	if (self && self->getObject() && geo && geo->getObject()) self->getObject()->setGeometry(geo->getObject());
+}
+
 NCB_REGISTER_THREE_SUBCLASS(Line)
 Factory(LineFactory);
 NCB_THREE_PROPERTY_RO(type, type);
 NCB_THREE_METHOD(computeLineDistances);
-NCB_THREE_METHOD(setGeometry);
+NCB_METHOD_PROXY(setGeometry, Line_setGeometry);
 };
 
 // ======================================================================
@@ -2581,10 +2837,14 @@ PointsFactory(ThreeWrapper<Points> **result, tjs_int numparams, tTJSVariant **pa
 	return TJS_S_OK;
 }
 
+static void Points_setGeometry(ThreeWrapper<Points> *self, ThreeWrapper<BufferGeometry> *geo) {
+	if (self && self->getObject() && geo && geo->getObject()) self->getObject()->setGeometry(geo->getObject());
+}
+
 NCB_REGISTER_THREE_SUBCLASS(Points)
 Factory(PointsFactory);
 NCB_THREE_PROPERTY_RO(type, type);
-NCB_THREE_METHOD(setGeometry);
+NCB_METHOD_PROXY(setGeometry, Points_setGeometry);
 };
 
 // ======================================================================
@@ -2609,7 +2869,8 @@ SpriteFactory(ThreeWrapper<Sprite> **result, tjs_int numparams, tTJSVariant **pa
 NCB_REGISTER_THREE_SUBCLASS(Sprite)
 Factory(SpriteFactory);
 NCB_THREE_PROPERTY_RO(type, type);
-NCB_THREE_MEMBER_PROPERTY_RO(center, Vector2&, center);
+struct AutoProp_center { static Vector2 ProxyGet(ThreeClass *inst) { return inst->center; } };
+Property(TJS_W("center"), &AutoProp_center::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
 };
 
 // ======================================================================
@@ -2683,7 +2944,7 @@ AxesHelperFactory(ThreeWrapper<AxesHelper> **result, tjs_int numparams, tTJSVari
 
 NCB_REGISTER_THREE_SUBCLASS(AxesHelper)
 Factory(AxesHelperFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 };
 
 // ======================================================================
@@ -2710,7 +2971,7 @@ GridHelperFactory(ThreeWrapper<GridHelper> **result, tjs_int numparams, tTJSVari
 
 NCB_REGISTER_THREE_SUBCLASS(GridHelper)
 Factory(GridHelperFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 };
 
 // ======================================================================
@@ -2745,10 +3006,12 @@ ArrowHelperFactory(ThreeWrapper<ArrowHelper> **result, tjs_int numparams, tTJSVa
 	return TJS_S_OK;
 }
 
+static void ArrowHelper_setLength(ThreeWrapper<ArrowHelper> *self, float length) { if (self && self->getObject()) self->getObject()->setLength(length); }
+
 NCB_REGISTER_THREE_SUBCLASS(ArrowHelper)
 Factory(ArrowHelperFactory);
 NCB_THREE_METHOD(setDirection);
-NCB_THREE_METHOD2(setLength, void, setLength, (float, std::optional<float>, std::optional<float>));
+NCB_METHOD_PROXY(setLength, ArrowHelper_setLength);
 NCB_THREE_METHOD(setColor);
 };
 
@@ -2780,7 +3043,7 @@ BoxHelperFactory(ThreeWrapper<BoxHelper> **result, tjs_int numparams, tTJSVarian
 
 NCB_REGISTER_THREE_SUBCLASS(BoxHelper)
 Factory(BoxHelperFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 NCB_THREE_METHOD(update);
 };
 
@@ -2809,7 +3072,7 @@ CameraHelperFactory(ThreeWrapper<CameraHelper> **result, tjs_int numparams, tTJS
 
 NCB_REGISTER_THREE_SUBCLASS(CameraHelper)
 Factory(CameraHelperFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 NCB_THREE_METHOD(update);
 };
 
@@ -2842,7 +3105,7 @@ DirectionalLightHelperFactory(ThreeWrapper<DirectionalLightHelper> **result, tjs
 
 NCB_REGISTER_THREE_SUBCLASS(DirectionalLightHelper)
 Factory(DirectionalLightHelperFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 NCB_THREE_METHOD(update);
 };
 
@@ -2875,7 +3138,7 @@ PointLightHelperFactory(ThreeWrapper<PointLightHelper> **result, tjs_int numpara
 
 NCB_REGISTER_THREE_SUBCLASS(PointLightHelper)
 Factory(PointLightHelperFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 NCB_THREE_METHOD(update);
 };
 
@@ -2906,7 +3169,7 @@ SpotLightHelperFactory(ThreeWrapper<SpotLightHelper> **result, tjs_int numparams
 
 NCB_REGISTER_THREE_SUBCLASS(SpotLightHelper)
 Factory(SpotLightHelperFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 NCB_THREE_METHOD(update);
 };
 
@@ -2938,7 +3201,7 @@ PolarGridHelperFactory(ThreeWrapper<PolarGridHelper> **result, tjs_int numparams
 
 NCB_REGISTER_THREE_SUBCLASS(PolarGridHelper)
 Factory(PolarGridHelperFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 };
 
 // ======================================================================
@@ -2966,7 +3229,7 @@ PlaneHelperFactory(ThreeWrapper<PlaneHelper> **result, tjs_int numparams, tTJSVa
 
 NCB_REGISTER_THREE_SUBCLASS(PlaneHelper)
 Factory(PlaneHelperFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 NCB_THREE_MEMBER_PROPERTY(size, float, size);
 };
 
@@ -2998,7 +3261,7 @@ static void LODUpdate(ThreeWrapper<LOD> *self, ThreeWrapper<Camera> *camera)
 
 NCB_REGISTER_THREE_SUBCLASS(LOD)
 Factory(LODFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 NCB_THREE_MEMBER_PROPERTY(autoUpdate, bool, autoUpdate);
 NCB_THREE_METHOD(getCurrentLevel);
 NCB_METHOD_PROXY(addLevel, LODAddLevel);
@@ -3019,7 +3282,7 @@ BoneFactory(ThreeWrapper<Bone> **result, tjs_int numparams, tTJSVariant **params
 
 NCB_REGISTER_THREE_SUBCLASS(Bone)
 Factory(BoneFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 };
 
 // ======================================================================
@@ -3037,7 +3300,7 @@ SkeletonFactory(ThreeWrapper<Skeleton> **result, tjs_int numparams, tTJSVariant 
 		tjs_int count = arr.GetArrayCount();
 		for (tjs_int i = 0; i < count; i++) {
 			tTJSVariant v;
-			arr.checkArrayGet(i, v);
+			if (!arr.checkVariant(i, v)) continue;
 			if (v.Type() == tvtObject) {
 				auto *boneWrapper = ncbInstanceAdaptor<ThreeWrapper<Bone>>::GetNativeInstance(v.AsObjectNoAddRef());
 				if (boneWrapper && boneWrapper->getObject()) {
@@ -3052,15 +3315,18 @@ SkeletonFactory(ThreeWrapper<Skeleton> **result, tjs_int numparams, tTJSVariant 
 	return TJS_S_OK;
 }
 
+static void Skeleton_update(ThreeWrapper<Skeleton> *self) { if (self && self->getObject()) self->getObject()->update(); }
+static void Skeleton_computeBoneTexture(ThreeWrapper<Skeleton> *self) { if (self && self->getObject()) self->getObject()->computeBoneTexture(); }
+
 NCB_REGISTER_THREE_SUBCLASS(Skeleton)
 Factory(SkeletonFactory);
-NCB_THREE_PROPERTY_RO(uuid, uuid);
+// uuid プロパティは const メソッドのため省略
 NCB_THREE_MEMBER_PROPERTY(frame, int, frame);
 NCB_THREE_METHOD(init);
 NCB_THREE_METHOD(calculateInverses);
 NCB_THREE_METHOD(pose);
-NCB_THREE_METHOD(update);
-NCB_THREE_METHOD(computeBoneTexture);
+NCB_METHOD_PROXY(update, Skeleton_update);
+NCB_METHOD_PROXY(computeBoneTexture, Skeleton_computeBoneTexture);
 NCB_THREE_METHOD(dispose);
 };
 
@@ -3097,7 +3363,7 @@ static void SkinnedMeshBind(ThreeWrapper<SkinnedMesh> *self, ThreeWrapper<Skelet
 
 NCB_REGISTER_THREE_SUBCLASS(SkinnedMesh)
 Factory(SkinnedMeshFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 NCB_METHOD_PROXY(bind, SkinnedMeshBind);
 NCB_THREE_METHOD(pose);
 NCB_THREE_METHOD(normalizeSkinWeights);
@@ -3117,7 +3383,7 @@ SkyFactory(ThreeWrapper<Sky> **result, tjs_int numparams, tTJSVariant **params, 
 
 NCB_REGISTER_THREE_SUBCLASS(Sky)
 Factory(SkyFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 };
 
 // ======================================================================
@@ -3147,7 +3413,7 @@ WaterFactory(ThreeWrapper<Water> **result, tjs_int numparams, tTJSVariant **para
 
 NCB_REGISTER_THREE_SUBCLASS(Water)
 Factory(WaterFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 };
 
 // ======================================================================
@@ -3177,7 +3443,7 @@ ReflectorFactory(ThreeWrapper<Reflector> **result, tjs_int numparams, tTJSVarian
 
 NCB_REGISTER_THREE_SUBCLASS(Reflector)
 Factory(ReflectorFactory);
-NCB_THREE_PROPERTY_RO(type, type);
+
 };
 
 // ======================================================================
@@ -3240,8 +3506,6 @@ static Vector2 LineCurveGetTangent(ThreeWrapper<LineCurve> *self, float t)
 
 NCB_REGISTER_THREE_SUBCLASS(LineCurve)
 Factory(LineCurveFactory);
-NCB_THREE_MEMBER_PROPERTY_RO(v1, Vector2&, v1);
-NCB_THREE_MEMBER_PROPERTY_RO(v2, Vector2&, v2);
 NCB_THREE_METHOD(getLength);
 NCB_METHOD_PROXY(getPoint, LineCurveGetPoint);
 NCB_METHOD_PROXY(getPointAt, LineCurveGetPointAt);
@@ -3308,8 +3572,6 @@ static Vector3 LineCurve3GetTangent(ThreeWrapper<LineCurve3> *self, float t)
 
 NCB_REGISTER_THREE_SUBCLASS(LineCurve3)
 Factory(LineCurve3Factory);
-NCB_THREE_MEMBER_PROPERTY_RO(v1, Vector3&, v1);
-NCB_THREE_MEMBER_PROPERTY_RO(v2, Vector3&, v2);
 NCB_THREE_METHOD(getLength);
 NCB_METHOD_PROXY(getPoint, LineCurve3GetPoint);
 NCB_METHOD_PROXY(getPointAt, LineCurve3GetPointAt);
@@ -3357,9 +3619,6 @@ static Vector2 QuadraticBezierCurveGetPoint(ThreeWrapper<QuadraticBezierCurve> *
 
 NCB_REGISTER_THREE_SUBCLASS(QuadraticBezierCurve)
 Factory(QuadraticBezierCurveFactory);
-NCB_THREE_MEMBER_PROPERTY_RO(v0, Vector2&, v0);
-NCB_THREE_MEMBER_PROPERTY_RO(v1, Vector2&, v1);
-NCB_THREE_MEMBER_PROPERTY_RO(v2, Vector2&, v2);
 NCB_THREE_METHOD(getLength);
 NCB_METHOD_PROXY(getPoint, QuadraticBezierCurveGetPoint);
 };
@@ -3405,9 +3664,6 @@ static Vector3 QuadraticBezierCurve3GetPoint(ThreeWrapper<QuadraticBezierCurve3>
 
 NCB_REGISTER_THREE_SUBCLASS(QuadraticBezierCurve3)
 Factory(QuadraticBezierCurve3Factory);
-NCB_THREE_MEMBER_PROPERTY_RO(v0, Vector3&, v0);
-NCB_THREE_MEMBER_PROPERTY_RO(v1, Vector3&, v1);
-NCB_THREE_MEMBER_PROPERTY_RO(v2, Vector3&, v2);
 NCB_THREE_METHOD(getLength);
 NCB_METHOD_PROXY(getPoint, QuadraticBezierCurve3GetPoint);
 };
@@ -3454,10 +3710,6 @@ static Vector2 CubicBezierCurveGetPoint(ThreeWrapper<CubicBezierCurve> *self, fl
 
 NCB_REGISTER_THREE_SUBCLASS(CubicBezierCurve)
 Factory(CubicBezierCurveFactory);
-NCB_THREE_MEMBER_PROPERTY_RO(v0, Vector2&, v0);
-NCB_THREE_MEMBER_PROPERTY_RO(v1, Vector2&, v1);
-NCB_THREE_MEMBER_PROPERTY_RO(v2, Vector2&, v2);
-NCB_THREE_MEMBER_PROPERTY_RO(v3, Vector2&, v3);
 NCB_THREE_METHOD(getLength);
 NCB_METHOD_PROXY(getPoint, CubicBezierCurveGetPoint);
 };
@@ -3504,10 +3756,6 @@ static Vector3 CubicBezierCurve3GetPoint(ThreeWrapper<CubicBezierCurve3> *self, 
 
 NCB_REGISTER_THREE_SUBCLASS(CubicBezierCurve3)
 Factory(CubicBezierCurve3Factory);
-NCB_THREE_MEMBER_PROPERTY_RO(v0, Vector3&, v0);
-NCB_THREE_MEMBER_PROPERTY_RO(v1, Vector3&, v1);
-NCB_THREE_MEMBER_PROPERTY_RO(v2, Vector3&, v2);
-NCB_THREE_MEMBER_PROPERTY_RO(v3, Vector3&, v3);
 NCB_THREE_METHOD(getLength);
 NCB_METHOD_PROXY(getPoint, CubicBezierCurve3GetPoint);
 };
@@ -3526,7 +3774,7 @@ SplineCurveFactory(ThreeWrapper<SplineCurve> **result, tjs_int numparams, tTJSVa
 		tjs_int count = arr.GetArrayCount();
 		for (tjs_int i = 0; i < count; i++) {
 			tTJSVariant v;
-			arr.checkArrayGet(i, v);
+			if (!arr.checkVariant(i, v)) continue;
 			if (v.Type() == tvtObject) {
 				ncbPropAccessor pt(v);
 				if (IsArray(v)) {
@@ -3622,7 +3870,7 @@ PathFactory(ThreeWrapper<Path> **result, tjs_int numparams, tTJSVariant **params
 		tjs_int count = arr.GetArrayCount();
 		for (tjs_int i = 0; i < count; i++) {
 			tTJSVariant v;
-			arr.checkArrayGet(i, v);
+			if (!arr.checkVariant(i, v)) continue;
 			if (v.Type() == tvtObject) {
 				ncbPropAccessor pt(v);
 				if (IsArray(v)) {
@@ -3707,15 +3955,16 @@ static void PathAbsellipse(ThreeWrapper<Path> *self, float x, float y, float xRa
 	}
 }
 
-static void PathSplineThru(ThreeWrapper<Path> *self, tTJSVariant *array)
+static tjs_error PathSplineThru(tTJSVariant *result, tjs_int numparams, tTJSVariant **params, ThreeWrapper<Path> *self)
 {
-	if (self && self->getObject() && array && array->Type() == tvtObject) {
+	if (numparams < 1) return TJS_E_BADPARAMCOUNT;
+	if (self && self->getObject() && params[0]->Type() == tvtObject) {
 		std::vector<Vector2> pts;
-		ncbPropAccessor arr(*array);
+		ncbPropAccessor arr(*params[0]);
 		tjs_int count = arr.GetArrayCount();
 		for (tjs_int i = 0; i < count; i++) {
 			tTJSVariant v;
-			arr.checkArrayGet(i, v);
+			if (!arr.checkVariant(i, v)) continue;
 			if (v.Type() == tvtObject) {
 				ncbPropAccessor pt(v);
 				if (IsArray(v)) {
@@ -3727,6 +3976,7 @@ static void PathSplineThru(ThreeWrapper<Path> *self, tTJSVariant *array)
 		}
 		self->getObject()->splineThru(pts);
 	}
+	return TJS_S_OK;
 }
 
 static void PathClosePath(ThreeWrapper<Path> *self)
@@ -3739,7 +3989,6 @@ static void PathClosePath(ThreeWrapper<Path> *self)
 NCB_REGISTER_THREE_SUBCLASS(Path)
 Factory(PathFactory);
 NCB_THREE_MEMBER_PROPERTY(autoClose, bool, autoClose);
-NCB_THREE_MEMBER_PROPERTY_RO(currentPoint, Vector2&, currentPoint);
 NCB_THREE_METHOD(getLength);
 NCB_METHOD_PROXY(getPoint, PathGetPoint);
 NCB_METHOD_PROXY(getPointAt, PathGetPointAt);
@@ -3750,7 +3999,7 @@ NCB_METHOD_PROXY(bezierCurveTo, PathBezierCurveTo);
 NCB_METHOD_PROXY(arc, PathArc);
 NCB_METHOD_PROXY(absarc, PathAbsarc);
 NCB_METHOD_PROXY(absellipse, PathAbsellipse);
-NCB_METHOD_PROXY(splineThru, PathSplineThru);
+RawCallback(TJS_W("splineThru"), &PathSplineThru, TJS_STATICMEMBER);
 NCB_METHOD_PROXY(closePath, PathClosePath);
 };
 
@@ -3768,7 +4017,7 @@ ShapeFactory(ThreeWrapper<Shape> **result, tjs_int numparams, tTJSVariant **para
 		tjs_int count = arr.GetArrayCount();
 		for (tjs_int i = 0; i < count; i++) {
 			tTJSVariant v;
-			arr.checkArrayGet(i, v);
+			if (!arr.checkVariant(i, v)) continue;
 			if (v.Type() == tvtObject) {
 				ncbPropAccessor pt(v);
 				if (IsArray(v)) {
@@ -3852,15 +4101,16 @@ static void ShapeAbsellipse(ThreeWrapper<Shape> *self, float x, float y, float x
 	}
 }
 
-static void ShapeSplineThru(ThreeWrapper<Shape> *self, tTJSVariant *array)
+static tjs_error ShapeSplineThru(tTJSVariant *result, tjs_int numparams, tTJSVariant **params, ThreeWrapper<Shape> *self)
 {
-	if (self && self->getObject() && array && array->Type() == tvtObject) {
+	if (numparams < 1) return TJS_E_BADPARAMCOUNT;
+	if (self && self->getObject() && params[0]->Type() == tvtObject) {
 		std::vector<Vector2> pts;
-		ncbPropAccessor arr(*array);
+		ncbPropAccessor arr(*params[0]);
 		tjs_int count = arr.GetArrayCount();
 		for (tjs_int i = 0; i < count; i++) {
 			tTJSVariant v;
-			arr.checkArrayGet(i, v);
+			if (!arr.checkVariant(i, v)) continue;
 			if (v.Type() == tvtObject) {
 				ncbPropAccessor pt(v);
 				if (IsArray(v)) {
@@ -3872,6 +4122,7 @@ static void ShapeSplineThru(ThreeWrapper<Shape> *self, tTJSVariant *array)
 		}
 		self->getObject()->splineThru(pts);
 	}
+	return TJS_S_OK;
 }
 
 static void ShapeClosePath(ThreeWrapper<Shape> *self)
@@ -3919,7 +4170,6 @@ static ttstr ShapeGetUUID(ThreeWrapper<Shape> *self)
 NCB_REGISTER_THREE_SUBCLASS(Shape)
 Factory(ShapeFactory);
 NCB_THREE_MEMBER_PROPERTY(autoClose, bool, autoClose);
-NCB_THREE_MEMBER_PROPERTY_RO(currentPoint, Vector2&, currentPoint);
 NCB_THREE_METHOD(getLength);
 NCB_METHOD_PROXY(getPoint, ShapeGetPoint);
 NCB_METHOD_PROXY(getPointAt, ShapeGetPointAt);
@@ -3930,7 +4180,7 @@ NCB_METHOD_PROXY(bezierCurveTo, ShapeBezierCurveTo);
 NCB_METHOD_PROXY(arc, ShapeArc);
 NCB_METHOD_PROXY(absarc, ShapeAbsarc);
 NCB_METHOD_PROXY(absellipse, ShapeAbsellipse);
-NCB_METHOD_PROXY(splineThru, ShapeSplineThru);
+RawCallback(TJS_W("splineThru"), &ShapeSplineThru, TJS_STATICMEMBER);
 NCB_METHOD_PROXY(closePath, ShapeClosePath);
 NCB_METHOD_PROXY(addHole, ShapeAddHole);
 NCB_METHOD_PROXY(getHole, ShapeGetHole);
@@ -3969,7 +4219,7 @@ ShapeGeometryFactory(ThreeWrapper<ShapeGeometry> **result, tjs_int numparams, tT
 		tjs_int count = arr.GetArrayCount();
 		for (tjs_int i = 0; i < count; i++) {
 			tTJSVariant v;
-			arr.checkArrayGet(i, v);
+			if (!arr.checkVariant(i, v)) continue;
 			if (v.Type() == tvtObject) {
 				ThreeWrapper<Shape> *sw = ncbInstanceAdaptor<ThreeWrapper<Shape>>::GetNativeInstance(v.AsObjectNoAddRef());
 				if (sw && sw->getObject()) {
@@ -4033,7 +4283,7 @@ ExtrudeGeometryFactory(ThreeWrapper<ExtrudeGeometry> **result, tjs_int numparams
 		tjs_int count = arr.GetArrayCount();
 		for (tjs_int i = 0; i < count; i++) {
 			tTJSVariant v;
-			arr.checkArrayGet(i, v);
+			if (!arr.checkVariant(i, v)) continue;
 			if (v.Type() == tvtObject) {
 				ThreeWrapper<Shape> *sw = ncbInstanceAdaptor<ThreeWrapper<Shape>>::GetNativeInstance(v.AsObjectNoAddRef());
 				if (sw && sw->getObject()) {
@@ -4074,7 +4324,7 @@ CatmullRomCurve3Factory(ThreeWrapper<CatmullRomCurve3> **result, tjs_int numpara
 		tjs_int count = arr.GetArrayCount();
 		for (tjs_int i = 0; i < count; i++) {
 			tTJSVariant v;
-			arr.checkArrayGet(i, v);
+			if (!arr.checkVariant(i, v)) continue;
 			if (v.Type() == tvtObject) {
 				ncbPropAccessor pt(v);
 				if (IsArray(v)) {
@@ -4115,8 +4365,15 @@ NCB_METHOD_PROXY(getPoint, CatmullRomCurve3GetPoint);
 // クラス登録 (Threepp グローバルオブジェクト)
 // ======================================================================
 
+// Threepp クラス（定数と列挙型を保持）
+class Threepp {
+public:
+	Threepp() {}
+};
+
 #define ENUM(n) Variant(#n, (int)n)
 #define THREE_SUBCLASS(Class) NCB_SUBCLASS(Class, ThreeWrapper<Class>)
+#define NCB_SUBCLASS_DELAY(Class) NCB_SUBCLASS(Class, Class)
 
 NCB_REGISTER_CLASS(Threepp)
 {
