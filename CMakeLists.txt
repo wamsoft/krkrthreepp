@@ -6,7 +6,7 @@ add_compile_options("$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<COMPILE_LANGUAGE:CXX>>:/u
 add_compile_options("$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<COMPILE_LANGUAGE:CXX>>:/Zc:__cplusplus>")
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/bigobj>")
 
-project(krkr_threepp)
+project(dummy)
 
 set(TPSTUB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../tp_stub CACHE PATH "Path to tp_stub directory")
 include(${TPSTUB_DIR}/krkrz.cmake)
@@ -19,7 +19,7 @@ option(THREEPP_WITH_GENERIC "Build with Generic frontend (user-provided interfac
 
 add_subdirectory(threepp)
 
-krkrz_plugin(richtext
+krkrz_plugin(krkr_threepp
     NCBIND
     SOURCES
         main.cpp
