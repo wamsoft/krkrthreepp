@@ -38,6 +38,134 @@ namespace krkrvrm {
         return names;
     }
 
+    // human bone の親候補 (近い順)。最初に存在するものを親とする。
+    // 指ボーンは rig に含めない (Phase1。raw rest のまま)。
+    static std::vector<std::string> parentCandidates(const std::string& b) {
+        auto side = [&](const char* L, const char* R) -> std::string {
+            if (b.rfind("left", 0) == 0) return std::string("left") + (L + 4);
+            if (b.rfind("right", 0) == 0) return std::string("right") + (R + 5);
+            return "";
+        };
+        (void)side;
+        if (b == "hips") return {};
+        if (b == "spine") return {"hips"};
+        if (b == "chest") return {"spine", "hips"};
+        if (b == "upperChest") return {"chest", "spine"};
+        if (b == "neck") return {"upperChest", "chest", "spine"};
+        if (b == "head") return {"neck", "upperChest", "chest"};
+        if (b == "leftEye" || b == "rightEye" || b == "jaw") return {"head", "neck"};
+
+        auto pre = [&](const std::string& s) { return b.rfind(s, 0) == 0; };
+        std::string lr = pre("left") ? "left" : (pre("right") ? "right" : "");
+        auto suf = [&](const std::string& s) { return lr.empty() ? std::string() : lr + s; };
+
+        if (b == suf("Shoulder")) return {"upperChest", "chest", "spine"};
+        if (b == suf("UpperArm")) return {suf("Shoulder"), "upperChest", "chest"};
+        if (b == suf("LowerArm")) return {suf("UpperArm")};
+        if (b == suf("Hand")) return {suf("LowerArm")};
+
+        if (b == suf("UpperLeg")) return {"hips"};
+        if (b == suf("LowerLeg")) return {suf("UpperLeg")};
+        if (b == suf("Foot")) return {suf("LowerLeg")};
+        if (b == suf("Toes")) return {suf("Foot")};
+
+        return {};// 未対応(指等)は rig に含めない
+    }
+
+    void VRMHumanoid::buildRig() {
+        rig_.clear();
+        rigOrder_.clear();
+        rigRoot_ = threepp::Group::create();
+        rigRoot_->name = "vrm_normalized_root";
+
+        // 対象ボーン(親候補が定義され、親が存在 or ルート)を選ぶ
+        auto resolveParent = [&](const std::string& name) -> std::string {
+            for (const auto& c : parentCandidates(name))
+                if (rawBones_.count(c)) return c;
+            return "";// hips のみ空を正規のルートとする
+        };
+
+        for (const auto& [name, raw] : rawBones_) {
+            // rig 対象判定: hips か、親候補が解決できるもの
+            if (name != "hips") {
+                const auto cands = parentCandidates(name);
+                if (cands.empty()) continue;// 指等は除外
+                bool ok = false;
+                for (const auto& c : cands)
+                    if (rawBones_.count(c)) { ok = true; break; }
+                if (!ok) continue;
+            }
+            RigBone rb;
+            rb.raw = raw;
+            threepp::Quaternion wq;
+            raw->getWorldQuaternion(wq);
+            rb.rawRestWorldRot.copy(wq);
+            rb.parent = (name == "hips") ? "" : resolveParent(name);
+            rb.norm = threepp::Bone::create();
+            rb.norm->name = "norm_" + name;
+            rig_[name] = rb;
+        }
+
+        // 階層構築 + 親→子順の確定 (parent が置かれたものから順に)
+        std::size_t placed = 0;
+        std::vector<char> done;
+        while (placed < rig_.size()) {
+            std::size_t before = placed;
+            for (auto& [name, rb] : rig_) {
+                if (std::find(rigOrder_.begin(), rigOrder_.end(), name) != rigOrder_.end()) continue;
+                const bool rootBone = rb.parent.empty();
+                const bool parentPlaced = !rootBone && rig_.count(rb.parent) &&
+                        std::find(rigOrder_.begin(), rigOrder_.end(), rb.parent) != rigOrder_.end();
+                if (rootBone || parentPlaced) {
+                    auto parentNode = rootBone ? std::static_pointer_cast<threepp::Object3D>(rigRoot_)
+                                               : std::static_pointer_cast<threepp::Object3D>(rig_[rb.parent].norm);
+                    // 正規化ノードの local 位置 = raw world 位置の親からの差分 (translation 保持)
+                    threepp::Vector3 wp;
+                    rb.raw->getWorldPosition(wp);
+                    threepp::Vector3 pwp;
+                    if (rootBone) pwp.set(0.f, 0.f, 0.f);
+                    else rig_[rb.parent].raw->getWorldPosition(pwp);
+                    rb.norm->position.copy(wp).sub(pwp);
+                    parentNode->add(rb.norm);
+                    rigOrder_.push_back(name);
+                    ++placed;
+                }
+            }
+            if (placed == before) break;// 循環等の保険
+        }
+    }
+
+    std::shared_ptr<threepp::Object3D> VRMHumanoid::getNormalizedBoneNode(const std::string& name) const {
+        auto it = rig_.find(name);
+        return it != rig_.end() ? it->second.norm : nullptr;
+    }
+
+    void VRMHumanoid::resetNormalizedPose() {
+        for (auto& [name, rb] : rig_)
+            rb.norm->quaternion.set(0.f, 0.f, 0.f, 1.f);
+    }
+
+    void VRMHumanoid::updateRig() {
+        if (!rigRoot_) return;
+        rigRoot_->updateMatrixWorld(true);
+        for (const auto& name : rigOrder_) {
+            auto& rb = rig_[name];
+            threepp::Quaternion nw;
+            rb.norm->getWorldQuaternion(nw);// 正規化 world 回転 (= rest からの world デルタ)
+            threepp::Quaternion target;
+            target.copy(nw).multiply(rb.rawRestWorldRot);// raw rest world に world デルタを乗算
+
+            threepp::Quaternion pw;
+            if (rb.raw->parent) {
+                rb.raw->parent->updateWorldMatrix(true, false);
+                rb.raw->parent->getWorldQuaternion(pw);
+            }
+            threepp::Quaternion local;
+            local.copy(pw).invert().multiply(target);// parentWorld^-1 * target
+            rb.raw->quaternion.copy(local);
+        }
+    }
+
     // -----------------------------------------------------------------------
     // VRMExpressionManager
     // -----------------------------------------------------------------------
@@ -151,7 +279,8 @@ namespace krkrvrm {
     // VRM
     // -----------------------------------------------------------------------
     void VRM::update(float /*deltaSec*/) {
-        // Phase1: 表情 + 視線。Phase2 で springBone を追加。
+        // Phase1: ポーズ(正規化rig転写) → 表情 → 視線。Phase2 で springBone を追加。
+        humanoid.updateRig();
         expressionManager.applyToScene();
         lookAt.update();
     }
@@ -368,6 +497,12 @@ namespace krkrvrm {
                 curve("lookAtVerticalUp", L.inMaxV_, L.outVUp_);
                 curve("lookAtVerticalDown", dummy, L.outVDown_);
             }
+        }
+
+        // normalized rig 構築 (world 行列を確定させてから rest world 回転を捕捉)
+        if (vrm->scene) {
+            vrm->scene->updateMatrixWorld(true);
+            vrm->humanoid.buildRig();
         }
 
         std::cerr << "[VRM] loaded (" << (isVrm1 ? "1.0" : "0.x") << "): bones="

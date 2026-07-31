@@ -2342,6 +2342,11 @@ static void  VRM_update(ThreeWrapper<VRM> *self)                                
 static void VRM_setLookAtTarget(ThreeWrapper<VRM> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->lookAt.setTarget(x, y, z); }
 static void VRM_clearLookAtTarget(ThreeWrapper<VRM> *self)                          { if (self && self->getObject()) self->getObject()->lookAt.clearTarget(); }
 static bool VRM_hasLookAt(ThreeWrapper<VRM> *self)                                  { return (self && self->getObject()) ? self->getObject()->lookAt.valid() : false; }
+
+// 正規化 rig (Phase1)。getNormalizedBoneNode で得た Object3D の quaternion にポーズを与え、
+// update() (内部で updateRig) で raw ボーンへ転写する。VRMA 適用の土台。
+static std::shared_ptr<Object3D> VRM_getNormalizedBoneNode(ThreeWrapper<VRM> *self, std::string name) { return (self && self->getObject()) ? self->getObject()->humanoid.getNormalizedBoneNode(name) : nullptr; }
+static void VRM_resetNormalizedPose(ThreeWrapper<VRM> *self) { if (self && self->getObject()) self->getObject()->humanoid.resetNormalizedPose(); }
 static std::string VRM_getMetaName(ThreeWrapper<VRM> *self)       { return (self && self->getObject()) ? self->getObject()->meta.name : std::string(); }
 static std::string VRM_getMetaVersion(ThreeWrapper<VRM> *self)    { return (self && self->getObject()) ? self->getObject()->meta.version : std::string(); }
 static std::string VRM_getMetaLicenseUrl(ThreeWrapper<VRM> *self) { return (self && self->getObject()) ? self->getObject()->meta.licenseUrl : std::string(); }
@@ -2362,6 +2367,8 @@ NCB_METHOD_PROXY(update, VRM_update);                // morph/視線へ反映 (�
 NCB_METHOD_PROXY(setLookAtTarget, VRM_setLookAtTarget);   // (x,y,z) ワールド座標
 NCB_METHOD_PROXY(clearLookAtTarget, VRM_clearLookAtTarget);
 NCB_METHOD_PROXY(hasLookAt, VRM_hasLookAt);          // -> bool
+NCB_METHOD_PROXY(getNormalizedBoneNode, VRM_getNormalizedBoneNode);// (name) -> Object3D
+NCB_METHOD_PROXY(resetNormalizedPose, VRM_resetNormalizedPose);
 NCB_METHOD_PROXY(getMetaName, VRM_getMetaName);      // -> string
 NCB_METHOD_PROXY(getMetaVersion, VRM_getMetaVersion);
 NCB_METHOD_PROXY(getMetaLicenseUrl, VRM_getMetaLicenseUrl);

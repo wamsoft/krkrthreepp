@@ -9,6 +9,7 @@
 #include "VRM.hpp"
 
 #include <threepp/core/Object3D.hpp>
+#include <threepp/math/Euler.hpp>
 
 #include <iostream>
 #include <string>
@@ -107,8 +108,41 @@ int main(int argc, char** argv) {
         std::cout << "  lookAt: no eye bones (skip)\n";
     }
 
+    // --- Normalized rig (Phase1) ---
+    bool rigOk = true;
+    if (vrm->humanoid.hasRig()) {
+        auto testBone = vrm->humanoid.getRawBoneNode("leftUpperArm");
+        if (!testBone) testBone = vrm->humanoid.getRawBoneNode("spine");
+
+        auto qdelta = [](const threepp::Quaternion& a, const threepp::Quaternion& b) {
+            return std::abs(a.x - b.x) + std::abs(a.y - b.y) + std::abs(a.z - b.z) + std::abs(a.w - b.w);
+        };
+
+        // 恒等ポーズ往復: 正規化を rest にして updateRig → raw が rest のまま(数学的に保証)
+        const threepp::Quaternion rest = testBone ? testBone->quaternion : threepp::Quaternion();
+        vrm->humanoid.resetNormalizedPose();
+        vrm->humanoid.updateRig();
+        const double dRest = testBone ? qdelta(testBone->quaternion, rest) : 0.0;
+
+        // 正規化ボーンを回すと raw が動く
+        double dMove = 0.0;
+        auto normArm = vrm->humanoid.getNormalizedBoneNode("leftUpperArm");
+        if (normArm && testBone) {
+            const threepp::Quaternion before = testBone->quaternion;
+            normArm->quaternion.setFromEuler(threepp::Euler(0.f, 0.f, 0.5f));
+            vrm->humanoid.updateRig();
+            dMove = qdelta(testBone->quaternion, before);
+            vrm->humanoid.resetNormalizedPose();
+            vrm->humanoid.updateRig();
+        }
+        rigOk = (dRest < 1e-3) && (!(normArm && testBone) || dMove > 1e-4);
+        std::cout << "  rig: bones=" << (vrm->humanoid.hasRig() ? "yes" : "no")
+                  << " identity-roundtrip=" << dRest << " (want~0)"
+                  << " move=" << dMove << " (want>0) -> " << (rigOk ? "ok" : "FAIL") << "\n";
+    }
+
     const bool ok = vrm->scene && vrm->humanoid.has("hips") && found >= 5 &&
-                    (exprNames.empty() || exprApplied) && lookAtOk;
+                    (exprNames.empty() || exprApplied) && lookAtOk && rigOk;
     std::cout << "[smoke] RESULT: " << (ok ? "PASS" : "FAIL") << "\n";
     return ok ? 0 : 1;
 }

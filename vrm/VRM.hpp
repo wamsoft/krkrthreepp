@@ -37,8 +37,28 @@ namespace krkrvrm {
         [[nodiscard]] std::vector<std::string> boneNames() const;
         [[nodiscard]] std::size_t size() const { return rawBones_.size(); }
 
+        // --- normalized rig (Phase1): アニメーション(VRMA)適用のための正規化スケルトン ---
+        // 各 human bone に対応する正規化ノード(rest world 回転=identity)を持つ。
+        // 正規化ノードの local 回転にポーズを与え、updateRig() で raw ボーンへ転写する。
+        [[nodiscard]] std::shared_ptr<threepp::Object3D> getNormalizedBoneNode(const std::string& name) const;
+        void resetNormalizedPose();///< 正規化ノードを rest(identity) に戻す
+        void updateRig();          ///< 正規化ポーズを raw ボーンへ転写
+        [[nodiscard]] bool hasRig() const { return static_cast<bool>(rigRoot_); }
+
     private:
         std::unordered_map<std::string, std::shared_ptr<threepp::Bone>> rawBones_;
+
+        struct RigBone {
+            std::shared_ptr<threepp::Bone> raw;
+            std::shared_ptr<threepp::Object3D> norm;
+            threepp::Quaternion rawRestWorldRot;///< raw ボーンの rest world 回転
+            std::string parent;                 ///< 親 human bone 名 ("" ならルート)
+        };
+        std::unordered_map<std::string, RigBone> rig_;
+        std::vector<std::string> rigOrder_;///< 親→子の順
+        std::shared_ptr<threepp::Group> rigRoot_;
+
+        void buildRig();///< rawBones_ 確定後・scene の world 行列更新後に呼ぶ
         friend class VRMLoader;
     };
 
