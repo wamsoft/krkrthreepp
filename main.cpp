@@ -2192,14 +2192,38 @@ NCB_THREE_METHOD(getDelta);
 // GLRenderer
 // ======================================================================
 
+// threepp 内部関数の前方宣言 (src/threepp/utils/LoadGlad.hpp は非公開ヘッダのため)。
+// ホストが用意した GL コンテキストの getProcAddress を glad に渡すのに使う。
+// GLADloadproc は typedef void* (*)(const char*) なので同型で宣言できる。
+namespace threepp { void initGlad(void *(*procAddress)(const char *)); }
+
 static tjs_error
 GLRendererFactory(ThreeWrapper<GLRenderer> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
 {
 	int width = 800;
 	int height = 600;
+	tjs_int sizeArg = 0;
 
-	if (numparams > 0) width = (int)params[0]->AsInteger();
-	if (numparams > 1) height = (int)params[1]->AsInteger();
+	// 第1引数がオブジェクト (gles の GLESAdaptor 等) なら、そこから GLGetProcAddress を
+	// 取得して glad を初期化する。siblings (effekseer/motion) と同じく、ホストが用意した
+	// GL コンテキストへ描画するための結線。直後の GLRenderer 構築時に呼ばれる loadGlad が
+	// このローダを使って関数ポインタを解決する。
+	//   new GLRenderer(adaptor)          … サイズ既定
+	//   new GLRenderer(adaptor, w, h)    … サイズ指定
+	//   new GLRenderer(w, h)             … 従来どおり (コンテキストと glad は呼び出し側責任)
+	if (numparams > 0 && params[0]->Type() == tvtObject) {
+		tTJSVariantClosure clo = params[0]->AsObjectClosureNoAddRef();
+		tTJSVariant loader_v;
+		if (TJS_FAILED(clo.PropGet(0, TJS_W("GLGetProcAddress"), NULL, &loader_v, NULL))) {
+			TVPThrowExceptionMessage(TJS_W("GLRenderer: 指定オブジェクトから GLGetProcAddress を取得できません"));
+		}
+		void *loader = reinterpret_cast<void *>((tjs_int64)loader_v);
+		threepp::initGlad(reinterpret_cast<void *(*)(const char *)>(loader));
+		sizeArg = 1;
+	}
+
+	if (numparams > sizeArg)     width  = (int)params[sizeArg]->AsInteger();
+	if (numparams > sizeArg + 1) height = (int)params[sizeArg + 1]->AsInteger();
 
 	auto obj = std::make_shared<GLRenderer>(std::make_pair(width, height));
 	*result = new ThreeWrapper<GLRenderer>(obj);
@@ -2221,6 +2245,30 @@ static void GLRendererSetClearColor(ThreeWrapper<GLRenderer> *self, unsigned int
 }
 
 static void GLRenderer_setSize(ThreeWrapper<GLRenderer> *self, int w, int h) { if (self && self->getObject()) self->getObject()->setSize({w, h}); }
+
+// --- ホスト GL コンテキストでのフレーム処理 (siblings の onBeginScene/onEndScene 相当) ---
+// adaptor.capture() のコールバック内 (GL コンテキストが current な状態) で呼ぶ想定。
+//   device.onBeginScene(w, h);
+//   device.render(scene, camera);
+//   device.onEndScene();
+static void GLRendererOnBeginScene(ThreeWrapper<GLRenderer> *self, int w, int h)
+{
+	if (self && self->getObject()) {
+		auto r = self->getObject();
+		// ホストが GL ステートを変更している可能性があるため、threepp 内部のステート
+		// キャッシュを無効化してから描画する (コンテキスト共有対策)。
+		r->resetState();
+		r->setSize({w, h});
+	}
+}
+
+static void GLRendererOnEndScene(ThreeWrapper<GLRenderer> *self)
+{
+	// threepp は render() 内で描画を完結する。ホスト側が capture 毎に自前の GL ステートを
+	// 再設定する前提のため、ここでは特別な処理は行わない。フラッシュやステート復帰が必要に
+	// なれば実行時に追加する。
+	(void)self;
+}
 
 NCB_REGISTER_THREE_SUBCLASS(GLRenderer)
 Factory(GLRendererFactory);
@@ -2244,6 +2292,8 @@ NCB_THREE_METHOD(dispose);
 NCB_THREE_METHOD(resetState);
 NCB_METHOD_PROXY(render, GLRendererRender);
 NCB_METHOD_PROXY(setClearColor, GLRendererSetClearColor);
+NCB_METHOD_PROXY(onBeginScene, GLRendererOnBeginScene);
+NCB_METHOD_PROXY(onEndScene, GLRendererOnEndScene);
 };
 
 // ======================================================================

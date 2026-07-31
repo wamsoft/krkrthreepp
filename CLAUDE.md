@@ -58,8 +58,17 @@ The plugin has three layers:
 
 ## Current Status
 
-- ビルド成功（Debug）
-- GLES 接続コード（threepp の Generic frontend と吉里吉里の Layer を繋ぐ部分）は未実装 — 別途資料作成予定
+- ビルド成功（Release / Debug）
+- 本家 threepp をタグ 2026-06-17 へ同期済み（fork の3コミットを rebase）
+- GLES 接続の機能結線を実装済み（siblings の effekseer/motion と同じ Device 方式）:
+  - `new Threepp.GLRenderer(adaptor[, w, h])` で、ホスト(`../gles` の `GLESAdaptor` 等)の
+    `GLGetProcAddress` を取得し `initGlad()` → GLRenderer をヘッドレス生成する。
+  - 描画は `adaptor.capture()` のコールバック内で `onBeginScene(w,h)` → `render(scene,camera)`
+    → `onEndScene()` の順に呼ぶ。
+  - 実装は `main.cpp` の `GLRendererFactory` / `GLRendererOnBeginScene` / `GLRendererOnEndScene`。
+- **要実行時検証**: threepp は desktop OpenGL glad（`gladLoadGLLoader`）を使うため、ホストの
+  ANGLE GLES3 コンテキスト上で全 GL 呼び出しが解決するかは未検証（effekseer が苦労した点）。
+  また GL ステート共有時の復帰ポリシーも実機で調整が必要。
 
 ## Build Configuration
 
