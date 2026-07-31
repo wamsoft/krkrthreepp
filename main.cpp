@@ -2303,6 +2303,8 @@ NCB_METHOD_PROXY(onEndScene, GLRendererOnEndScene);
 
 using krkrvrm::VRM;
 using krkrvrm::VRMLoader;
+using krkrvrm::VRMAnimation;
+using krkrvrm::VRMAnimationLoader;
 
 static tjs_error
 VRMLoaderFactory(ThreeWrapper<VRMLoader> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
@@ -2347,6 +2349,26 @@ static bool VRM_hasLookAt(ThreeWrapper<VRM> *self)                              
 // update() (内部で updateRig) で raw ボーンへ転写する。VRMA 適用の土台。
 static std::shared_ptr<Object3D> VRM_getNormalizedBoneNode(ThreeWrapper<VRM> *self, std::string name) { return (self && self->getObject()) ? self->getObject()->humanoid.getNormalizedBoneNode(name) : nullptr; }
 static void VRM_resetNormalizedPose(ThreeWrapper<VRM> *self) { if (self && self->getObject()) self->getObject()->humanoid.resetNormalizedPose(); }
+
+// VRMA (Phase1)。applyAnimation で時刻 time の姿勢を正規化ボーンへ書き込み、update() で raw へ。
+static void VRM_applyAnimation(ThreeWrapper<VRM> *self, ThreeWrapper<VRMAnimation> *anim, float time)
+{
+	if (self && self->getObject() && anim && anim->getObject())
+		self->getObject()->applyAnimation(*anim->getObject(), time);
+}
+
+static tjs_error
+VRMAnimationLoaderFactory(ThreeWrapper<VRMAnimationLoader> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	*result = new ThreeWrapper<VRMAnimationLoader>(std::make_shared<VRMAnimationLoader>());
+	return TJS_S_OK;
+}
+static std::shared_ptr<VRMAnimation> VRMAnimationLoader_load(ThreeWrapper<VRMAnimationLoader> *self, std::string path)
+{
+	return (self && self->getObject()) ? self->getObject()->load(path) : nullptr;
+}
+static float VRMAnimation_getDuration(ThreeWrapper<VRMAnimation> *self)       { return (self && self->getObject()) ? self->getObject()->duration() : 0.f; }
+static int   VRMAnimation_getBoneTrackCount(ThreeWrapper<VRMAnimation> *self) { return (self && self->getObject()) ? (int)self->getObject()->boneTrackCount() : 0; }
 static std::string VRM_getMetaName(ThreeWrapper<VRM> *self)       { return (self && self->getObject()) ? self->getObject()->meta.name : std::string(); }
 static std::string VRM_getMetaVersion(ThreeWrapper<VRM> *self)    { return (self && self->getObject()) ? self->getObject()->meta.version : std::string(); }
 static std::string VRM_getMetaLicenseUrl(ThreeWrapper<VRM> *self) { return (self && self->getObject()) ? self->getObject()->meta.licenseUrl : std::string(); }
@@ -2369,9 +2391,20 @@ NCB_METHOD_PROXY(clearLookAtTarget, VRM_clearLookAtTarget);
 NCB_METHOD_PROXY(hasLookAt, VRM_hasLookAt);          // -> bool
 NCB_METHOD_PROXY(getNormalizedBoneNode, VRM_getNormalizedBoneNode);// (name) -> Object3D
 NCB_METHOD_PROXY(resetNormalizedPose, VRM_resetNormalizedPose);
+NCB_METHOD_PROXY(applyAnimation, VRM_applyAnimation);// (vrmAnimation, time)
 NCB_METHOD_PROXY(getMetaName, VRM_getMetaName);      // -> string
 NCB_METHOD_PROXY(getMetaVersion, VRM_getMetaVersion);
 NCB_METHOD_PROXY(getMetaLicenseUrl, VRM_getMetaLicenseUrl);
+};
+
+NCB_REGISTER_THREE_SUBCLASS(VRMAnimation)
+NCB_METHOD_PROXY(getDuration, VRMAnimation_getDuration);        // -> float(sec)
+NCB_METHOD_PROXY(getBoneTrackCount, VRMAnimation_getBoneTrackCount);
+};
+
+NCB_REGISTER_THREE_SUBCLASS(VRMAnimationLoader)
+Factory(VRMAnimationLoaderFactory);
+NCB_METHOD_PROXY(load, VRMAnimationLoader_load);                // (path) -> VRMAnimation
 };
 
 // ======================================================================
@@ -4688,9 +4721,11 @@ NCB_REGISTER_CLASS(Threepp)
 	// ====== Renderers ======
 	THREE_SUBCLASS(GLRenderer);
 
-	// ====== VRM (Phase 0) ======
+	// ====== VRM (Phase 0/1) ======
 	THREE_SUBCLASS(VRMLoader);
 	THREE_SUBCLASS(VRM);
+	THREE_SUBCLASS(VRMAnimationLoader);
+	THREE_SUBCLASS(VRMAnimation);
 
 	// ====== Curves ======
 	THREE_SUBCLASS(LineCurve);

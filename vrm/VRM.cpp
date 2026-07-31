@@ -511,4 +511,95 @@ namespace krkrvrm {
         return vrm;
     }
 
+    // -----------------------------------------------------------------------
+    // VRMAnimationLoader / VRM::applyAnimation
+    // -----------------------------------------------------------------------
+    std::shared_ptr<VRMAnimation> VRMAnimationLoader::load(const std::filesystem::path& path) {
+        threepp::GLTFLoader loader;
+        auto result = loader.load(path);
+        if (!result) {
+            std::cerr << "[VRMA] GLTF load failed: " << path << "\n";
+            return nullptr;
+        }
+        if (result->json.empty()) return nullptr;
+
+        nlohmann::json gltf;
+        try {
+            gltf = nlohmann::json::parse(result->json);
+        } catch (const std::exception& e) {
+            std::cerr << "[VRMA] JSON parse error: " << e.what() << "\n";
+            return nullptr;
+        }
+        if (!gltf.contains("extensions") || !gltf["extensions"].contains("VRMC_vrm_animation")) {
+            std::cerr << "[VRMA] no VRMC_vrm_animation extension: " << path << "\n";
+            return nullptr;
+        }
+        const auto& va = gltf["extensions"]["VRMC_vrm_animation"];
+
+        // VRMA node index -> human bone 名
+        std::unordered_map<int, std::string> nodeToBone;
+        if (va.contains("humanoid") && va["humanoid"].contains("humanBones")) {
+            const auto& hb = va["humanoid"]["humanBones"];
+            for (auto it = hb.begin(); it != hb.end(); ++it)
+                if (it.value().contains("node"))
+                    nodeToBone[it.value()["node"].get<int>()] = it.key();
+        }
+        if (nodeToBone.empty()) return nullptr;
+
+        auto anim = std::make_shared<VRMAnimation>();
+        if (!result->rawAnimations.empty()) {
+            const auto& ra = result->rawAnimations.front();
+            for (const auto& ch : ra.channels) {
+                if (ch.path != "rotation") continue;// Phase1: rotation のみ
+                auto bit = nodeToBone.find(ch.node);
+                if (bit == nodeToBone.end()) continue;
+                VRMAnimation::RotTrack t;
+                t.times = ch.times;
+                t.values = ch.values;
+                if (!t.times.empty())
+                    anim->duration_ = std::max(anim->duration_, t.times.back());
+                anim->boneRotations_[bit->second] = std::move(t);
+            }
+        }
+        std::cerr << "[VRMA] loaded: boneTracks=" << anim->boneTrackCount()
+                  << " duration=" << anim->duration() << "\n";
+        return anim;
+    }
+
+    void VRM::applyAnimation(const VRMAnimation& anim, float time) {
+        for (const auto& [boneName, track] : anim.boneRotations_) {
+            auto node = humanoid.getNormalizedBoneNode(boneName);
+            if (!node || track.times.empty()) continue;
+
+            const auto& T = track.times;
+            const auto& V = track.values;// xyzw per key
+            const std::size_t n = T.size();
+
+            float qx, qy, qz, qw;
+            if (time <= T.front()) {
+                qx = V[0]; qy = V[1]; qz = V[2]; qw = V[3];
+            } else if (time >= T.back()) {
+                const std::size_t k = n - 1;
+                qx = V[k * 4]; qy = V[k * 4 + 1]; qz = V[k * 4 + 2]; qw = V[k * 4 + 3];
+            } else {
+                std::size_t i1 = 1;
+                while (i1 < n && T[i1] < time) ++i1;
+                const std::size_t i0 = i1 - 1;
+                const float span = T[i1] - T[i0];
+                const float a = span > 1e-8f ? (time - T[i0]) / span : 0.f;
+                float x0 = V[i0 * 4], y0 = V[i0 * 4 + 1], z0 = V[i0 * 4 + 2], w0 = V[i0 * 4 + 3];
+                float x1 = V[i1 * 4], y1 = V[i1 * 4 + 1], z1 = V[i1 * 4 + 2], w1 = V[i1 * 4 + 3];
+                // 最短弧 (符号合わせ) の後 nlerp
+                if (x0 * x1 + y0 * y1 + z0 * z1 + w0 * w1 < 0.f) {
+                    x1 = -x1; y1 = -y1; z1 = -z1; w1 = -w1;
+                }
+                qx = x0 + (x1 - x0) * a; qy = y0 + (y1 - y0) * a;
+                qz = z0 + (z1 - z0) * a; qw = w0 + (w1 - w0) * a;
+                const float len = std::sqrt(qx * qx + qy * qy + qz * qz + qw * qw);
+                if (len > 1e-8f) { qx /= len; qy /= len; qz /= len; qw /= len; }
+            }
+            node->quaternion.set(qx, qy, qz, qw);
+        }
+    }
+
 }// namespace krkrvrm

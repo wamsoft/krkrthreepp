@@ -141,8 +141,34 @@ int main(int argc, char** argv) {
                   << " move=" << dMove << " (want>0) -> " << (rigOk ? "ok" : "FAIL") << "\n";
     }
 
+    // --- VRMA (Phase1): 第2引数に .vrma を渡すと適用検証 ---
+    bool vrmaOk = true;
+    if (argc >= 3) {
+        krkrvrm::VRMAnimationLoader aloader;
+        auto anim = aloader.load(argv[2]);
+        if (!anim) {
+            std::cout << "  vrma: load failed\n";
+            vrmaOk = false;
+        } else {
+            std::cout << "  vrma: boneTracks=" << anim->boneTrackCount()
+                      << " duration=" << anim->duration() << "\n";
+            auto tb = vrm->humanoid.getRawBoneNode("leftUpperArm");
+            const threepp::Quaternion before = tb ? tb->quaternion : threepp::Quaternion();
+            vrm->applyAnimation(*anim, anim->duration() * 0.5f);
+            vrm->update();// updateRig で raw へ転写
+            double d = 0.0;
+            if (tb) {
+                const auto& q = tb->quaternion;
+                d = std::abs(q.x - before.x) + std::abs(q.y - before.y) +
+                    std::abs(q.z - before.z) + std::abs(q.w - before.w);
+            }
+            std::cout << "  vrma applied @half: leftUpperArm raw delta=" << d << "\n";
+            vrmaOk = (anim->boneTrackCount() > 0) && (!tb || d > 1e-4);
+        }
+    }
+
     const bool ok = vrm->scene && vrm->humanoid.has("hips") && found >= 5 &&
-                    (exprNames.empty() || exprApplied) && lookAtOk && rigOk;
+                    (exprNames.empty() || exprApplied) && lookAtOk && rigOk && vrmaOk;
     std::cout << "[smoke] RESULT: " << (ok ? "PASS" : "FAIL") << "\n";
     return ok ? 0 : 1;
 }

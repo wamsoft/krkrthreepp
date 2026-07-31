@@ -112,6 +112,8 @@ namespace krkrvrm {
         friend class VRMLoader;
     };
 
+    class VRMAnimation;// 前方宣言 (定義は下方)
+
     /// VRM モデル 1 体。scene + humanoid(raw) + meta + expressionManager + lookAt。
     /// Phase2+ で springBoneManager を追加。
     class VRM {
@@ -122,8 +124,12 @@ namespace krkrvrm {
         VRMLookAt lookAt;
         VRMMeta meta;
 
-        /// 毎フレーム更新 (Phase1: 表情 + 視線。Phase2 で springBone を追加)。
+        /// 毎フレーム更新 (Phase1: ポーズ + 表情 + 視線。Phase2 で springBone を追加)。
         void update(float deltaSec = 0.0f);
+
+        /// VRM アニメーションを時刻 time(sec) で正規化ボーンへ適用する。
+        /// 適用後 update() を呼ぶと raw へ転写される (update 内で updateRig)。
+        void applyAnimation(const VRMAnimation& anim, float time);
     };
 
     /// VRM ローダ。threepp GLTFLoader で読み、生 glTF JSON の VRMC_vrm 拡張を解釈して VRM を組む。
@@ -131,6 +137,31 @@ namespace krkrvrm {
     public:
         /// 失敗時、または VRMC_vrm 拡張が無い場合は nullptr を返す (VRM 0.x は Phase3)。
         std::shared_ptr<VRM> load(const std::filesystem::path& path);
+    };
+
+    /// VRM アニメーション (.vrma / VRMC_vrm_animation)。モデル非依存のボーン回転トラック集合。
+    /// Phase1 はヒューマノイドボーンの rotation のみ (hips translation / 表情 / 視線トラックは今後)。
+    class VRMAnimation {
+    public:
+        [[nodiscard]] float duration() const { return duration_; }
+        [[nodiscard]] std::size_t boneTrackCount() const { return boneRotations_.size(); }
+        [[nodiscard]] bool has(const std::string& boneName) const { return boneRotations_.count(boneName) > 0; }
+
+    private:
+        struct RotTrack {
+            std::vector<float> times; ///< キー時刻 (sec)
+            std::vector<float> values;///< クォータニオン xyzw を各キー分 (times.size()*4)
+        };
+        std::unordered_map<std::string, RotTrack> boneRotations_;
+        float duration_ = 0.f;
+        friend class VRMAnimationLoader;
+        friend class VRM;
+    };
+
+    class VRMAnimationLoader {
+    public:
+        /// .vrma を読み込む。VRMC_vrm_animation が無ければ nullptr。
+        std::shared_ptr<VRMAnimation> load(const std::filesystem::path& path);
     };
 
 }// namespace krkrvrm
