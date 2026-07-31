@@ -2337,6 +2337,11 @@ static void  VRM_setExpression(ThreeWrapper<VRM> *self, std::string name, float 
 static float VRM_getExpression(ThreeWrapper<VRM> *self, std::string name)               { return (self && self->getObject()) ? self->getObject()->expressionManager.getValue(name) : 0.f; }
 static int   VRM_getExpressionCount(ThreeWrapper<VRM> *self)                             { return (self && self->getObject()) ? (int)self->getObject()->expressionManager.size() : 0; }
 static void  VRM_update(ThreeWrapper<VRM> *self)                                         { if (self && self->getObject()) self->getObject()->update(0.0f); }
+
+// 視線 (Phase1, bone 方式)。setLookAtTarget(ワールド座標) 後 update() で eye ボーンに反映。
+static void VRM_setLookAtTarget(ThreeWrapper<VRM> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->lookAt.setTarget(x, y, z); }
+static void VRM_clearLookAtTarget(ThreeWrapper<VRM> *self)                          { if (self && self->getObject()) self->getObject()->lookAt.clearTarget(); }
+static bool VRM_hasLookAt(ThreeWrapper<VRM> *self)                                  { return (self && self->getObject()) ? self->getObject()->lookAt.valid() : false; }
 static std::string VRM_getMetaName(ThreeWrapper<VRM> *self)       { return (self && self->getObject()) ? self->getObject()->meta.name : std::string(); }
 static std::string VRM_getMetaVersion(ThreeWrapper<VRM> *self)    { return (self && self->getObject()) ? self->getObject()->meta.version : std::string(); }
 static std::string VRM_getMetaLicenseUrl(ThreeWrapper<VRM> *self) { return (self && self->getObject()) ? self->getObject()->meta.licenseUrl : std::string(); }
@@ -2353,7 +2358,10 @@ NCB_METHOD_PROXY(getBoneCount, VRM_getBoneCount);    // -> int
 NCB_METHOD_PROXY(setExpression, VRM_setExpression);  // (name, weight)
 NCB_METHOD_PROXY(getExpression, VRM_getExpression);  // (name) -> float
 NCB_METHOD_PROXY(getExpressionCount, VRM_getExpressionCount);
-NCB_METHOD_PROXY(update, VRM_update);                // morph へ反映 (毎フレーム)
+NCB_METHOD_PROXY(update, VRM_update);                // morph/視線へ反映 (毎フレーム)
+NCB_METHOD_PROXY(setLookAtTarget, VRM_setLookAtTarget);   // (x,y,z) ワールド座標
+NCB_METHOD_PROXY(clearLookAtTarget, VRM_clearLookAtTarget);
+NCB_METHOD_PROXY(hasLookAt, VRM_hasLookAt);          // -> bool
 NCB_METHOD_PROXY(getMetaName, VRM_getMetaName);      // -> string
 NCB_METHOD_PROXY(getMetaVersion, VRM_getMetaVersion);
 NCB_METHOD_PROXY(getMetaLicenseUrl, VRM_getMetaLicenseUrl);

@@ -89,8 +89,26 @@ int main(int argc, char** argv) {
         std::cout << "[smoke] expression drives morph: " << (exprApplied ? "yes" : "no") << "\n";
     }
 
+    // --- LookAt (Phase1, bone 方式) ---
+    bool lookAtOk = true;// eye ボーンが無いモデルは対象外 (true 扱い)
+    auto leftEye = vrm->humanoid.getRawBoneNode("leftEye");
+    if (leftEye) {
+        const threepp::Quaternion before = leftEye->quaternion;
+        vrm->lookAt.setTarget(2.0f, 1.0f, 2.0f);// 頭の右前あたり
+        vrm->update();
+        const threepp::Quaternion after = leftEye->quaternion;
+        const float dq = std::abs(before.x - after.x) + std::abs(before.y - after.y) +
+                         std::abs(before.z - after.z) + std::abs(before.w - after.w);
+        lookAtOk = (dq > 1e-5f);
+        std::cout << "  lookAt: leftEye quaternion delta = " << dq
+                  << " -> " << (lookAtOk ? "moved" : "unchanged") << "\n";
+        vrm->lookAt.clearTarget();
+    } else {
+        std::cout << "  lookAt: no eye bones (skip)\n";
+    }
+
     const bool ok = vrm->scene && vrm->humanoid.has("hips") && found >= 5 &&
-                    (exprNames.empty() || exprApplied);
+                    (exprNames.empty() || exprApplied) && lookAtOk;
     std::cout << "[smoke] RESULT: " << (ok ? "PASS" : "FAIL") << "\n";
     return ok ? 0 : 1;
 }

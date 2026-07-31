@@ -7,6 +7,8 @@
 #include <threepp/objects/Bone.hpp>
 #include <threepp/objects/Group.hpp>
 #include <threepp/objects/Mesh.hpp>
+#include <threepp/math/Quaternion.hpp>
+#include <threepp/math/Vector3.hpp>
 
 #include <filesystem>
 #include <memory>
@@ -69,16 +71,38 @@ namespace krkrvrm {
         friend class VRMLoader;
     };
 
-    /// VRM モデル 1 体。scene + humanoid(raw) + meta + expressionManager。
-    /// Phase1+ で lookAt / springBoneManager を追加。
+    /// 視線 (Phase1)。bone 方式のみ (leftEye/rightEye を回転)。expression 方式は今後。
+    /// target(ワールド座標) を設定すると update() で頭からの方向を eye ボーンに反映する。
+    class VRMLookAt {
+    public:
+        void setTarget(float x, float y, float z);///< ワールド座標の注視点
+        void clearTarget();                       ///< 追従解除し eye を rest に戻す
+        [[nodiscard]] bool hasTarget() const { return hasTarget_; }
+        [[nodiscard]] bool valid() const { return static_cast<bool>(head_) && (leftEye_ || rightEye_); }
+        void update();
+
+    private:
+        std::shared_ptr<threepp::Bone> head_, leftEye_, rightEye_;
+        threepp::Vector3 offset_{0.f, 0.f, 0.f};   ///< 頭ボーンからの目位置オフセット
+        threepp::Quaternion leftRest_, rightRest_; ///< eye ボーンの rest 回転
+        float inMaxH_ = 90.f, inMaxV_ = 90.f;      ///< 入力角の最大 (deg)
+        float outH_ = 10.f, outVUp_ = 10.f, outVDown_ = 10.f;///< 出力スケール (deg)
+        threepp::Vector3 target_{0.f, 0.f, 0.f};
+        bool hasTarget_ = false;
+        friend class VRMLoader;
+    };
+
+    /// VRM モデル 1 体。scene + humanoid(raw) + meta + expressionManager + lookAt。
+    /// Phase2+ で springBoneManager を追加。
     class VRM {
     public:
         std::shared_ptr<threepp::Group> scene;///< GLTFResult.scene をそのまま。Scene に add して描画する
         VRMHumanoid humanoid;
         VRMExpressionManager expressionManager;
+        VRMLookAt lookAt;
         VRMMeta meta;
 
-        /// 毎フレーム更新 (Phase1 は表情のみ。Phase2 で lookAt / springBone を追加)。
+        /// 毎フレーム更新 (Phase1: 表情 + 視線。Phase2 で springBone を追加)。
         void update(float deltaSec = 0.0f);
     };
 

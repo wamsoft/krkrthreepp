@@ -10,7 +10,11 @@
 #endif
 #include <VRMC/VRM.h>
 
+#include <threepp/math/Euler.hpp>
+
+#include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <iostream>
 
 namespace krkrvrm {
@@ -83,11 +87,73 @@ namespace krkrvrm {
     }
 
     // -----------------------------------------------------------------------
+    // VRMLookAt (bone 方式)
+    // -----------------------------------------------------------------------
+    void VRMLookAt::setTarget(float x, float y, float z) {
+        target_.set(x, y, z);
+        hasTarget_ = true;
+    }
+
+    void VRMLookAt::clearTarget() {
+        hasTarget_ = false;
+        if (leftEye_) leftEye_->quaternion.copy(leftRest_);
+        if (rightEye_) rightEye_->quaternion.copy(rightRest_);
+    }
+
+    void VRMLookAt::update() {
+        if (!valid() || !hasTarget_) return;
+
+        head_->updateWorldMatrix(true, false);
+        threepp::Vector3 headPos;
+        head_->getWorldPosition(headPos);
+        threepp::Quaternion headQuat;
+        head_->getWorldQuaternion(headQuat);
+
+        threepp::Vector3 off;
+        off.copy(offset_).applyQuaternion(headQuat);
+        threepp::Vector3 eyePos;
+        eyePos.copy(headPos).add(off);
+
+        // 注視方向を頭ローカル空間へ (VRM は +Z 正面)
+        threepp::Vector3 dir;
+        dir.subVectors(target_, eyePos);
+        threepp::Quaternion inv;
+        inv.copy(headQuat).invert();
+        dir.applyQuaternion(inv).normalize();
+
+        constexpr float RAD2DEG = 57.29577951308232f;
+        constexpr float DEG2RAD = 0.017453292519943295f;
+        const float yawDeg = std::atan2(dir.x, dir.z) * RAD2DEG;
+        const float pitchDeg = std::asin(std::max(-1.f, std::min(1.f, dir.y))) * RAD2DEG;
+
+        // rangeMap (線形近似): |角度| を inputMax でクランプ/正規化し outputScale 倍
+        const float ay = std::min(std::abs(yawDeg), inMaxH_) / inMaxH_ * outH_;
+        const float yawOut = (yawDeg < 0.f) ? -ay : ay;
+        const float vScale = (pitchDeg >= 0.f) ? outVUp_ : outVDown_;
+        const float ap = std::min(std::abs(pitchDeg), inMaxV_) / inMaxV_ * vScale;
+        const float pitchOut = (pitchDeg < 0.f) ? -ap : ap;
+
+        threepp::Quaternion delta;
+        delta.setFromEuler(threepp::Euler(pitchOut * DEG2RAD, yawOut * DEG2RAD, 0.f));
+        if (leftEye_) {
+            threepp::Quaternion q;
+            q.copy(leftRest_).multiply(delta);
+            leftEye_->quaternion.copy(q);
+        }
+        if (rightEye_) {
+            threepp::Quaternion q;
+            q.copy(rightRest_).multiply(delta);
+            rightEye_->quaternion.copy(q);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // VRM
     // -----------------------------------------------------------------------
     void VRM::update(float /*deltaSec*/) {
-        // Phase1: 表情のみ。Phase2 で lookAt / springBone を追加。
+        // Phase1: 表情 + 視線。Phase2 で springBone を追加。
         expressionManager.applyToScene();
+        lookAt.update();
     }
 
     // -----------------------------------------------------------------------
@@ -202,6 +268,32 @@ namespace krkrvrm {
                 if (exprs.contains("preset")) addGroup(exprs["preset"]);
                 if (exprs.contains("custom")) addGroup(exprs["custom"]);
             }
+
+            // LookAt(1.0): type=="bone" のみ対応。eye ボーンを回転させる。
+            if (vrmExt.contains("lookAt") && vrmExt["lookAt"].value("type", std::string("bone")) == "bone") {
+                const auto& la = vrmExt["lookAt"];
+                auto& L = vrm->lookAt;
+                L.head_ = vrm->humanoid.getRawBoneNode("head");
+                L.leftEye_ = vrm->humanoid.getRawBoneNode("leftEye");
+                L.rightEye_ = vrm->humanoid.getRawBoneNode("rightEye");
+                if (L.leftEye_) L.leftRest_.copy(L.leftEye_->quaternion);
+                if (L.rightEye_) L.rightRest_.copy(L.rightEye_->quaternion);
+                if (la.contains("offsetFromHeadBone") && la["offsetFromHeadBone"].is_array() &&
+                    la["offsetFromHeadBone"].size() == 3) {
+                    const auto& o = la["offsetFromHeadBone"];
+                    L.offset_.set(o[0].get<float>(), o[1].get<float>(), o[2].get<float>());
+                }
+                auto rmap = [&](const char* key, float& inMax, float& outScale) {
+                    if (la.contains(key)) {
+                        inMax = la[key].value("inputMaxValue", 90.0f);
+                        outScale = la[key].value("outputScale", 10.0f);
+                    }
+                };
+                float dummy = 90.f;
+                rmap("rangeMapHorizontalOuter", L.inMaxH_, L.outH_);
+                rmap("rangeMapVerticalUp", L.inMaxV_, L.outVUp_);
+                rmap("rangeMapVerticalDown", dummy, L.outVDown_);
+            }
         } else {
             // ---- VRM 0.x (VRM) ---- Phase0 検証用の最小読み取り (Phase3 で軸/tail 等を拡充)
             const auto& vrmExt = gltf["extensions"]["VRM"];
@@ -249,6 +341,32 @@ namespace krkrvrm {
                     }
                     vrm->expressionManager.expressions_[name] = std::move(e);
                 }
+            }
+
+            // LookAt(0.x): firstPerson.lookAtTypeName=="Bone" のみ対応。
+            if (vrmExt.contains("firstPerson") &&
+                vrmExt["firstPerson"].value("lookAtTypeName", std::string("Bone")) == "Bone") {
+                const auto& fp = vrmExt["firstPerson"];
+                auto& L = vrm->lookAt;
+                L.head_ = vrm->humanoid.getRawBoneNode("head");
+                L.leftEye_ = vrm->humanoid.getRawBoneNode("leftEye");
+                L.rightEye_ = vrm->humanoid.getRawBoneNode("rightEye");
+                if (L.leftEye_) L.leftRest_.copy(L.leftEye_->quaternion);
+                if (L.rightEye_) L.rightRest_.copy(L.rightEye_->quaternion);
+                if (fp.contains("firstPersonBoneOffset")) {
+                    const auto& o = fp["firstPersonBoneOffset"];
+                    L.offset_.set(o.value("x", 0.f), o.value("y", 0.f), o.value("z", 0.f));
+                }
+                auto curve = [&](const char* key, float& inMax, float& outScale) {
+                    if (fp.contains(key)) {
+                        inMax = fp[key].value("xRange", 90.0f);
+                        outScale = fp[key].value("yRange", 10.0f);
+                    }
+                };
+                float dummy = 90.f;
+                curve("lookAtHorizontalOuter", L.inMaxH_, L.outH_);
+                curve("lookAtVerticalUp", L.inMaxV_, L.outVUp_);
+                curve("lookAtVerticalDown", dummy, L.outVDown_);
             }
         }
 
