@@ -5,3 +5,6 @@ build
 # テスト用にコピーしてくる最新の krkrz64 本体
 krkrz64.exe
 
+# VRM 検証用サンプル (DL してくるので追跡しない。取得元は test/vrm_smoke.cpp 参照)
+test/models/*.vrm
+

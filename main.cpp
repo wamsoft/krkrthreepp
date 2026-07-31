@@ -5,6 +5,7 @@
 
 #include "ncbind.hpp"
 #include "LayerExBase.hpp"
+#include "vrm/VRM.hpp"
 #include <vector>
 #include <memory>
 
@@ -2294,6 +2295,58 @@ NCB_METHOD_PROXY(render, GLRendererRender);
 NCB_METHOD_PROXY(setClearColor, GLRendererSetClearColor);
 NCB_METHOD_PROXY(onBeginScene, GLRendererOnBeginScene);
 NCB_METHOD_PROXY(onEndScene, GLRendererOnEndScene);
+};
+
+// ======================================================================
+// VRM (Phase 0) — vrm/VRM.hpp の VRMLoader / VRM を TJS に公開
+// ======================================================================
+
+using krkrvrm::VRM;
+using krkrvrm::VRMLoader;
+
+static tjs_error
+VRMLoaderFactory(ThreeWrapper<VRMLoader> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *objthis)
+{
+	*result = new ThreeWrapper<VRMLoader>(std::make_shared<VRMLoader>());
+	return TJS_S_OK;
+}
+
+// load(path) -> VRM（失敗/非VRMは void）。戻り値 shared_ptr は ThreeSharedPtrConvertor で自動変換。
+static std::shared_ptr<VRM> VRMLoader_load(ThreeWrapper<VRMLoader> *self, std::string path)
+{
+	if (self && self->getObject()) return self->getObject()->load(path);
+	return nullptr;
+}
+
+// VRM.scene -> Threepp.Group（Scene に add して render する）
+static std::shared_ptr<Group> VRM_getScene(ThreeWrapper<VRM> *self)
+{
+	return (self && self->getObject()) ? self->getObject()->scene : nullptr;
+}
+
+// VRM.getBoneNode(name) -> Threepp.Bone（human bone 名。無ければ void）
+static std::shared_ptr<Bone> VRM_getBoneNode(ThreeWrapper<VRM> *self, std::string name)
+{
+	return (self && self->getObject()) ? self->getObject()->humanoid.getRawBoneNode(name) : nullptr;
+}
+
+static int         VRM_getBoneCount(ThreeWrapper<VRM> *self)      { return (self && self->getObject()) ? (int)self->getObject()->humanoid.size() : 0; }
+static std::string VRM_getMetaName(ThreeWrapper<VRM> *self)       { return (self && self->getObject()) ? self->getObject()->meta.name : std::string(); }
+static std::string VRM_getMetaVersion(ThreeWrapper<VRM> *self)    { return (self && self->getObject()) ? self->getObject()->meta.version : std::string(); }
+static std::string VRM_getMetaLicenseUrl(ThreeWrapper<VRM> *self) { return (self && self->getObject()) ? self->getObject()->meta.licenseUrl : std::string(); }
+
+NCB_REGISTER_THREE_SUBCLASS(VRMLoader)
+Factory(VRMLoaderFactory);
+NCB_METHOD_PROXY(load, VRMLoader_load);
+};
+
+NCB_REGISTER_THREE_SUBCLASS(VRM)
+NCB_METHOD_PROXY(getScene, VRM_getScene);            // -> Threepp.Group
+NCB_METHOD_PROXY(getBoneNode, VRM_getBoneNode);      // (name) -> Threepp.Bone
+NCB_METHOD_PROXY(getBoneCount, VRM_getBoneCount);    // -> int
+NCB_METHOD_PROXY(getMetaName, VRM_getMetaName);      // -> string
+NCB_METHOD_PROXY(getMetaVersion, VRM_getMetaVersion);
+NCB_METHOD_PROXY(getMetaLicenseUrl, VRM_getMetaLicenseUrl);
 };
 
 // ======================================================================
@@ -4609,6 +4662,10 @@ NCB_REGISTER_CLASS(Threepp)
 
 	// ====== Renderers ======
 	THREE_SUBCLASS(GLRenderer);
+
+	// ====== VRM (Phase 0) ======
+	THREE_SUBCLASS(VRMLoader);
+	THREE_SUBCLASS(VRM);
 
 	// ====== Curves ======
 	THREE_SUBCLASS(LineCurve);

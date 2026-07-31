@@ -19,10 +19,29 @@ option(THREEPP_WITH_GENERIC "Build with Generic frontend (user-provided interfac
 
 add_subdirectory(threepp)
 
+# VRM ロード検証用スタンドアロン exe (GLES/kirikiri 不要)。既定 OFF。
+option(BUILD_VRM_SMOKE_TEST "Build standalone VRM load smoke test" OFF)
+if(BUILD_VRM_SMOKE_TEST)
+    add_executable(vrm_smoke test/vrm_smoke.cpp vrm/VRM.cpp)
+    target_include_directories(vrm_smoke PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/vrm
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/VRM/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/threepp/src/external/nlohmann)
+    target_compile_definitions(vrm_smoke PRIVATE USE_VRMC_VRM_1_0)
+    target_link_libraries(vrm_smoke PRIVATE threepp)
+endif()
+
 krkrz_plugin(krkr_threepp
     NCBIND
     SOURCES
         main.cpp
+        vrm/VRM.cpp
+    INCLUDES
+        ${CMAKE_CURRENT_SOURCE_DIR}/vrm
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/VRM/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/threepp/src/external/nlohmann
+    DEFINITIONS
+        USE_VRMC_VRM_1_0
     LIBRARIES
         threepp
 )

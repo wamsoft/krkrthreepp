@@ -2,3 +2,6 @@
 	path = threepp
 	url = https://github.com/wtnbgo/threepp.git
 	branch = work_sdl3
+[submodule "external/VRM"]
+	path = external/VRM
+	url = https://github.com/infosia/VRM.h.git
