@@ -144,6 +144,9 @@ error_log(const char* format, ...)
 
 static void initThreepp()
 {
+	// 本家 threepp は three.js 由来のカラーマネジメント(sRGB↔linear)を
+	// デフォルト有効にしているが、従来の描画結果を維持するため無効化する。
+	ColorManagement::enabled = false;
 }
 
 static void deInitThreepp()
@@ -298,7 +301,7 @@ NCB_TYPECONV_CAST_INTEGER(Mapping);
 NCB_TYPECONV_CAST_INTEGER(TextureWrapping);
 NCB_TYPECONV_CAST_INTEGER(Filter);
 NCB_TYPECONV_CAST_INTEGER(Format);
-NCB_TYPECONV_CAST_INTEGER(Encoding);
+NCB_TYPECONV_CAST_INTEGER(ColorSpace);
 NCB_TYPECONV_CAST_INTEGER(CullFace);
 NCB_TYPECONV_CAST_INTEGER(ShadowMap);
 NCB_TYPECONV_CAST_INTEGER(Loop);
@@ -2226,7 +2229,9 @@ NCB_THREE_MEMBER_PROPERTY(autoClearColor, bool, autoClearColor);
 NCB_THREE_MEMBER_PROPERTY(autoClearDepth, bool, autoClearDepth);
 NCB_THREE_MEMBER_PROPERTY(autoClearStencil, bool, autoClearStencil);
 NCB_THREE_MEMBER_PROPERTY(sortObjects, bool, sortObjects);
-NCB_THREE_MEMBER_PROPERTY(physicallyCorrectLights, bool, physicallyCorrectLights);
+// 本家で GLRenderer::physicallyCorrectLights は廃止され、Renderer::useLegacyLights
+// (意味は反転。false=物理的に正しいライティング) に置き換わった。
+NCB_THREE_MEMBER_PROPERTY(useLegacyLights, bool, useLegacyLights);
 NCB_THREE_MEMBER_PROPERTY(toneMappingExposure, float, toneMappingExposure);
 NCB_THREE_METHOD(setPixelRatio);
 NCB_METHOD_PROXY(setSize, GLRenderer_setSize);
@@ -2269,7 +2274,9 @@ NCB_THREE_MEMBER_PROPERTY(matrixAutoUpdate, bool, matrixAutoUpdate);
 NCB_THREE_MEMBER_PROPERTY(generateMipmaps, bool, generateMipmaps);
 NCB_THREE_MEMBER_PROPERTY(premultiplyAlpha, bool, premultiplyAlpha);
 NCB_THREE_MEMBER_PROPERTY(unpackAlignment, int, unpackAlignment);
-NCB_THREE_MEMBER_PROPERTY(encoding, Encoding, encoding);
+// 本家で Texture::encoding(Encoding) は colorSpace(ColorSpace) に置換された。
+// TJS 側の名前は互換のため encoding のまま、実体は colorSpace メンバに束縛する。
+NCB_THREE_MEMBER_PROPERTY(encoding, ColorSpace, colorSpace);
 NCB_THREE_METHOD(updateMatrix);
 NCB_THREE_METHOD(dispose);
 NCB_THREE_METHOD(needsUpdate);
@@ -4411,10 +4418,14 @@ NCB_REGISTER_CLASS(Threepp)
 	ENUM(ToneMapping::ACESFilmic);
 	ENUM(ToneMapping::Custom);
 
-	// Encoding
-	ENUM(Encoding::Linear);
-	ENUM(Encoding::sRGB);
-	ENUM(Encoding::Gamma);
+	// ColorSpace (旧 Encoding。値は不変: Linear=3000, sRGB=3001, Gamma=3007)
+	ENUM(ColorSpace::Linear);
+	ENUM(ColorSpace::sRGB);
+	ENUM(ColorSpace::Gamma);
+	// 後方互換: 旧 Encoding:: 名も同じ値で残す
+	Variant("Encoding::Linear", (int)ColorSpace::Linear);
+	Variant("Encoding::sRGB",   (int)ColorSpace::sRGB);
+	Variant("Encoding::Gamma",  (int)ColorSpace::Gamma);
 
 	// TextureWrapping
 	ENUM(TextureWrapping::Repeat);
