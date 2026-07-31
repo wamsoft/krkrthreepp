@@ -2,3 +2,6 @@ build
 .claude
 .vscode
 
+# テスト用にコピーしてくる最新の krkrz64 本体
+krkrz64.exe
+
