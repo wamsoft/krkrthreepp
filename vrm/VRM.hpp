@@ -6,6 +6,7 @@
 
 #include <threepp/objects/Bone.hpp>
 #include <threepp/objects/Group.hpp>
+#include <threepp/objects/Mesh.hpp>
 
 #include <filesystem>
 #include <memory>
@@ -39,13 +40,46 @@ namespace krkrvrm {
         friend class VRMLoader;
     };
 
-    /// VRM モデル 1 体。Phase0 は表示に必要な scene + humanoid(raw) + meta。
-    /// Phase1+ で expressionManager / lookAt / springBoneManager / update(dt) を追加。
+    /// 表情マネージャ (Phase1)。VRM の expression/blendShape を morph target 影響度へ反映する。
+    /// Phase1 は morph bind のみ (material color / texture transform bind は Phase2/MToon 後)。
+    class VRMExpressionManager {
+    public:
+        /// 表情ウェイトを設定 (0..1)。実際の反映は VRM::update()。
+        void setValue(const std::string& name, float weight);
+        [[nodiscard]] float getValue(const std::string& name) const;
+        [[nodiscard]] bool has(const std::string& name) const;
+        [[nodiscard]] std::vector<std::string> names() const;
+        [[nodiscard]] std::size_t size() const { return expressions_.size(); }
+
+        /// 全表情ウェイトを morph target 影響度へ適用 (bind 対象を 0 クリアしてから加算)。
+        void applyToScene();
+
+    private:
+        struct MorphBind {
+            std::shared_ptr<threepp::Mesh> mesh;
+            int index;    ///< morph target index
+            float weight; ///< この表情が全開(1.0)のときの目標ウェイト
+        };
+        struct Expression {
+            std::vector<MorphBind> morphBinds;
+            bool isBinary = false;///< true なら 0.5 閾値で 0/1
+        };
+        std::unordered_map<std::string, Expression> expressions_;
+        std::unordered_map<std::string, float> values_;
+        friend class VRMLoader;
+    };
+
+    /// VRM モデル 1 体。scene + humanoid(raw) + meta + expressionManager。
+    /// Phase1+ で lookAt / springBoneManager を追加。
     class VRM {
     public:
         std::shared_ptr<threepp::Group> scene;///< GLTFResult.scene をそのまま。Scene に add して描画する
         VRMHumanoid humanoid;
+        VRMExpressionManager expressionManager;
         VRMMeta meta;
+
+        /// 毎フレーム更新 (Phase1 は表情のみ。Phase2 で lookAt / springBone を追加)。
+        void update(float deltaSec = 0.0f);
     };
 
     /// VRM ローダ。threepp GLTFLoader で読み、生 glTF JSON の VRMC_vrm 拡張を解釈して VRM を組む。

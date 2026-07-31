@@ -57,7 +57,40 @@ int main(int argc, char** argv) {
     }
     std::cout << "[smoke] key bones found: " << found << "/" << (sizeof(key) / sizeof(key[0])) << "\n";
 
-    const bool ok = vrm->scene && vrm->humanoid.has("hips") && found >= 5;
+    // --- Expression (Phase1) ---
+    auto exprNames = vrm->expressionManager.names();
+    std::cout << "  expressions      = " << exprNames.size() << "\n";
+    bool exprApplied = false;
+    if (!exprNames.empty()) {
+        // まばたき/母音系のどれかを選ぶ (版で名前が違う: 0.x=a/blink, 1.0=aa/blink)
+        std::string pick;
+        for (const char* cand : {"aa", "a", "happy", "blink", "e", "ee"}) {
+            if (vrm->expressionManager.has(cand)) { pick = cand; break; }
+        }
+        if (pick.empty()) pick = exprNames.front();
+
+        // 適用前の bound morph 合計を測る
+        auto sumInfluences = [&]() {
+            double s = 0;
+            vrm->scene->traverse([&](threepp::Object3D& o) {
+                if (auto* m = dynamic_cast<threepp::Mesh*>(&o))
+                    for (float w : m->morphTargetInfluences()) s += w;
+            });
+            return s;
+        };
+        vrm->expressionManager.setValue(pick, 0.f);
+        vrm->update();
+        const double before = sumInfluences();
+        vrm->expressionManager.setValue(pick, 1.f);
+        vrm->update();
+        const double after = sumInfluences();
+        std::cout << "  expr \"" << pick << "\": morph sum " << before << " -> " << after << "\n";
+        exprApplied = (after > before + 1e-4);
+        std::cout << "[smoke] expression drives morph: " << (exprApplied ? "yes" : "no") << "\n";
+    }
+
+    const bool ok = vrm->scene && vrm->humanoid.has("hips") && found >= 5 &&
+                    (exprNames.empty() || exprApplied);
     std::cout << "[smoke] RESULT: " << (ok ? "PASS" : "FAIL") << "\n";
     return ok ? 0 : 1;
 }

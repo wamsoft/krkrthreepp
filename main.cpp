@@ -2331,6 +2331,12 @@ static std::shared_ptr<Bone> VRM_getBoneNode(ThreeWrapper<VRM> *self, std::strin
 }
 
 static int         VRM_getBoneCount(ThreeWrapper<VRM> *self)      { return (self && self->getObject()) ? (int)self->getObject()->humanoid.size() : 0; }
+
+// 表情 (Phase1)。setExpression 後に update() で morph へ反映。
+static void  VRM_setExpression(ThreeWrapper<VRM> *self, std::string name, float weight) { if (self && self->getObject()) self->getObject()->expressionManager.setValue(name, weight); }
+static float VRM_getExpression(ThreeWrapper<VRM> *self, std::string name)               { return (self && self->getObject()) ? self->getObject()->expressionManager.getValue(name) : 0.f; }
+static int   VRM_getExpressionCount(ThreeWrapper<VRM> *self)                             { return (self && self->getObject()) ? (int)self->getObject()->expressionManager.size() : 0; }
+static void  VRM_update(ThreeWrapper<VRM> *self)                                         { if (self && self->getObject()) self->getObject()->update(0.0f); }
 static std::string VRM_getMetaName(ThreeWrapper<VRM> *self)       { return (self && self->getObject()) ? self->getObject()->meta.name : std::string(); }
 static std::string VRM_getMetaVersion(ThreeWrapper<VRM> *self)    { return (self && self->getObject()) ? self->getObject()->meta.version : std::string(); }
 static std::string VRM_getMetaLicenseUrl(ThreeWrapper<VRM> *self) { return (self && self->getObject()) ? self->getObject()->meta.licenseUrl : std::string(); }
@@ -2344,6 +2350,10 @@ NCB_REGISTER_THREE_SUBCLASS(VRM)
 NCB_METHOD_PROXY(getScene, VRM_getScene);            // -> Threepp.Group
 NCB_METHOD_PROXY(getBoneNode, VRM_getBoneNode);      // (name) -> Threepp.Bone
 NCB_METHOD_PROXY(getBoneCount, VRM_getBoneCount);    // -> int
+NCB_METHOD_PROXY(setExpression, VRM_setExpression);  // (name, weight)
+NCB_METHOD_PROXY(getExpression, VRM_getExpression);  // (name) -> float
+NCB_METHOD_PROXY(getExpressionCount, VRM_getExpressionCount);
+NCB_METHOD_PROXY(update, VRM_update);                // morph へ反映 (毎フレーム)
 NCB_METHOD_PROXY(getMetaName, VRM_getMetaName);      // -> string
 NCB_METHOD_PROXY(getMetaVersion, VRM_getMetaVersion);
 NCB_METHOD_PROXY(getMetaLicenseUrl, VRM_getMetaLicenseUrl);

@@ -10,6 +10,7 @@
 #endif
 #include <VRMC/VRM.h>
 
+#include <cctype>
 #include <iostream>
 
 namespace krkrvrm {
@@ -31,6 +32,62 @@ namespace krkrvrm {
         names.reserve(rawBones_.size());
         for (const auto& [name, _] : rawBones_) names.push_back(name);
         return names;
+    }
+
+    // -----------------------------------------------------------------------
+    // VRMExpressionManager
+    // -----------------------------------------------------------------------
+    void VRMExpressionManager::setValue(const std::string& name, float weight) {
+        values_[name] = weight;
+    }
+
+    float VRMExpressionManager::getValue(const std::string& name) const {
+        auto it = values_.find(name);
+        return it != values_.end() ? it->second : 0.f;
+    }
+
+    bool VRMExpressionManager::has(const std::string& name) const {
+        return expressions_.find(name) != expressions_.end();
+    }
+
+    std::vector<std::string> VRMExpressionManager::names() const {
+        std::vector<std::string> v;
+        v.reserve(expressions_.size());
+        for (const auto& [n, _] : expressions_) v.push_back(n);
+        return v;
+    }
+
+    void VRMExpressionManager::applyToScene() {
+        // 1) bind 対象の morph 影響度を 0 クリア
+        for (auto& [name, expr] : expressions_) {
+            for (auto& b : expr.morphBinds) {
+                if (!b.mesh) continue;
+                auto& inf = b.mesh->morphTargetInfluences();
+                if (b.index >= 0 && static_cast<std::size_t>(b.index) < inf.size())
+                    inf[b.index] = 0.f;
+            }
+        }
+        // 2) 各表情ウェイト x bind ウェイトを加算
+        for (auto& [name, expr] : expressions_) {
+            auto vit = values_.find(name);
+            float v = (vit != values_.end()) ? vit->second : 0.f;
+            if (v <= 0.f) continue;
+            if (expr.isBinary) v = (v >= 0.5f) ? 1.f : 0.f;
+            for (auto& b : expr.morphBinds) {
+                if (!b.mesh) continue;
+                auto& inf = b.mesh->morphTargetInfluences();
+                if (b.index >= 0 && static_cast<std::size_t>(b.index) < inf.size())
+                    inf[b.index] += v * b.weight;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // VRM
+    // -----------------------------------------------------------------------
+    void VRM::update(float /*deltaSec*/) {
+        // Phase1: 表情のみ。Phase2 で lookAt / springBone を追加。
+        expressionManager.applyToScene();
     }
 
     // -----------------------------------------------------------------------
@@ -75,6 +132,21 @@ namespace krkrvrm {
             if (bone) vrm->humanoid.rawBones_[boneName] = bone;
         };
 
+        // glTF mesh index -> その mesh から生成された threepp::Mesh 群 (各 primitive)。
+        auto meshesForMeshIdx = [&](int meshIdx) {
+            std::vector<std::shared_ptr<threepp::Mesh>> ms;
+            for (const auto& [key, mptr] : result->meshPrimitives)
+                if (key.first == meshIdx && mptr) ms.push_back(mptr);
+            return ms;
+        };
+        // node index -> mesh index (無ければ -1)
+        auto meshIdxOfNode = [&](int nodeIdx) -> int {
+            if (!gltf.contains("nodes") || nodeIdx < 0 ||
+                nodeIdx >= (int)gltf["nodes"].size())
+                return -1;
+            return gltf["nodes"][nodeIdx].value("mesh", -1);
+        };
+
         if (isVrm1) {
             // ---- VRM 1.0 (VRMC_vrm) ----
             const auto& vrmExt = gltf["extensions"]["VRMC_vrm"];
@@ -104,6 +176,32 @@ namespace krkrvrm {
                         bindBone(it.key(), it.value()["node"].get<int>());
                 }
             }
+
+            // Expressions: expressions.preset / .custom = { name: { morphTargetBinds:[{node,index,weight}] } }
+            if (vrmExt.contains("expressions")) {
+                const auto& exprs = vrmExt["expressions"];
+                auto addGroup = [&](const nlohmann::json& group) {
+                    for (auto it = group.begin(); it != group.end(); ++it) {
+                        VRMExpressionManager::Expression e;
+                        const auto& ex = it.value();
+                        e.isBinary = ex.value("isBinary", false);
+                        if (ex.contains("morphTargetBinds")) {
+                            for (const auto& b : ex["morphTargetBinds"]) {
+                                if (!b.contains("node") || !b.contains("index")) continue;
+                                const int meshIdx = meshIdxOfNode(b["node"].get<int>());
+                                if (meshIdx < 0) continue;
+                                const int idx = b["index"].get<int>();
+                                const float w = b.value("weight", 1.0f);
+                                for (auto& m : meshesForMeshIdx(meshIdx))
+                                    e.morphBinds.push_back({m, idx, w});
+                            }
+                        }
+                        vrm->expressionManager.expressions_[it.key()] = std::move(e);
+                    }
+                };
+                if (exprs.contains("preset")) addGroup(exprs["preset"]);
+                if (exprs.contains("custom")) addGroup(exprs["custom"]);
+            }
         } else {
             // ---- VRM 0.x (VRM) ---- Phase0 検証用の最小読み取り (Phase3 で軸/tail 等を拡充)
             const auto& vrmExt = gltf["extensions"]["VRM"];
@@ -126,10 +224,37 @@ namespace krkrvrm {
                         bindBone(hb["bone"].get<std::string>(), hb["node"].get<int>());
                 }
             }
+
+            // Expressions(0.x): blendShapeMaster.blendShapeGroups
+            //   [{ name, presetName, isBinary, binds:[{mesh,index,weight(0-100)}] }]
+            if (vrmExt.contains("blendShapeMaster") &&
+                vrmExt["blendShapeMaster"].contains("blendShapeGroups")) {
+                for (const auto& g : vrmExt["blendShapeMaster"]["blendShapeGroups"]) {
+                    std::string name = g.value("presetName", std::string());
+                    if (name.empty() || name == "unknown") name = g.value("name", std::string());
+                    if (name.empty()) continue;
+                    for (auto& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+                    VRMExpressionManager::Expression e;
+                    e.isBinary = g.value("isBinary", false);
+                    if (g.contains("binds")) {
+                        for (const auto& b : g["binds"]) {
+                            if (!b.contains("mesh") || !b.contains("index")) continue;
+                            const int meshIdx = b["mesh"].get<int>();
+                            const int idx = b["index"].get<int>();
+                            const float w = b.value("weight", 100.0f) / 100.0f;// 0.x は 0-100
+                            for (auto& m : meshesForMeshIdx(meshIdx))
+                                e.morphBinds.push_back({m, idx, w});
+                        }
+                    }
+                    vrm->expressionManager.expressions_[name] = std::move(e);
+                }
+            }
         }
 
         std::cerr << "[VRM] loaded (" << (isVrm1 ? "1.0" : "0.x") << "): bones="
-                  << vrm->humanoid.size() << " meta.name=\"" << vrm->meta.name << "\"\n";
+                  << vrm->humanoid.size() << " expressions=" << vrm->expressionManager.size()
+                  << " meta.name=\"" << vrm->meta.name << "\"\n";
         return vrm;
     }
 
