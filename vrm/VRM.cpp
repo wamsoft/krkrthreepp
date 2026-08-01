@@ -512,6 +512,13 @@ namespace krkrvrm {
             }
         }
 
+        // VRM 0.x は -Z を正面とする規約。VRM 1.0 (および VRMC_vrm_animation / lookAt 等) は
+        // +Z 正面なので、0.x モデルは 180°Y 回転して +Z 正面へ正規化し、規約を 1.0 に揃える。
+        // (これをしないと 1.0 の VRMA を 0.x モデルへ適用したとき前後が逆になり不自然になる)
+        if (isVrm0 && vrm->scene) {
+            vrm->scene->rotateY(3.14159265358979323846f);
+        }
+
         // normalized rig 構築 (world 行列を確定させてから rest world 回転を捕捉)
         if (vrm->scene) {
             vrm->scene->updateMatrixWorld(true);
