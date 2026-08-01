@@ -12,6 +12,9 @@
 
 #include <threepp/math/Euler.hpp>
 #include <threepp/math/Matrix4.hpp>
+#include <threepp/materials/MeshToonMaterial.hpp>
+#include <threepp/materials/MeshStandardMaterial.hpp>
+#include <threepp/textures/DataTexture.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -21,6 +24,39 @@
 #include <unordered_map>
 
 namespace krkrvrm {
+
+    namespace {
+        // MToon の lit/shade 二色を MeshToonMaterial の gradientMap(色ランプ)で近似する。
+        // threepp は gradientMap を .rgb で参照するので、gradient = 白(lit端)→shadeRatio(shade端)
+        // にすると diffuse = map*litColor*gradient が shade 領域で map*shadeColor になり、
+        // シェード色(色相込み)が出る。shift で lit/shade 境界、toony で段の硬さを制御。
+        std::shared_ptr<threepp::Texture> buildMToonGradient(const threepp::Color& shadeRatio,
+                                                             float shift, float toony) {
+            const int N = 64;
+            std::vector<unsigned char> data(static_cast<std::size_t>(N) * 4);
+            const float boundary = 0.5f + shift * 0.5f;              // lit/shade 境界 (coord 空間)
+            const float width = std::max(0.002f, (1.0f - toony) * 0.5f);// toony=1 でほぼ硬い段
+            auto cl = [](float v) { int i = (int)(v * 255.f + 0.5f); return (unsigned char)(i < 0 ? 0 : (i > 255 ? 255 : i)); };
+            for (int i = 0; i < N; ++i) {
+                float p = (float)i / (float)(N - 1);
+                float t = (p - (boundary - width)) / (2.f * width);
+                t = t < 0.f ? 0.f : (t > 1.f ? 1.f : t);
+                t = t * t * (3.f - 2.f * t);// smoothstep
+                data[i * 4 + 0] = cl(shadeRatio.r + (1.f - shadeRatio.r) * t);
+                data[i * 4 + 1] = cl(shadeRatio.g + (1.f - shadeRatio.g) * t);
+                data[i * 4 + 2] = cl(shadeRatio.b + (1.f - shadeRatio.b) * t);
+                data[i * 4 + 3] = 255;
+            }
+            auto tex = threepp::DataTexture::create<unsigned char>(4, N, 1);
+            tex->image().setData(threepp::ImageData(std::move(data)));
+            tex->magFilter = threepp::Filter::Linear;
+            tex->minFilter = threepp::Filter::Linear;
+            tex->wrapS = threepp::TextureWrapping::ClampToEdge;
+            tex->wrapT = threepp::TextureWrapping::ClampToEdge;
+            tex->needsUpdate();
+            return tex;
+        }
+    }// namespace
 
     // -----------------------------------------------------------------------
     // VRMHumanoid
@@ -881,6 +917,85 @@ namespace krkrvrm {
                 mgr.setInitState();
                 std::cerr << "[VRM] springBone: joints=" << mgr.joints.size()
                           << " colliders=" << mgr.colliders.size() << "\n";
+            }
+        }
+
+        // VRMC_materials_mtoon: pbr フォールバック材(MeshStandardMaterial)を
+        // MeshToonMaterial(トゥーン)へ差し替える。lit=baseColorFactor、shade=shadeColorFactor を
+        // gradientMap の色ランプで表現。テクスチャ/emissive/透明度は元材から引き継ぐ。
+        // (outline/rim/matcap/normalScale 等の細部は未対応)
+        if (isVrm1 && gltf.contains("materials") && gltf.contains("meshes")) {
+            struct MToonParam { threepp::Color shade{1.f, 1.f, 1.f}; float shift = -0.05f, toony = 0.9f; };
+            std::unordered_map<int, MToonParam> mtoon;
+            const auto& mats = gltf["materials"];
+            for (int mi = 0; mi < static_cast<int>(mats.size()); ++mi) {
+                const auto& md = mats[mi];
+                if (!md.contains("extensions") || !md["extensions"].contains("VRMC_materials_mtoon")) continue;
+                const auto& mt = md["extensions"]["VRMC_materials_mtoon"];
+                MToonParam p;
+                if (mt.contains("shadeColorFactor") && mt["shadeColorFactor"].is_array() &&
+                    mt["shadeColorFactor"].size() >= 3) {
+                    const auto& s = mt["shadeColorFactor"];
+                    p.shade.setRGB(s[0].get<float>(), s[1].get<float>(), s[2].get<float>());
+                }
+                p.shift = mt.value("shadingShiftFactor", -0.05f);
+                p.toony = mt.value("shadingToonyFactor", 0.9f);
+                mtoon[mi] = p;
+            }
+            if (!mtoon.empty()) {
+                const auto& meshes = gltf["meshes"];
+                int swapped = 0;
+                for (int meshI = 0; meshI < static_cast<int>(meshes.size()); ++meshI) {
+                    if (!meshes[meshI].contains("primitives")) continue;
+                    const auto& prims = meshes[meshI]["primitives"];
+                    for (int primI = 0; primI < static_cast<int>(prims.size()); ++primI) {
+                        auto pit = mtoon.find(prims[primI].value("material", -1));
+                        if (pit == mtoon.end()) continue;
+                        auto meshIt = result->meshPrimitives.find({meshI, primI});
+                        if (meshIt == result->meshPrimitives.end() || !meshIt->second) continue;
+                        auto mesh = meshIt->second;
+
+                        // 元材の型は VRM だと MeshBasicMaterial(KHR_materials_unlit)か
+                        // MeshStandardMaterial のことがあるので、capability mixin で取り出す。
+                        auto matPtr = mesh->material();
+                        threepp::Material* mat0 = matPtr.get();
+                        threepp::Color lit(1.f, 1.f, 1.f), emissive(0.f, 0.f, 0.f);
+                        std::shared_ptr<threepp::Texture> map, emissiveMap, normalMap;
+                        float emissiveIntensity = 1.f;
+                        if (auto* c = dynamic_cast<threepp::MaterialWithColor*>(mat0)) lit.copy(c->color);
+                        if (auto* m = dynamic_cast<threepp::MaterialWithMap*>(mat0)) map = m->map;
+                        if (auto* e = dynamic_cast<threepp::MaterialWithEmissive*>(mat0)) {
+                            emissive.copy(e->emissive);
+                            emissiveIntensity = e->emissiveIntensity;
+                            emissiveMap = e->emissiveMap;
+                        }
+                        if (auto* n = dynamic_cast<threepp::MaterialWithNormalMap*>(mat0)) normalMap = n->normalMap;
+
+                        auto ratio = [](float s, float l) { float r = l > 1e-4f ? s / l : s; return r < 0.f ? 0.f : (r > 1.f ? 1.f : r); };
+                        threepp::Color shadeRatio(ratio(pit->second.shade.r, lit.r),
+                                                  ratio(pit->second.shade.g, lit.g),
+                                                  ratio(pit->second.shade.b, lit.b));
+
+                        auto toon = threepp::MeshToonMaterial::create();
+                        toon->gradientMap = buildMToonGradient(shadeRatio, pit->second.shift, pit->second.toony);
+                        toon->color.copy(lit);
+                        toon->map = map;
+                        toon->emissive.copy(emissive);
+                        toon->emissiveIntensity = emissiveIntensity;
+                        toon->emissiveMap = emissiveMap;
+                        toon->normalMap = normalMap;
+                        if (mat0) {
+                            toon->transparent = mat0->transparent;
+                            toon->opacity = mat0->opacity;
+                            toon->alphaTest = mat0->alphaTest;
+                            toon->side = mat0->side;
+                        }
+                        mesh->setMaterial(toon);
+                        ++swapped;
+                    }
+                }
+                std::cerr << "[VRM] MToon materials applied: " << swapped << " primitives ("
+                          << mtoon.size() << " materials)\n";
             }
         }
 
