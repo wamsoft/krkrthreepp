@@ -87,6 +87,7 @@ class VRMViewer extends Window
         // --- GLES コンテキストの用意 ---------------------------------
         adaptor = new GLESAdaptor(this);
         adaptor.setScreenSize(SCREEN_W, SCREEN_H);
+        adaptor.unpremultiply = true;   // MSAA の premultiplied 縁を straight-alpha へ戻す
         adaptor.makeCurrent();
 
         // --- threepp の初期化 ----------------------------------------

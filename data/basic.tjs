@@ -45,6 +45,7 @@ class BasicViewer extends Window
         // GLES コンテキスト
         adaptor = new GLESAdaptor(this);
         adaptor.setScreenSize(SCREEN_W, SCREEN_H);
+        adaptor.unpremultiply = true;   // MSAA の premultiplied 縁を straight-alpha へ戻す
         adaptor.makeCurrent();
 
         renderer = new Threepp.GLRenderer(adaptor, SCREEN_W, SCREEN_H);
