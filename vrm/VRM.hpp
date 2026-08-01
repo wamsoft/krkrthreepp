@@ -19,6 +19,8 @@
 #include <unordered_map>
 #include <vector>
 
+namespace threepp { class Texture; }
+
 namespace krkrvrm {
 
     /// VRM メタ情報 (ライセンス/作者等)。Phase0 は主要フィールドのみ。
@@ -206,6 +208,9 @@ namespace krkrvrm {
         VRMMeta meta;
         std::vector<VRMNodeConstraint> constraints;///< VRMC_node_constraint (dependency 順)
         VRMSpringBoneManager springBone;           ///< VRMC_springBone (揺れもの)
+        /// MToon ShaderMaterial が uniform で raw Texture* 参照するテクスチャの寿命保持。
+        /// (元材差し替えで解放されないよう VRM が所有し続ける)
+        std::vector<std::shared_ptr<threepp::Texture>> keepAliveTextures;
 
         /// 毎フレーム更新 (ポーズ + 制約 + 表情 + 視線 + springBone)。
         /// deltaSec は springBone 物理積分に使う (0 だと揺れは止まる)。

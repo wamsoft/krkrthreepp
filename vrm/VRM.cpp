@@ -30,37 +30,6 @@
 namespace krkrvrm {
 
     namespace {
-        // MToon の lit/shade 二色を MeshToonMaterial の gradientMap(色ランプ)で近似する。
-        // threepp は gradientMap を .rgb で参照するので、gradient = 白(lit端)→shadeRatio(shade端)
-        // にすると diffuse = map*litColor*gradient が shade 領域で map*shadeColor になり、
-        // シェード色(色相込み)が出る。shift で lit/shade 境界、toony で段の硬さを制御。
-        std::shared_ptr<threepp::Texture> buildMToonGradient(const threepp::Color& shadeRatio,
-                                                             float shift, float toony) {
-            const int N = 64;
-            std::vector<unsigned char> data(static_cast<std::size_t>(N) * 4);
-            const float boundary = 0.5f + shift * 0.5f;              // lit/shade 境界 (coord 空間)
-            const float width = std::max(0.002f, (1.0f - toony) * 0.5f);// toony=1 でほぼ硬い段
-            auto cl = [](float v) { int i = (int)(v * 255.f + 0.5f); return (unsigned char)(i < 0 ? 0 : (i > 255 ? 255 : i)); };
-            for (int i = 0; i < N; ++i) {
-                float p = (float)i / (float)(N - 1);
-                float t = (p - (boundary - width)) / (2.f * width);
-                t = t < 0.f ? 0.f : (t > 1.f ? 1.f : t);
-                t = t * t * (3.f - 2.f * t);// smoothstep
-                data[i * 4 + 0] = cl(shadeRatio.r + (1.f - shadeRatio.r) * t);
-                data[i * 4 + 1] = cl(shadeRatio.g + (1.f - shadeRatio.g) * t);
-                data[i * 4 + 2] = cl(shadeRatio.b + (1.f - shadeRatio.b) * t);
-                data[i * 4 + 3] = 255;
-            }
-            auto tex = threepp::DataTexture::create<unsigned char>(4, N, 1);
-            tex->image().setData(threepp::ImageData(std::move(data)));
-            tex->magFilter = threepp::Filter::Linear;
-            tex->minFilter = threepp::Filter::Linear;
-            tex->wrapS = threepp::TextureWrapping::ClampToEdge;
-            tex->wrapT = threepp::TextureWrapping::ClampToEdge;
-            tex->needsUpdate();
-            return tex;
-        }
-
         // MToon outline (反転ハル法)。法線方向に outlineWidth 押し出した back-face のみを
         // 描いてモデル背後にはみ出させ輪郭線にする。スキニング対応(SkinnedMesh でも変形追従)。
         std::shared_ptr<threepp::ShaderMaterial> makeOutlineMaterial(const threepp::Color& color, float width) {
@@ -95,50 +64,127 @@ void main() {
             return mat;
         }
 
-        // MToon parametric rim (リムライト)。視線に対する法線のフレネルで縁が光る。
-        // 加算合成のオーバーレイメッシュとして重ねる(スキニング追従)。
-        std::shared_ptr<threepp::ShaderMaterial> makeRimMaterial(const threepp::Color& rimColor,
-                                                                float power, float lift) {
+
+        // MToon 本体 (lights 有効の ShaderMaterial)。lit/shade トゥーン陰影を
+        // shadingShift/shadingToony のランプで表現し、rim(フレネル)/emissive を統合する。
+        // shade は baseColorTexture を共有し shadeColorFactor で tint する(VRM の一般ケース)。
+        // skinning は SkinnedMesh で自動有効、morph は morphTargets フラグ(呼び出し側で設定)。
+        struct MToonShaderParams {
+            threepp::Color litColor{1.f, 1.f, 1.f};
+            threepp::Color shadeColor{1.f, 1.f, 1.f};
+            float shadingShift = -0.05f;
+            float shadingToony = 0.9f;
+            threepp::Texture* baseMap = nullptr;
+            threepp::Color emissive{0.f, 0.f, 0.f};
+            threepp::Texture* emissiveMap = nullptr;
+            threepp::Color rimColor{0.f, 0.f, 0.f};
+            float rimPower = 5.f, rimLift = 0.f;
+            float opacity = 1.f, alphaTest = 0.f;
+            bool transparent = false;
+            threepp::Side side = threepp::Side::Front;
+        };
+
+        // sampler uniform に null Texture* を渡すと threepp がバインド時にクラッシュするため、
+        // テクスチャの無いスロット用に 1x1 白ダミーを共有で用意する。
+        std::shared_ptr<threepp::Texture> whiteDummyTexture() {
+            static std::shared_ptr<threepp::Texture> tex;
+            if (!tex) {
+                std::vector<unsigned char> px{255, 255, 255, 255};
+                auto t = threepp::DataTexture::create<unsigned char>(4, 1, 1);
+                t->image().setData(threepp::ImageData(std::move(px)));
+                t->needsUpdate();
+                tex = t;
+            }
+            return tex;
+        }
+
+        std::shared_ptr<threepp::ShaderMaterial> makeMToonMaterial(const MToonShaderParams& p) {
             auto mat = threepp::ShaderMaterial::create();
             mat->vertexShader = R"(
 #include <common>
+#include <morphtarget_pars_vertex>
 #include <skinning_pars_vertex>
-varying vec3 vRimN;
-varying vec3 vRimP;
+varying vec2 vMUv;
+varying vec3 vMNormal;
+varying vec3 vMViewPos;
 void main() {
-    #include <skinbase_vertex>
+    vMUv = uv;
     #include <beginnormal_vertex>
+    #include <morphnormal_vertex>
+    #include <skinbase_vertex>
     #include <skinnormal_vertex>
     #include <begin_vertex>
+    #include <morphtarget_vertex>
     #include <skinning_vertex>
     vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );
-    vRimP = mvPosition.xyz;
-    vRimN = normalize( normalMatrix * objectNormal );
+    vMViewPos = -mvPosition.xyz;
+    vMNormal  = normalize( normalMatrix * objectNormal );
     gl_Position = projectionMatrix * mvPosition;
 }
 )";
             mat->fragmentShader = R"(
-uniform vec3 rimColor;
+uniform vec3 litFactor;
+uniform vec3 shadeFactor;
+uniform float shadingShift;
+uniform float shadingToony;
+uniform float opacity;
+uniform float alphaCutoff;
+uniform vec3 emissiveFactor;
+uniform vec3 rimFactor;
 uniform float rimPower;
 uniform float rimLift;
-varying vec3 vRimN;
-varying vec3 vRimP;
+uniform vec3 keyLightDir;    // view 空間の主光源方向 (面→光源)
+uniform vec3 keyLightColor;
+uniform vec3 ambientColor;
+uniform sampler2D baseMap;     uniform int hasBaseMap;
+uniform sampler2D emissiveMap; uniform int hasEmissiveMap;
+varying vec2 vMUv;
+varying vec3 vMNormal;
+varying vec3 vMViewPos;
+float linstep( float a, float b, float t ) { return clamp( ( t - a ) / max( 1e-4, b - a ), 0.0, 1.0 ); }
 void main() {
-    vec3 V = normalize( -vRimP );
-    float f = 1.0 - max( 0.0, dot( normalize( vRimN ), V ) );
-    f = clamp( f + rimLift, 0.0, 1.0 );
-    float rim = pow( f, max( 0.001, rimPower ) );
-    gl_FragColor = vec4( rimColor * rim, 1.0 );
+    vec4 tex = ( hasBaseMap != 0 ) ? texture2D( baseMap, vMUv ) : vec4( 1.0 );
+    vec3 lit   = litFactor   * tex.rgb;
+    vec3 shade = shadeFactor * tex.rgb;
+    float alpha = opacity * tex.a;
+    if ( alphaCutoff > 0.0 ) { if ( alpha < alphaCutoff ) discard; alpha = 1.0; }
+    vec3 N = normalize( vMNormal );
+    vec3 V = normalize( vMViewPos );
+    float dotNL = dot( N, normalize( keyLightDir ) );
+    float sh = linstep( -1.0 + shadingToony, 1.0 - shadingToony, dotNL + shadingShift );
+    vec3 col = mix( shade, lit, sh ) * keyLightColor;
+    col += lit * ambientColor;                       // ambient/GI は lit 全開扱い
+    col += emissiveFactor * ( ( hasEmissiveMap != 0 ) ? texture2D( emissiveMap, vMUv ).rgb : vec3( 1.0 ) );
+    float f = clamp( 1.0 - max( 0.0, dot( N, V ) ) + rimLift, 0.0, 1.0 );
+    col += rimFactor * pow( f, max( 0.001, rimPower ) );
+    gl_FragColor = vec4( col, alpha );
 }
 )";
+            auto v3 = [](const threepp::Color& c) { return threepp::Vector3(c.r, c.g, c.b); };
             mat->uniforms = threepp::UniformMap{
-                    {"rimColor", threepp::Uniform(threepp::Vector3(rimColor.r, rimColor.g, rimColor.b))},
-                    {"rimPower", threepp::Uniform(power)},
-                    {"rimLift", threepp::Uniform(lift)}};
-            mat->blending = threepp::Blending::Additive;
-            mat->transparent = true;
-            mat->depthWrite = false;
+                    {"litFactor", threepp::Uniform(v3(p.litColor))},
+                    {"shadeFactor", threepp::Uniform(v3(p.shadeColor))},
+                    {"shadingShift", threepp::Uniform(p.shadingShift)},
+                    {"shadingToony", threepp::Uniform(p.shadingToony)},
+                    {"opacity", threepp::Uniform(p.opacity)},
+                    {"alphaCutoff", threepp::Uniform(p.alphaTest)},
+                    {"emissiveFactor", threepp::Uniform(v3(p.emissive))},
+                    {"rimFactor", threepp::Uniform(v3(p.rimColor))},
+                    {"rimPower", threepp::Uniform(p.rimPower)},
+                    {"rimLift", threepp::Uniform(p.rimLift)},
+                    {"baseMap", threepp::Uniform(p.baseMap ? p.baseMap : whiteDummyTexture().get())},
+                    {"hasBaseMap", threepp::Uniform(p.baseMap ? 1 : 0)},
+                    {"emissiveMap", threepp::Uniform(p.emissiveMap ? p.emissiveMap : whiteDummyTexture().get())},
+                    {"hasEmissiveMap", threepp::Uniform(p.emissiveMap ? 1 : 0)},
+                    // 固定キーライト(view 空間・カメラ相対)。threepp lights=true の ShaderMaterial は
+                    // renderer 側 uniform 前提で不安定なため、自前の単一ライトで MToon 陰影を出す。
+                    {"keyLightDir", threepp::Uniform(threepp::Vector3(0.25f, 0.40f, 1.0f))},
+                    {"keyLightColor", threepp::Uniform(threepp::Vector3(0.7f, 0.7f, 0.7f))},
+                    {"ambientColor", threepp::Uniform(threepp::Vector3(0.3f, 0.3f, 0.32f))}};
             mat->lights = false;
+            mat->transparent = p.transparent;
+            mat->opacity = p.opacity;
+            mat->side = p.side;
             return mat;
         }
     }// namespace
@@ -1266,37 +1312,46 @@ void main() {
                         }
                         if (auto* n = dynamic_cast<threepp::MaterialWithNormalMap*>(mat0)) normalMap = n->normalMap;
 
-                        auto ratio = [](float s, float l) { float r = l > 1e-4f ? s / l : s; return r < 0.f ? 0.f : (r > 1.f ? 1.f : r); };
-                        threepp::Color shadeRatio(ratio(pit->second.shade.r, lit.r),
-                                                  ratio(pit->second.shade.g, lit.g),
-                                                  ratio(pit->second.shade.b, lit.b));
-
-                        auto toon = threepp::MeshToonMaterial::create();
-                        toon->gradientMap = buildMToonGradient(shadeRatio, pit->second.shift, pit->second.toony);
-                        toon->color.copy(lit);
-                        toon->map = map;
-                        toon->emissive.copy(emissive);
-                        toon->emissiveIntensity = emissiveIntensity;
-                        toon->emissiveMap = emissiveMap;
-                        toon->normalMap = normalMap;
+                        MToonShaderParams sp;
+                        sp.litColor.copy(lit);
+                        sp.shadeColor.copy(pit->second.shade);
+                        sp.shadingShift = pit->second.shift;
+                        sp.shadingToony = pit->second.toony;
+                        sp.baseMap = map.get();
+                        sp.emissive.copy(emissive);
+                        sp.emissive.multiplyScalar(emissiveIntensity);
+                        sp.emissiveMap = emissiveMap.get();
+                        if (pit->second.hasRim) {
+                            sp.rimColor.copy(pit->second.rimColor);
+                            sp.rimPower = pit->second.rimPower;
+                            sp.rimLift = pit->second.rimLift;
+                        }
                         if (mat0) {
-                            toon->transparent = mat0->transparent;
-                            toon->opacity = mat0->opacity;
-                            toon->alphaTest = mat0->alphaTest;
-                            toon->side = mat0->side;
+                            sp.transparent = mat0->transparent;
+                            sp.opacity = mat0->opacity;
+                            sp.alphaTest = mat0->alphaTest;
+                            sp.side = mat0->side;
+                        }
+                        auto toon = makeMToonMaterial(sp);
+                        // uniform は raw Texture* 参照。元材差し替えで解放されないよう寿命保持。
+                        if (map) vrm->keepAliveTextures.push_back(map);
+                        if (emissiveMap) vrm->keepAliveTextures.push_back(emissiveMap);
+                        // morph を持つ mesh(顔等)は morphTargets を有効化(頂点シェーダに morph include 済み)
+                        if (auto geo = mesh->geometry()) {
+                            if (geo->getMorphAttribute("position")) {
+                                toon->morphTargets = true;
+                                if (geo->getMorphAttribute("normal")) toon->morphNormals = true;
+                            }
                         }
                         mesh->setMaterial(toon);
                         ++swapped;
 
-                        // outline (反転ハル) / rim (加算リムライト) を重ねる
+                        // outline (反転ハル) を重ねる。rim は MToon シェーダに統合済み。
                         if (pit->second.hasOutline) {
                             addOverlay(mesh, makeOutlineMaterial(pit->second.outlineColor, pit->second.outlineWidth), "_outline");
                             ++outlined;
                         }
-                        if (pit->second.hasRim) {
-                            addOverlay(mesh, makeRimMaterial(pit->second.rimColor, pit->second.rimPower, pit->second.rimLift), "_rim");
-                            ++rimmed;
-                        }
+                        if (pit->second.hasRim) ++rimmed;
                     }
                 }
                 std::cerr << "[VRM] MToon materials applied: " << swapped << " primitives ("
