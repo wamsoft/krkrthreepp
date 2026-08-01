@@ -19,6 +19,7 @@
  *   Z / X      … ズームイン / ズームアウト
  *   Space      … アニメーションを頭から再生し直す
  *   E          … 表情(expression)を順番に切り替える
+ *   O          … override デモ (happy+blink+aa ⇔ blink単体 をトグル)
  *   Enter      … 現在の画面を shot.png へ保存
  */
 
@@ -274,6 +275,7 @@ class VRMViewer extends Window
         case VK_X:      camDist  *= 1.1;  if (camDist  > 20.0) camDist  = 20.0; updateCamera(); break;
         case VK_SPACE:  animTime  = 0.0; break;
         case VK_E:      cycleExpression(); break;
+        case VK_O:      overrideDemo(); break;
         case VK_RETURN: saveShot("shot.png"); break;
         default:
             super.onKeyDown(key, shift);
@@ -290,6 +292,30 @@ class VRMViewer extends Window
         if (exprIndex >= exprNames.count) exprIndex = 0;
         vrm.setExpression(exprNames[exprIndex], 1.0);
         Debug.message("expression: " + exprNames[exprIndex]);
+    }
+
+    // override デモ: happy(overrideBlink/Mouth=block)+blink+aa を同時に掛ける。
+    // override が効いていれば blink/aa は抑制され、happy の笑顔だけが出る。
+    // 押すたびに [override有効] と [blink単体] を切り替えて違いを見る。
+    var overrideOn = false;
+    function overrideDemo()
+    {
+        if (exprIndex >= 0) { vrm.setExpression(exprNames[exprIndex], 0.0); exprIndex = -1; }
+        vrm.setExpression("happy", 0.0);
+        vrm.setExpression("blink", 0.0);
+        vrm.setExpression("aa",    0.0);
+        overrideOn = !overrideOn;
+        if (overrideOn) {
+            // happy が blink/mouth を block するので、笑顔のまま(目は happy の細目)
+            vrm.setExpression("happy", 1.0);
+            vrm.setExpression("blink", 1.0);
+            vrm.setExpression("aa",    1.0);
+            Debug.message("override demo: happy+blink+aa (blink/aa は override で抑制されるはず)");
+        } else {
+            // 比較用: blink 単体 (目が閉じる)
+            vrm.setExpression("blink", 1.0);
+            Debug.message("override demo: blink 単体 (目が閉じる)");
+        }
     }
 
     function finalize()
