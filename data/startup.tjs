@@ -80,7 +80,7 @@ class VRMViewer extends Window
         dest.setImageSize(SCREEN_W, SCREEN_H);
         dest.setSize(SCREEN_W, SCREEN_H);
         dest.setPos(0, 0);
-        dest.type = ltAdditive;
+        dest.type = ltAlpha;   // 3D結果(α込み)を背景へ通常アルファ合成
         dest.visible = true;
         add(dest);
 

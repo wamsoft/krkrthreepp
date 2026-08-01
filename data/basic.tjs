@@ -38,7 +38,7 @@ class BasicViewer extends Window
         dest = new Layer(this, back);
         dest.setImageSize(SCREEN_W, SCREEN_H);
         dest.setSize(SCREEN_W, SCREEN_H);
-        dest.type = ltAdditive;
+        dest.type = ltAlpha;   // 3D結果(α込み)を背景へ通常アルファ合成
         dest.visible = true;
         add(dest);
 
