@@ -6,6 +6,8 @@ threepp (C++ port of three.js) を吉里吉里で使用するためのプラグ�
 
 このプラグインは [threepp](https://github.com/markaren/threepp) ライブラリを ncbind を使って吉里吉里にバインディングし、TJS2 スクリプトから 3D グラフィックス機能を利用可能にします。
 
+three.js 相当のシーングラフ/ジオメトリ/マテリアル/ライティングに加え、**VRM アバター (VRoid 等、0.x・1.0)** の読み込み・表情・視線・VRMA アニメ・揺れ物・MToon トゥーン描画に対応します。TJS2 側の擬似コード API は [`manual.tjs`](manual.tjs)、GLES 接続や描画の流れは [`CLAUDE.md`](CLAUDE.md) を参照してください。
+
 ## 実装済みクラス一覧
 
 ### Math クラス
@@ -160,7 +162,22 @@ threepp (C++ port of three.js) を吉里吉里で使用するためのプラグ�
 ### Renderer クラス
 | クラス名 | 説明 |
 |---------|------|
-| `GLRenderer` | OpenGLレンダラー |
+| `GLRenderer` | OpenGLレンダラー (MSAA `setSampleCount`、`onBeginScene`/`onEndScene` でホスト GL 連携) |
+
+### VRM クラス
+VRoid/VRM アバター (0.x・1.0 両対応)。読み込み・humanoid リグ・表情・視線・VRMA アニメ・
+揺れ物(springBone)・制約(node_constraint)・MToon(トゥーン/輪郭線/matcap/normalMap) を実装。
+
+| クラス名 | 説明 |
+|---------|------|
+| `VRMLoader` | .vrm ローダ (`load` / `loadStorage`) |
+| `VRM` | アバター本体 (`getScene`/`update`/`setExpression`/`applyAnimation`/`setLookAtTarget`/`setColliderScale` 等) |
+| `VRMAnimationLoader` | .vrma ローダ |
+| `VRMAnimation` | VRM アニメーション (ボーン回転 + hips ルートモーション) |
+
+グローバル関数 `textureFromLayer(layer)` — 吉里吉里 Layer を threepp テクスチャへ変換。
+
+詳細な API は [`manual.tjs`](manual.tjs) を参照。
 
 ---
 

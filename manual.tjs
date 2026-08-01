@@ -518,11 +518,18 @@ class Threepp {
 		property receiveShadow; // 影を受けるか
 		property frustumCulled; // 視錐台カリングを行うか
 		property renderOrder; // 描画順序
-		property position;    // 位置 (Vector3、読み取り専用 - 各成分は変更可)
-		property rotation;    // 回転 (Euler、読み取り専用)
-		property quaternion;  // 回転 (Quaternion、読み取り専用)
-		property scale;       // スケール (Vector3、読み取り専用 - 各成分は変更可)
-		property up;          // 上方向ベクトル (Vector3、読み取り専用)
+		// 注意: position/rotation/scale/quaternion の getter は「値のコピー」を返すため、
+		//       obj.position.set(...) や obj.position.x = ... を書いても本体には反映されません。
+		//       位置・回転・スケールを変えるには下の setPosition/setRotation/setScale を使ってください。
+		property position;    // 位置 (Vector3、値コピー = 実質読み取り専用)
+		property rotation;    // 回転 (Euler、値コピー = 実質読み取り専用)
+		property quaternion;  // 回転 (Quaternion、値コピー = 実質読み取り専用)
+		property scale;       // スケール (Vector3、値コピー = 実質読み取り専用)
+		property up;          // 上方向ベクトル (Vector3、値コピー)
+
+		function setPosition(x, y, z); // 位置を設定 (position.set の代わりにこれを使う)
+		function setRotation(x, y, z); // 回転(オイラー角ラジアン)を設定
+		function setScale(x, y, z);    // スケールを設定
 		
 		/**
 		 * 子オブジェクトを追加
@@ -877,6 +884,8 @@ class Threepp {
 		property color;     // 色 (0xRRGGBB)
 		property wireframe; // ワイヤーフレーム表示
 		property wireframeLinewidth; // ワイヤーフレームの線幅
+
+		function setMap(texture); // カラーテクスチャを設定 (textureFromLayer() の戻り値等)
 	}
 
 	/**
@@ -1685,6 +1694,14 @@ class Threepp {
 		
 		function setPixelRatio(ratio); // ピクセル比を設定
 		function setSize(width, height); // サイズを設定
+
+		/**
+		 * MSAA (マルチサンプルアンチエイリアス) のサンプル数を設定
+		 * @param count 0/1=無効, 2/4/8 など。既定 4。onBeginScene が内部マルチサンプル FBO へ
+		 *   描き onEndScene で解決(resolve)してホスト FBO へ転送する。輪郭のジャギーが軽減される。
+		 *   縁の premultiplied alpha が気になる場合はホスト側(GLESAdaptor.unpremultiply)で補正する。
+		 */
+		function setSampleCount(count);
 		function setScissorTest(enabled); // シザーテストの有効/無効
 		function clear(color=true, depth=true, stencil=true); // バッファをクリア
 		function clearColor();     // カラーバッファをクリア
@@ -2430,11 +2447,122 @@ class Threepp {
 		function ExtrudeGeometry(shape, options);
 	}
 
+	// ============================================================
+	// VRM (VRoid/VRM 0.x・1.0 アバター)
+	// ------------------------------------------------------------
+	// VRMLoader で .vrm を読み、getScene() の Group を Scene に add して描画する。
+	// 毎フレーム update(dt) で humanoid リグ/表情/視線/揺れ物(springBone)を反映する。
+	// アニメ(.vrma)は VRMAnimationLoader で読み、applyAnimation(anim, time) → update(dt)。
+	// MToon(トゥーン)/輪郭線/matcap/normalMap/揺れ物/制約は内部で自動処理される。
+	// ============================================================
+
+	/**
+	 * VRM ローダ
+	 * @description .vrm を読み込み VRM を返す。VRM 0.x / 1.0 両対応。
+	 */
+	class VRMLoader {
+		function VRMLoader();
+		/**
+		 * OS パスから読み込む (デバッグ/スタンドアロン用)。
+		 * @param osPath  ファイルシステム上の絶対/相対パス
+		 * @return VRM  (失敗時 void)
+		 */
+		function load(osPath);
+		/**
+		 * 吉里吉里ストレージ名から読み込む (本番用。アーカイブ対応)。
+		 * @param storageName  ストレージ名 (例 Storages.getPlacedPath("model.vrm"))
+		 * @return VRM  (失敗時 void)
+		 */
+		function loadStorage(storageName);
+	}
+
+	/**
+	 * VRM モデル 1 体
+	 * @description getScene() の Group を Scene に add。毎フレーム update(dt) を呼ぶ。
+	 */
+	class VRM {
+		function getScene();          // 描画用ルート -> Threepp.Group (Scene に add する)
+		function getBoneCount();      // raw ボーン数 -> int
+		function getBoneNode(name);   // VRM human bone 名 -> Threepp.Bone (無ければ void)
+		function getNormalizedBoneNode(name); // 正規化リグのノード -> Threepp.Object3D
+		function resetNormalizedPose();       // 正規化ポーズを rest に戻す
+
+		/**
+		 * 毎フレーム更新。humanoid リグ転写 + 制約(node_constraint) + 表情 + 視線 +
+		 * 揺れ物(springBone) をまとめて反映する。
+		 * @param dt  前フレームからの経過秒 (揺れ物の物理積分に使う。0 だと揺れは止まる)
+		 */
+		function update(dt);
+
+		// --- 表情 (Expression) ---
+		function setExpression(name, weight); // 表情ウェイト設定 (name: "happy"/"blink"/"aa" 等, weight 0..1)
+		function getExpression(name);         // -> float
+		function getExpressionCount();        // -> int
+
+		// --- 視線 (LookAt) ---
+		function setLookAtTarget(x, y, z);    // 注視点(ワールド座標)を設定
+		function clearLookAtTarget();         // 注視を解除
+		function hasLookAt();                 // 視線機能を持つか -> bool
+
+		// --- アニメーション ---
+		/**
+		 * VRM アニメーションを時刻 time(秒) で適用する。適用後 update(dt) で raw ボーンへ転写。
+		 * @param vrmAnimation  Threepp.VRMAnimation
+		 * @param time  秒
+		 */
+		function applyAnimation(vrmAnimation, time);
+
+		// --- 揺れ物 (SpringBone) ---
+		/**
+		 * springBone コライダー半径の一律スケール (既定 1.0=忠実)。
+		 * VRoid 系はコライダーが体にタイトで胴体側面が手薄なため、髪が服に埋まる場合は
+		 * 1.2〜1.4 程度にすると改善する (opt-in・標準外)。
+		 */
+		function setColliderScale(scale);
+		function getColliderScale();          // -> float
+
+		// --- メタ情報 ---
+		function getMetaName();               // -> string
+		function getMetaVersion();            // -> string
+		function getMetaLicenseUrl();         // -> string
+	}
+
+	/**
+	 * VRM アニメーション (.vrma / VRMC_vrm_animation)
+	 * @description モデル非依存のボーン回転 + hips 移動(ルートモーション)トラック。
+	 *   表情(expression)/視線(lookAt)トラックは含まれる場合のみ反映(顔トラック付き VRMA)。
+	 */
+	class VRMAnimation {
+		function getDuration();       // 長さ(秒) -> float
+		function getBoneTrackCount(); // ボーントラック数 -> int
+	}
+
+	/**
+	 * VRM アニメーションローダ
+	 */
+	class VRMAnimationLoader {
+		function VRMAnimationLoader();
+		function load(osPath);        // OS パスから (デバッグ用) -> VRMAnimation
+		function loadStorage(storageName); // 吉里吉里ストレージ名から (本番用) -> VRMAnimation
+	}
+
 	// CurveType 定数
 	const CatmullRomCurve3_CurveType_centripetal = 0;
 	const CatmullRomCurve3_CurveType_chordal = 1;
 	const CatmullRomCurve3_CurveType_catmullrom = 2;
 }
+
+// ============================================================
+// グローバル関数 (Threepp 名前空間ではなくトップレベル)
+// ============================================================
+/**
+ * 吉里吉里 Layer の画像を threepp テクスチャ(DataTexture)に変換する。
+ * @param layer  吉里吉里 Layer (32bit ARGB)。呼び出し後 invalidate してよい(画素はコピー済み)。
+ * @return Threepp.Texture  (MeshBasicMaterial.setMap() 等に渡す)
+ * @description VRM のテクスチャは GLTFLoader が内部処理するので通常は不要。任意の Layer 画像を
+ *   3D テクスチャとして使いたいときに用いる。
+ */
+function textureFromLayer(layer);
 
 /**
  * 使用例
@@ -2609,4 +2737,60 @@ class Threepp {
  * var holeGeo = new Threepp.ExtrudeGeometry(rectWithHole, %[depth: 10]);
  * var holeMesh = new Threepp.Mesh(holeGeo, material);
  * scene.add(holeMesh);
+ */
+
+/**
+ * VRM アバターの表示・アニメーション例
+ *
+ * // --- 初期化 ---
+ * Plugins.link("krkrgles.dll");
+ * Plugins.link("krkr_threepp.dll");
+ *
+ * var adaptor = new GLESAdaptor(window);          // GLES コンテキスト提供元 (別プラグイン)
+ * adaptor.setScreenSize(800, 800);
+ * adaptor.unpremultiply = true;                   // MSAA 縁の premultiplied を straight-alpha へ戻す
+ * adaptor.makeCurrent();
+ *
+ * var renderer = new Threepp.GLRenderer(adaptor, 800, 800);
+ * renderer.setClearColor(0x000000, 0.0);
+ * var scene  = new Threepp.Scene();
+ * var camera = new Threepp.PerspectiveCamera(50, 1.0, 0.1, 100);
+ * camera.setPosition(0, 1.3, 2.5);                // position.set() ではなく setPosition
+ * camera.lookAt(0, 1.3, 0);
+ *
+ * // ライト (MeshStandardMaterial 等の PBR 材向け。MToon は内部で固定ライト)
+ * var dir = new Threepp.DirectionalLight(0xffffff, 1.0); dir.setPosition(1, 2, 3); scene.add(dir);
+ * scene.add(new Threepp.AmbientLight(0xffffff, 0.4));
+ *
+ * // --- VRM 読み込み ---
+ * var vrm = new Threepp.VRMLoader().loadStorage(Storages.getPlacedPath("model.vrm"));
+ * scene.add(vrm.getScene());
+ *
+ * // --- アニメーション読み込み (任意) ---
+ * var anim = new Threepp.VRMAnimationLoader().loadStorage(Storages.getPlacedPath("motion.vrma"));
+ * var animDur = (anim !== void) ? anim.getDuration() : 0;
+ * var animTime = 0.0;
+ *
+ * // --- 毎フレーム (Timer 等から) ---
+ * function onFrame(tick) {              // tick: 前フレームからの経過ミリ秒
+ *   if (anim !== void && animDur > 0) {
+ *     animTime += tick / 1000.0; if (animTime > animDur) animTime -= animDur;
+ *     vrm.applyAnimation(anim, animTime);
+ *   }
+ *   vrm.update(tick / 1000.0);          // リグ/表情/視線/揺れ物を反映 (dt 秒)
+ *   adaptor.capture(destLayer, onRender, this, 0x00000000); // 下の onRender を GL current で呼ぶ
+ *   destLayer.update();
+ * }
+ * function onRender(w, h, self) {
+ *   self.renderer.onBeginScene(w, h);
+ *   self.renderer.render(self.scene, self.camera);
+ *   self.renderer.onEndScene();
+ * }
+ *
+ * // --- 表情・視線 ---
+ * vrm.setExpression("happy", 1.0);      // 表情ウェイト (0..1)
+ * vrm.setLookAtTarget(0, 1.3, 2.0);     // ワールド座標を注視
+ *
+ * // --- 揺れ物が服に埋まる場合 (opt-in) ---
+ * vrm.setColliderScale(1.3);            // コライダー半径を広げて髪を体から離す
  */
