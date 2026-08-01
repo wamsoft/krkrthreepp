@@ -2586,6 +2586,8 @@ static void  VRM_setExpression(ThreeWrapper<VRM> *self, std::string name, float 
 static float VRM_getExpression(ThreeWrapper<VRM> *self, std::string name)               { return (self && self->getObject()) ? self->getObject()->expressionManager.getValue(name) : 0.f; }
 static int   VRM_getExpressionCount(ThreeWrapper<VRM> *self)                             { return (self && self->getObject()) ? (int)self->getObject()->expressionManager.size() : 0; }
 static void  VRM_update(ThreeWrapper<VRM> *self, float dt)                                { if (self && self->getObject()) self->getObject()->update(dt); }
+static void  VRM_setColliderScale(ThreeWrapper<VRM> *self, float s)                       { if (self && self->getObject()) self->getObject()->setColliderScale(s); }
+static float VRM_getColliderScale(ThreeWrapper<VRM> *self)                                { return (self && self->getObject()) ? self->getObject()->getColliderScale() : 1.f; }
 
 // 視線 (Phase1, bone 方式)。setLookAtTarget(ワールド座標) 後 update() で eye ボーンに反映。
 static void VRM_setLookAtTarget(ThreeWrapper<VRM> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->lookAt.setTarget(x, y, z); }
@@ -2659,6 +2661,8 @@ NCB_METHOD_PROXY(setExpression, VRM_setExpression);  // (name, weight)
 NCB_METHOD_PROXY(getExpression, VRM_getExpression);  // (name) -> float
 NCB_METHOD_PROXY(getExpressionCount, VRM_getExpressionCount);
 NCB_METHOD_PROXY(update, VRM_update);                // morph/視線へ反映 (毎フレーム)
+NCB_METHOD_PROXY(setColliderScale, VRM_setColliderScale);// 揺れコライダー半径の一律スケール(既定1.0)
+NCB_METHOD_PROXY(getColliderScale, VRM_getColliderScale);
 NCB_METHOD_PROXY(setLookAtTarget, VRM_setLookAtTarget);   // (x,y,z) ワールド座標
 NCB_METHOD_PROXY(clearLookAtTarget, VRM_clearLookAtTarget);
 NCB_METHOD_PROXY(hasLookAt, VRM_hasLookAt);          // -> bool

@@ -167,6 +167,9 @@ namespace krkrvrm {
         std::vector<VRMSpringCollider> colliders;
         std::vector<std::vector<int>> colliderGroups;///< group -> collider index list
         std::vector<VRMSpringJoint> joints;
+        /// コライダー半径の一律スケール (既定 1.0=忠実)。VRoid 系はコライダーが体にタイトで
+        /// 胴体側面が手薄なため、>1 にすると髪が服に埋まりにくくなる (opt-in)。
+        float colliderScale = 1.0f;
 
         [[nodiscard]] bool empty() const { return joints.empty(); }
         void setInitState();///< rest ポーズ(world 行列更新後)で捕捉
@@ -218,6 +221,11 @@ namespace krkrvrm {
 
         /// VRMC_node_constraint を全て適用 (humanoid rig 転写後・描画前)。
         void updateConstraints();
+
+        /// springBone コライダー半径の一律スケール (既定 1.0)。VRoid 系で胴体側面が手薄で
+        /// 髪が服に埋まる場合、1.2〜1.4 程度にすると改善する (opt-in、標準外)。
+        void setColliderScale(float s) { springBone.colliderScale = s; }
+        [[nodiscard]] float getColliderScale() const { return springBone.colliderScale; }
 
         /// VRM アニメーションを時刻 time(sec) で正規化ボーンへ適用する。
         /// 適用後 update() を呼ぶと raw へ転写される (update 内で updateRig)。

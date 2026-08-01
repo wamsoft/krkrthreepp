@@ -629,7 +629,7 @@ void main() {
                 threepp::Vector3 delta;
                 delta.subVectors(tail, nearest);
                 const float dist = delta.length();
-                const float minDist = col.radius + j.hitRadius;
+                const float minDist = col.radius * colliderScale + j.hitRadius;
                 if (dist < minDist && dist > 1e-8f) {
                     threepp::Vector3 dir;
                     dir.copy(delta).multiplyScalar(1.f / dist);
