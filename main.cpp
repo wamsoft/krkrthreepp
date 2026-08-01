@@ -2470,10 +2470,10 @@ static void GLRendererOnBeginScene(ThreeWrapper<GLRenderer> *self, int w, int h)
 	if (self && self->getObject()) {
 		auto r = self->getObject();
 		// ホスト(GLESAdaptor.capture)が捕捉用 FBO を bind した状態でここに入る。
-		// その FBO を threepp の画面ターゲット(デフォルト FBO)として取り込む。
-		// これをしないと threepp は FBO 0 に描き、ホストの読み戻し先 FBO が空になる。
-		// (resetState は framebuffer 0 を bind し直すので、その前に取り込む)
-		r->setDefaultFramebufferToCurrent();
+		// beginFrame は sampleCount>1 なら内部 MSAA FBO を bind し(AA描画)、そうでなければ
+		// ホストの捕捉 FBO を threepp の画面ターゲットに取り込む。onEndScene の endFrame で
+		// MSAA を resolve(blit)してホストの読み戻し先へ書き戻す。
+		r->beginFrame(w, h);
 		// ホストが GL ステートを変更している可能性があるため、threepp 内部のステート
 		// キャッシュを無効化してから描画する (コンテキスト共有対策)。
 		r->resetState();
@@ -2483,10 +2483,9 @@ static void GLRendererOnBeginScene(ThreeWrapper<GLRenderer> *self, int w, int h)
 
 static void GLRendererOnEndScene(ThreeWrapper<GLRenderer> *self)
 {
-	// threepp は render() 内で描画を完結する。ホスト側が capture 毎に自前の GL ステートを
-	// 再設定する前提のため、ここでは特別な処理は行わない。フラッシュやステート復帰が必要に
-	// なれば実行時に追加する。
-	(void)self;
+	// MSAA 有効時: 内部マルチサンプル FBO をホストの捕捉先 FBO へ resolve(blit)する。
+	// 無効時は no-op。
+	if (self && self->getObject()) self->getObject()->endFrame();
 }
 
 NCB_REGISTER_THREE_SUBCLASS(GLRenderer)
@@ -2509,6 +2508,7 @@ NCB_THREE_METHOD(clearDepth);
 NCB_THREE_METHOD(clearStencil);
 NCB_THREE_METHOD(dispose);
 NCB_THREE_METHOD(resetState);
+NCB_THREE_METHOD(setSampleCount);  // MSAA サンプル数 (0/1=無効, 既定4)
 NCB_METHOD_PROXY(render, GLRendererRender);
 NCB_METHOD_PROXY(setClearColor, GLRendererSetClearColor);
 NCB_METHOD_PROXY(onBeginScene, GLRendererOnBeginScene);
