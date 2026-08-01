@@ -8,6 +8,8 @@
 #include "vrm/VRM.hpp"
 #include <vector>
 #include <memory>
+#include <cstdint>
+#include <climits>
 
 // threepp headers
 #include <threepp/threepp.hpp>
@@ -290,7 +292,12 @@ struct StdStringConvertor {
 };
 NCB_SET_CONVERTOR(std::string, StdStringConvertor);
 
+// size_t は 64bit では unsigned __int64 だが 32bit では unsigned int と同一。
+// 32bit で登録すると ncbind 既定の unsigned int 変換と二重定義になる（C2766）。
+// size_t が unsigned int より広い（=64bit）ときのみ登録する。
+#if SIZE_MAX != UINT_MAX
 NCB_TYPECONV_CAST_INTEGER(size_t);
+#endif
 NCB_TYPECONV_CAST_INTEGER(Side);
 NCB_TYPECONV_CAST_INTEGER(Blending);
 NCB_TYPECONV_CAST_INTEGER(BlendEquation);
@@ -966,15 +973,18 @@ public:
 #define NCB_THREE_METHOD2(name, ret, method, args) Method(TJS_W(# name), NCB_THREE_MCAST(ret, method, args), Bridge<ThreeWrapper<ThreeClass>::BridgeFunctor>())
 #define NCB_THREE_PROPERTY(name, get, set)  Property(TJS_W(# name), &ThreeClass::get, &ThreeClass::set, Bridge<ThreeWrapper<ThreeClass>::BridgeFunctor>())
 #define NCB_THREE_PROPERTY_RO(name, get)  Property(TJS_W(# name), &ThreeClass::get, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()))
+// free 関数 ProxyGet/ProxySet(ThreeClass* inst, ...) は第1引数にインスタンスを取る
+// proxy 形式。Bridge(=ivtBridge)は inst を TJS 引数として数えてしまい「引数の数が不正」
+// になるため、ArgsCount を -1 する ProxyBridge(=ivtProxy<ivtBridge>)を使う。
 #define NCB_THREE_MEMBER_PROPERTY(name, type, membername) \
 	struct AutoProp_ ## name { \
 		static void ProxySet(ThreeClass *inst, type value) { inst->membername = value; } \
 		static type ProxyGet(ThreeClass *inst) {      return inst->membername; } }; \
-	Property(TJS_W(#name), AutoProp_ ## name::ProxyGet, AutoProp_ ## name::ProxySet, Bridge<ThreeWrapper<ThreeClass>::BridgeFunctor>())
+	Property(TJS_W(#name), AutoProp_ ## name::ProxyGet, AutoProp_ ## name::ProxySet, ProxyBridge<ThreeWrapper<ThreeClass>::BridgeFunctor>())
 #define NCB_THREE_MEMBER_PROPERTY_RO(name, type, membername) \
 	struct AutoProp_ ## name { \
 		static type ProxyGet(ThreeClass *inst) {      return inst->membername; } }; \
-	Property(TJS_W(#name), &AutoProp_ ## name::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()))
+	Property(TJS_W(#name), &AutoProp_ ## name::ProxyGet, (int)0, getProxyBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()))
 
 // ======================================================================
 // Object3D (基底クラス)
@@ -1064,6 +1074,117 @@ static void Object3DSetName(ThreeWrapper<Object3D> *self, ttstr name) {
 
 // position, rotation, quaternion, scale, up は参照型の戻り値で ncbind に対応できないため省略
 
+// ======================================================================
+// Object3D 共通メンバの継承代替 (ncbind は flat クラス登録で親子継承を張らない)
+//
+// Camera/Light/Scene/Group 等の Object3D 派生クラスは、自分の登録ブロックに
+// THREE_OBJECT3D_MEMBERS() を書くことで position/add/lookAt 等の Object3D 共通
+// メンバを得る。プロパティ getter とメソッド proxy は ThreeClass でテンプレート化し、
+// 各クラスが正しい型の自前アクセサを持つ (ThreeWrapper<T> は T 毎に別型のため)。
+// ======================================================================
+
+// 値プロパティ getter (bridge 経由。inst は raw な T*)
+template <class T> struct ThreeObj3DGet {
+	static Vector3    position(T *i)   { return i->position; }
+	static Euler      rotation(T *i)   { return i->rotation; }
+	static Quaternion quaternion(T *i) { return i->quaternion; }
+	static Vector3    scale(T *i)      { return i->scale; }
+	static Vector3    up(T *i)         { return i->up; }
+};
+
+// 任意の登録済み ThreeWrapper<派生> を持つ TJS オブジェクトから、基底 Object3D の
+// shared_ptr を取り出す (所有権を保つ)。add(child) の wrapper 跨ぎ受け渡し用。
+static std::shared_ptr<Object3D> ThreeExtractObject3D(const tTJSVariant &v) {
+	if (v.Type() != tvtObject) return nullptr;
+	iTJSDispatch2 *obj = v.AsObjectNoAddRef();
+	if (!obj) return nullptr;
+#define THREE_TRY_OBJ3D(TYPE) \
+	if (auto *w = ncbInstanceAdaptor<ThreeWrapper<TYPE>>::GetNativeInstance(obj)) \
+		if (auto sp = w->getObject()) return std::static_pointer_cast<Object3D>(sp);
+	// 具体型を先に、基底を後に試す
+	THREE_TRY_OBJ3D(Scene)
+	THREE_TRY_OBJ3D(Group)
+	THREE_TRY_OBJ3D(SkinnedMesh)
+	THREE_TRY_OBJ3D(InstancedMesh)
+	THREE_TRY_OBJ3D(Mesh)
+	THREE_TRY_OBJ3D(Bone)
+	THREE_TRY_OBJ3D(LOD)
+	THREE_TRY_OBJ3D(PerspectiveCamera)
+	THREE_TRY_OBJ3D(OrthographicCamera)
+	THREE_TRY_OBJ3D(Camera)
+	THREE_TRY_OBJ3D(AmbientLight)
+	THREE_TRY_OBJ3D(DirectionalLight)
+	THREE_TRY_OBJ3D(PointLight)
+	THREE_TRY_OBJ3D(SpotLight)
+	THREE_TRY_OBJ3D(HemisphereLight)
+	THREE_TRY_OBJ3D(Light)
+	THREE_TRY_OBJ3D(Object3D)
+#undef THREE_TRY_OBJ3D
+	return nullptr;
+}
+
+// 任意の登録済み Camera 派生 wrapper から shared_ptr<Camera> を取り出す。
+// GLRenderer.render(scene, camera) の camera 引数の wrapper 跨ぎ用。
+static std::shared_ptr<Camera> ThreeExtractCamera(const tTJSVariant &v) {
+	if (v.Type() != tvtObject) return nullptr;
+	iTJSDispatch2 *obj = v.AsObjectNoAddRef();
+	if (!obj) return nullptr;
+#define THREE_TRY_CAM(TYPE) \
+	if (auto *w = ncbInstanceAdaptor<ThreeWrapper<TYPE>>::GetNativeInstance(obj)) \
+		if (auto sp = w->getObject()) return std::static_pointer_cast<Camera>(sp);
+	THREE_TRY_CAM(PerspectiveCamera)
+	THREE_TRY_CAM(OrthographicCamera)
+	THREE_TRY_CAM(Camera)
+#undef THREE_TRY_CAM
+	return nullptr;
+}
+
+// メソッド proxy (self をテンプレート化。child は wrapper 跨ぎのため tTJSVariant 受け)
+template <class T> static void ThreeObjAdd(ThreeWrapper<T> *self, tTJSVariant child) {
+	if (!self || !self->getObject()) return;
+	if (auto c = ThreeExtractObject3D(child)) self->getObject()->add(c);
+}
+template <class T> static void ThreeObjRemove(ThreeWrapper<T> *self, tTJSVariant child) {
+	if (!self || !self->getObject()) return;
+	if (auto c = ThreeExtractObject3D(child)) self->getObject()->remove(*c);
+}
+template <class T> static void ThreeObjLookAt(ThreeWrapper<T> *self, float x, float y, float z) {
+	if (self && self->getObject()) self->getObject()->lookAt(x, y, z);
+}
+template <class T> static void ThreeObjRotateX(ThreeWrapper<T> *self, float a) { if (self && self->getObject()) self->getObject()->rotateX(a); }
+template <class T> static void ThreeObjRotateY(ThreeWrapper<T> *self, float a) { if (self && self->getObject()) self->getObject()->rotateY(a); }
+template <class T> static void ThreeObjRotateZ(ThreeWrapper<T> *self, float a) { if (self && self->getObject()) self->getObject()->rotateZ(a); }
+template <class T> static void ThreeObjTranslateX(ThreeWrapper<T> *self, float d) { if (self && self->getObject()) self->getObject()->translateX(d); }
+template <class T> static void ThreeObjTranslateY(ThreeWrapper<T> *self, float d) { if (self && self->getObject()) self->getObject()->translateY(d); }
+template <class T> static void ThreeObjTranslateZ(ThreeWrapper<T> *self, float d) { if (self && self->getObject()) self->getObject()->translateZ(d); }
+
+// 各 Object3D 派生クラスの登録ブロックに書く共通メンバ群。
+// type は各クラスが独自の RO プロパティを持つため含めない (衝突回避)。
+#define THREE_OBJECT3D_MEMBERS() \
+	NCB_THREE_MEMBER_PROPERTY(visible, bool, visible); \
+	NCB_THREE_MEMBER_PROPERTY(castShadow, bool, castShadow); \
+	NCB_THREE_MEMBER_PROPERTY(receiveShadow, bool, receiveShadow); \
+	NCB_THREE_MEMBER_PROPERTY(frustumCulled, bool, frustumCulled); \
+	NCB_THREE_MEMBER_PROPERTY(renderOrder, unsigned int, renderOrder); \
+	Property(TJS_W("position"),   &ThreeObj3DGet<ThreeClass>::position,   (int)0, getProxyBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator())); \
+	Property(TJS_W("rotation"),   &ThreeObj3DGet<ThreeClass>::rotation,   (int)0, getProxyBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator())); \
+	Property(TJS_W("quaternion"), &ThreeObj3DGet<ThreeClass>::quaternion, (int)0, getProxyBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator())); \
+	Property(TJS_W("scale"),      &ThreeObj3DGet<ThreeClass>::scale,      (int)0, getProxyBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator())); \
+	Property(TJS_W("up"),         &ThreeObj3DGet<ThreeClass>::up,         (int)0, getProxyBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator())); \
+	NCB_METHOD_PROXY(add, ThreeObjAdd<ThreeClass>); \
+	NCB_METHOD_PROXY(remove, ThreeObjRemove<ThreeClass>); \
+	NCB_THREE_METHOD(removeFromParent); \
+	NCB_THREE_METHOD(clear); \
+	NCB_METHOD_PROXY(lookAt, ThreeObjLookAt<ThreeClass>); \
+	NCB_METHOD_PROXY(rotateX, ThreeObjRotateX<ThreeClass>); \
+	NCB_METHOD_PROXY(rotateY, ThreeObjRotateY<ThreeClass>); \
+	NCB_METHOD_PROXY(rotateZ, ThreeObjRotateZ<ThreeClass>); \
+	NCB_METHOD_PROXY(translateX, ThreeObjTranslateX<ThreeClass>); \
+	NCB_METHOD_PROXY(translateY, ThreeObjTranslateY<ThreeClass>); \
+	NCB_METHOD_PROXY(translateZ, ThreeObjTranslateZ<ThreeClass>); \
+	NCB_THREE_METHOD2(updateMatrix, void, updateMatrix, ()); \
+	NCB_THREE_METHOD2(updateMatrixWorld, void, updateMatrixWorld, (bool))
+
 NCB_REGISTER_THREE_SUBCLASS(Object3D)
 Factory(Object3DFactory);
 NCB_METHOD_PROXY(type, Object3DGetType);
@@ -1117,6 +1238,7 @@ GroupFactory(ThreeWrapper<Group> **result, tjs_int numparams, tTJSVariant **para
 NCB_REGISTER_THREE_SUBCLASS(Group)
 Factory(GroupFactory);
 NCB_THREE_PROPERTY_RO(type, type);
+THREE_OBJECT3D_MEMBERS();
 };
 
 // ======================================================================
@@ -1135,6 +1257,7 @@ NCB_REGISTER_THREE_SUBCLASS(Scene)
 Factory(SceneFactory);
 NCB_THREE_PROPERTY_RO(type, type);
 NCB_THREE_MEMBER_PROPERTY(autoUpdate, bool, autoUpdate);
+THREE_OBJECT3D_MEMBERS();
 };
 
 // ======================================================================
@@ -1147,6 +1270,7 @@ NCB_THREE_MEMBER_PROPERTY(zoom, float, zoom);
 NCB_THREE_MEMBER_PROPERTY(nearPlane, float, nearPlane);
 NCB_THREE_MEMBER_PROPERTY(farPlane, float, farPlane);
 NCB_THREE_METHOD(updateProjectionMatrix);
+THREE_OBJECT3D_MEMBERS();
 };
 
 // ======================================================================
@@ -1187,6 +1311,7 @@ NCB_THREE_METHOD(getFilmHeight);
 NCB_THREE_METHOD(setViewOffset);
 NCB_THREE_METHOD(clearViewOffset);
 NCB_THREE_METHOD(updateProjectionMatrix);
+THREE_OBJECT3D_MEMBERS();
 };
 
 // ======================================================================
@@ -1236,6 +1361,7 @@ NCB_THREE_PROPERTY_RO(type, type);
 struct AutoProp_color { static Color ProxyGet(ThreeClass *inst) { return inst->color; } };
 Property(TJS_W("color"), &AutoProp_color::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
 NCB_THREE_MEMBER_PROPERTY(intensity, float, intensity);
+THREE_OBJECT3D_MEMBERS();
 };
 
 // ======================================================================
@@ -1263,6 +1389,7 @@ AmbientLightFactory(ThreeWrapper<AmbientLight> **result, tjs_int numparams, tTJS
 NCB_REGISTER_THREE_SUBCLASS(AmbientLight)
 Factory(AmbientLightFactory);
 NCB_THREE_PROPERTY_RO(type, type);
+THREE_OBJECT3D_MEMBERS();
 };
 
 // ======================================================================
@@ -1291,6 +1418,7 @@ NCB_REGISTER_THREE_SUBCLASS(DirectionalLight)
 Factory(DirectionalLightFactory);
 NCB_THREE_PROPERTY_RO(type, type);
 NCB_THREE_METHOD(dispose);
+THREE_OBJECT3D_MEMBERS();
 };
 
 // ======================================================================
@@ -2231,11 +2359,14 @@ GLRendererFactory(ThreeWrapper<GLRenderer> **result, tjs_int numparams, tTJSVari
 	return TJS_S_OK;
 }
 
-static void GLRendererRender(ThreeWrapper<GLRenderer> *self, ThreeWrapper<Scene> *scene, ThreeWrapper<Camera> *camera)
+// scene は任意の Object3D 派生、camera は任意の Camera 派生を受けられるよう
+// tTJSVariant で受けて基底ポインタを取り出す (wrapper 跨ぎ対応)。
+static void GLRendererRender(ThreeWrapper<GLRenderer> *self, tTJSVariant sceneV, tTJSVariant cameraV)
 {
-	if (self && scene && camera && self->getObject() && scene->getRawPtr() && camera->getRawPtr()) {
-		self->getObject()->render(*scene->getRawPtr(), *camera->getRawPtr());
-	}
+	if (!self || !self->getObject()) return;
+	auto scene = ThreeExtractObject3D(sceneV);
+	auto camera = ThreeExtractCamera(cameraV);
+	if (scene && camera) self->getObject()->render(*scene, *camera);
 }
 
 static void GLRendererSetClearColor(ThreeWrapper<GLRenderer> *self, unsigned int hex, float alpha)

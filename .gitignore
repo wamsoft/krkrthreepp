@@ -7,4 +7,18 @@ krkrz64.exe
 
 # VRM 検証用サンプル (DL してくるので追跡しない。取得元は test/vrm_smoke.cpp 参照)
 test/models/*.vrm
+test/models/*.vrma
+
+# data テストアプリ用にコピーしてくる VRM/VRMA 本体 (追跡しない。
+# startup.tjs が data/model.vrm / data/anim.vrma を読む。test/models からコピー)
+data/*.vrm
+data/*.vrma
+data/out.png
+data/shot.png
+
+# 32bit 実行時ランタイム (テスト起動用にコピーして置くだけ。追跡しない)
+krkrZ.exe
+libEGL.dll
+libGLESv2.dll
+savedata/
 

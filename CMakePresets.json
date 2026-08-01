@@ -25,6 +25,7 @@
             },
             "cacheVariables": {
                 "CMAKE_C_COMPILER":"cl",
+                "CMAKE_MSVC_RUNTIME_LIBRARY":"MultiThreaded$<$<CONFIG:Debug>:Debug>",
                 "VCPKG_TARGET_TRIPLET":"x86-windows-static",
                 "VCPKG_TARGET_ARCHITECTURE":"x86",
                 "VCPKG_CRT_LINKAGE":"static",
