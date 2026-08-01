@@ -1503,10 +1503,15 @@ void main() {
                     getVec(mp, "_Color", sp.litColor);
                     getVec(mp, "_ShadeColor", sp.shadeColor);
                     getVec(mp, "_EmissionColor", sp.emissive);
-                    // 0.x の _ShadeShift/_ShadeToony は空間/符号が 1.0 と異なるため、
-                    // 既定の柔らかいトゥーンランプで近似する(shade 色/ matcap が視覚的主眼)。
-                    sp.shadingShift = -0.05f;
-                    sp.shadingToony = 0.85f;
+                    // 0.x _ShadeShift/_ShadeToony → 1.0 shadingShift/Toony 変換
+                    // (three-vrm VRMMaterialsV0CompatPlugin と同一式)。
+                    {
+                        const float sShift = getFloat(mp, "_ShadeShift", 0.f);
+                        float sToony = getFloat(mp, "_ShadeToony", 0.9f);
+                        sToony = sToony + (1.0f - sToony) * (0.5f + 0.5f * sShift);// lerp(toony,1,0.5+0.5*shift)
+                        sp.shadingToony = sToony;
+                        sp.shadingShift = -sShift - (1.0f - sToony);
+                    }
                     const int mainTex = getTexIdx(mp, "_MainTex");
                     sp.baseMap = texAt(mainTex);
                     keepTex(mainTex);
