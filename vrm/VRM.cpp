@@ -1336,6 +1336,8 @@ void main() {
                 bool hasRim = false;
                 threepp::Color rimColor{0.f, 0.f, 0.f};
                 float rimPower = 5.f, rimLift = 0.f;
+                int matcapTex = -1;
+                threepp::Color matcapColor{1.f, 1.f, 1.f};
             };
             std::unordered_map<int, MToonParam> mtoon;
             const auto& mats = gltf["materials"];
@@ -1373,6 +1375,15 @@ void main() {
                         p.rimColor.copy(rcol);
                         p.rimPower = mt.value("parametricRimFresnelPowerFactor", 5.f);
                         p.rimLift = mt.value("parametricRimLiftFactor", 0.f);
+                    }
+                }
+                // matcap (加算)
+                if (mt.contains("matcapTexture") && mt["matcapTexture"].contains("index")) {
+                    p.matcapTex = mt["matcapTexture"]["index"].get<int>();
+                    if (mt.contains("matcapFactor") && mt["matcapFactor"].is_array() &&
+                        mt["matcapFactor"].size() >= 3) {
+                        const auto& mf = mt["matcapFactor"];
+                        p.matcapColor.setRGB(mf[0].get<float>(), mf[1].get<float>(), mf[2].get<float>());
                     }
                 }
                 mtoon[mi] = p;
@@ -1420,6 +1431,14 @@ void main() {
                             sp.rimColor.copy(pit->second.rimColor);
                             sp.rimPower = pit->second.rimPower;
                             sp.rimLift = pit->second.rimLift;
+                        }
+                        if (pit->second.matcapTex >= 0) {
+                            auto mcit = result->textures.find(pit->second.matcapTex);
+                            if (mcit != result->textures.end() && mcit->second) {
+                                sp.matcapMap = mcit->second.get();
+                                sp.matcapColor.copy(pit->second.matcapColor);
+                                vrm->keepAliveTextures.push_back(mcit->second);
+                            }
                         }
                         if (mat0) {
                             sp.transparent = mat0->transparent;
