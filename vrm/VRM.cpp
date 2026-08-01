@@ -133,6 +133,7 @@ uniform float shadingShift;
 uniform float shadingToony;
 uniform float opacity;
 uniform float alphaCutoff;
+uniform int opaqueMode;        // 1=不透明(αを1に固定)。テクスチャαを無視する
 uniform vec3 emissiveFactor;
 uniform vec3 rimFactor;
 uniform float rimPower;
@@ -163,7 +164,8 @@ void main() {
     vec3 lit   = litFactor   * tex.rgb;
     vec3 shade = shadeFactor * tex.rgb;
     float alpha = opacity * tex.a;
-    if ( alphaCutoff > 0.0 ) { if ( alpha < alphaCutoff ) discard; alpha = 1.0; }
+    if ( alphaCutoff > 0.0 && alpha < alphaCutoff ) discard;// cutout
+    if ( opaqueMode != 0 ) alpha = 1.0;                    // 不透明材はαを無視(背景が透けるのを防ぐ)
     vec3 pos = -vMViewPos;                 // view 空間の面位置 (= mvPosition.xyz)
     vec3 N = normalize( vMNormal );
     if ( hasNormalMap != 0 ) {
@@ -179,8 +181,10 @@ void main() {
     col += emissiveFactor * ( ( hasEmissiveMap != 0 ) ? texture2D( emissiveMap, vMUv ).rgb : vec3( 1.0 ) );
     float f = clamp( 1.0 - max( 0.0, dot( N, V ) ) + rimLift, 0.0, 1.0 );
     col += rimFactor * pow( f, max( 0.001, rimPower ) );
-    if ( hasMatcap != 0 ) {                // matcap (0.x _SphereAdd 相当): view法線→球UVで加算
-        vec2 muv = N.xy * 0.5 + 0.5;
+    if ( hasMatcap != 0 ) {                // matcap (0.x _SphereAdd 相当): three-vrm 準拠の球UVで加算
+        vec3 mx = normalize( vec3( V.z, 0.0, -V.x ) );
+        vec3 my = cross( V, mx );
+        vec2 muv = 0.5 + 0.5 * vec2( dot( mx, N ), -dot( my, N ) );
         col += matcapColor * texture2D( matcapMap, muv ).rgb;
     }
     gl_FragColor = vec4( col, alpha );
@@ -194,6 +198,7 @@ void main() {
                     {"shadingToony", threepp::Uniform(p.shadingToony)},
                     {"opacity", threepp::Uniform(p.opacity)},
                     {"alphaCutoff", threepp::Uniform(p.alphaTest)},
+                    {"opaqueMode", threepp::Uniform(p.transparent ? 0 : 1)},
                     {"emissiveFactor", threepp::Uniform(v3(p.emissive))},
                     {"rimFactor", threepp::Uniform(v3(p.rimColor))},
                     {"rimPower", threepp::Uniform(p.rimPower)},
@@ -1495,11 +1500,13 @@ void main() {
                         sp.rimPower = getFloat(mp, "_RimFresnelPower", 5.f);
                         sp.rimLift = getFloat(mp, "_RimLift", 0.f);
                     }
-                    std::string rt = "Opaque";
-                    if (mp.contains("tagMap") && mp["tagMap"].contains("RenderType"))
-                        rt = mp["tagMap"]["RenderType"].get<std::string>();
-                    if (rt == "TransparentCutout") sp.alphaTest = getFloat(mp, "_Cutoff", 0.5f);
-                    else if (rt == "Transparent") sp.transparent = true;
+                    // 透明モードは tagMap.RenderType(常に "Opaque" で当てにならない)ではなく
+                    // floatProperties._BlendMode を権威にする (0=不透明,1=cutout,2/3=透明)。
+                    const float blendMode = getFloat(mp, "_BlendMode", 0.f);
+                    if (blendMode >= 0.5f && blendMode < 1.5f)
+                        sp.alphaTest = getFloat(mp, "_Cutoff", 0.5f);// cutout
+                    else if (blendMode >= 1.5f)
+                        sp.transparent = true;                       // alpha blend
 
                     auto toon = makeMToonMaterial(sp);
                     if (auto geo = mesh->geometry()) {
