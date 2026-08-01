@@ -8,6 +8,7 @@
 #include <threepp/objects/Group.hpp>
 #include <threepp/objects/Mesh.hpp>
 #include <threepp/math/Quaternion.hpp>
+#include <threepp/math/Vector2.hpp>
 #include <threepp/math/Vector3.hpp>
 #include <threepp/loaders/GLTFLoader.hpp>
 
@@ -86,12 +87,16 @@ namespace krkrvrm {
         [[nodiscard]] std::vector<std::string> names() const;
         [[nodiscard]] std::size_t size() const { return expressions_.size(); }
 
-        /// 全表情ウェイトを morph target 影響度へ適用 (bind 対象を 0 クリアしてから加算)。
+        /// 全表情ウェイトを morph target 影響度 + textureTransform へ適用。
         /// override(block/blend) を考慮し、blink/mouth/lookAt グループの表情を抑制する。
         void applyToScene();
 
         /// lookAt override による抑制係数 (0..1)。VRMLookAt が視線適用量に掛ける。
         [[nodiscard]] float lookAtMultiplier() const { return lookAtMul_; }
+
+        /// textureTransformBind の glTF material index を MToon ShaderMaterial へ解決する
+        /// (MToon 材生成後に VRMLoader が呼ぶ)。
+        void resolveTexBinds(const std::unordered_map<int, std::shared_ptr<threepp::ShaderMaterial>>& matByIdx);
 
     private:
         enum class Override { None, Block, Blend };
@@ -100,17 +105,32 @@ namespace krkrvrm {
             int index;    ///< morph target index
             float weight; ///< この表情が全開(1.0)のときの目標ウェイト
         };
+        // textureTransformBind: 表情ウェイトで材テクスチャの UV offset/scale を動かす(瞳移動等)。
+        struct TexBindRaw {///< パース直後 (material は index)
+            int matIndex;
+            threepp::Vector2 offset{0.f, 0.f};
+            threepp::Vector2 scale{1.f, 1.f};
+        };
+        struct TexBind {///< 解決後
+            std::shared_ptr<threepp::ShaderMaterial> material;
+            threepp::Vector2 deltaOffset{0.f, 0.f};///< target.offset - initial(0)
+            threepp::Vector2 deltaScale{0.f, 0.f}; ///< target.scale  - initial(1)
+        };
         struct Expression {
             std::vector<MorphBind> morphBinds;
+            std::vector<TexBindRaw> texBindsRaw;
+            std::vector<TexBind> texBinds;
             bool isBinary = false;///< true なら 0.5 閾値で 0/1
             Override overrideBlink = Override::None;
             Override overrideLookAt = Override::None;
             Override overrideMouth = Override::None;
         };
         float lookAtMul_ = 1.f;///< applyToScene が更新する lookAt 抑制係数
+        bool hasTexBinds_ = false;///< resolveTexBinds で texBind が1つでもあれば true
         std::unordered_map<std::string, Expression> expressions_;
         std::unordered_map<std::string, float> values_;
         friend class VRMLoader;
+        friend class VRMLookAt;
     };
 
     /// 視線 (Phase1)。bone 方式のみ (leftEye/rightEye を回転)。expression 方式は今後。
@@ -120,7 +140,10 @@ namespace krkrvrm {
         void setTarget(float x, float y, float z);///< ワールド座標の注視点
         void clearTarget();                       ///< 追従解除し eye を rest に戻す
         [[nodiscard]] bool hasTarget() const { return hasTarget_; }
-        [[nodiscard]] bool valid() const { return static_cast<bool>(head_) && (leftEye_ || rightEye_); }
+        [[nodiscard]] bool valid() const {
+            if (!head_) return false;
+            return expressionMode_ ? (exprMgr_ != nullptr) : (leftEye_ || rightEye_);
+        }
         void update();
 
     private:
@@ -128,9 +151,13 @@ namespace krkrvrm {
         threepp::Vector3 offset_{0.f, 0.f, 0.f};   ///< 頭ボーンからの目位置オフセット
         threepp::Quaternion leftRest_, rightRest_; ///< eye ボーンの rest 回転
         float inMaxH_ = 90.f, inMaxV_ = 90.f;      ///< 入力角の最大 (deg)
-        float outH_ = 10.f, outVUp_ = 10.f, outVDown_ = 10.f;///< 出力スケール (deg)
+        float outH_ = 10.f, outVUp_ = 10.f, outVDown_ = 10.f;///< 出力スケール (bone=deg / expr=weight)
         threepp::Vector3 target_{0.f, 0.f, 0.f};
         bool hasTarget_ = false;
+        // expression 方式 (type=="expression"): eye ボーンでなく lookLeft/Right/Up/Down 表情を駆動。
+        // その表情に付いた textureTransformBind が瞳のテクスチャ UV を動かす。
+        bool expressionMode_ = false;
+        VRMExpressionManager* exprMgr_ = nullptr;
         friend class VRMLoader;
     };
 

@@ -538,6 +538,53 @@ void main() {
                     inf[b.index] += v * b.weight;
             }
         }
+        // 4) textureTransformBind: 表情ウェイトで材の UV offset/scale を動かす(瞳移動等)。
+        //    材ごとに Σ weight*delta を集計し uvOffset/uvScale uniform を更新する。
+        if (hasTexBinds_) {
+            struct Acc { std::shared_ptr<threepp::ShaderMaterial> mat; float ox = 0, oy = 0, sx = 0, sy = 0; };
+            std::unordered_map<threepp::ShaderMaterial*, Acc> acc;
+            for (auto& [name, expr] : expressions_)
+                for (auto& tb : expr.texBinds)
+                    if (tb.material) acc[tb.material.get()].mat = tb.material;// 0 で登録(リセット)
+            for (auto& [name, expr] : expressions_) {
+                if (expr.texBinds.empty()) continue;
+                float v = effWeight(name, expr);
+                if (isBlinkName(name)) v *= mBlink;
+                else if (isMouthName(name)) v *= mMouth;
+                else if (isLookAtName(name)) v *= mLookAt;
+                if (v <= 0.f) continue;
+                for (auto& tb : expr.texBinds) {
+                    if (!tb.material) continue;
+                    auto& a = acc[tb.material.get()];
+                    a.ox += tb.deltaOffset.x * v; a.oy += tb.deltaOffset.y * v;
+                    a.sx += tb.deltaScale.x * v;  a.sy += tb.deltaScale.y * v;
+                }
+            }
+            for (auto& [ptr, a] : acc) {
+                a.mat->uniforms.at("uvOffset").setValue(threepp::Vector2(a.ox, a.oy));
+                a.mat->uniforms.at("uvScale").setValue(threepp::Vector2(1.f + a.sx, 1.f + a.sy));
+                a.mat->uniformsNeedUpdate = true;
+            }
+        }
+    }
+
+    void VRMExpressionManager::resolveTexBinds(
+            const std::unordered_map<int, std::shared_ptr<threepp::ShaderMaterial>>& matByIdx) {
+        hasTexBinds_ = false;
+        for (auto& [name, expr] : expressions_) {
+            expr.texBinds.clear();
+            for (const auto& raw : expr.texBindsRaw) {
+                auto it = matByIdx.find(raw.matIndex);
+                if (it == matByIdx.end() || !it->second) continue;
+                TexBind tb;
+                tb.material = it->second;
+                // initial は uvOffset=(0,0)/uvScale=(1,1)。delta = target - initial。
+                tb.deltaOffset.set(raw.offset.x, raw.offset.y);
+                tb.deltaScale.set(raw.scale.x - 1.f, raw.scale.y - 1.f);
+                expr.texBinds.push_back(std::move(tb));
+                hasTexBinds_ = true;
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -580,7 +627,34 @@ void main() {
         const float yawDeg = std::atan2(dir.x, dir.z) * RAD2DEG;
         const float pitchDeg = std::asin(std::max(-1.f, std::min(1.f, dir.y))) * RAD2DEG;
 
-        // rangeMap (線形近似): |角度| を inputMax でクランプ/正規化し outputScale 倍
+        // rangeMap: clamp(t,0,inputMax)/inputMax * outputScale
+        auto mapv = [](float t, float inMax, float outScale) {
+            const float m = inMax > 1e-4f ? inMax : 1.f;
+            return std::min(std::max(t, 0.f), inMax) / m * outScale;
+        };
+
+        // expression 方式: lookLeft/Right/Up/Down 表情ウェイトを駆動 (three-vrm
+        // VRMLookAtExpressionApplier 準拠)。applyToScene がこの後に走り、表情に付いた
+        // textureTransformBind で瞳の UV が動く。eye ボーンは回さない。
+        if (expressionMode_ && exprMgr_) {
+            if (pitchDeg < 0.f) {// 上を見る
+                exprMgr_->setValue("lookDown", 0.f);
+                exprMgr_->setValue("lookUp", mapv(-pitchDeg, inMaxV_, outVUp_));
+            } else {
+                exprMgr_->setValue("lookUp", 0.f);
+                exprMgr_->setValue("lookDown", mapv(pitchDeg, inMaxV_, outVDown_));
+            }
+            if (yawDeg < 0.f) {
+                exprMgr_->setValue("lookLeft", 0.f);
+                exprMgr_->setValue("lookRight", mapv(-yawDeg, inMaxH_, outH_));
+            } else {
+                exprMgr_->setValue("lookRight", 0.f);
+                exprMgr_->setValue("lookLeft", mapv(yawDeg, inMaxH_, outH_));
+            }
+            return;
+        }
+
+        // bone 方式: rangeMap (線形近似): |角度| を inputMax でクランプ/正規化し outputScale 倍
         const float ay = std::min(std::abs(yawDeg), inMaxH_) / inMaxH_ * outH_;
         const float yawOut = (yawDeg < 0.f) ? -ay : ay;
         const float vScale = (pitchDeg >= 0.f) ? outVUp_ : outVDown_;
@@ -820,11 +894,13 @@ void main() {
     }
 
     void VRM::update(float deltaSec) {
-        // ポーズ(正規化rig転写) → 制約 → 表情 → 視線 → springBone。
+        // ポーズ(正規化rig転写) → 制約 → 視線 → 表情 → springBone。
+        // lookAt(expression 方式)は lookLeft/Right/Up/Down 表情ウェイトを設定するので、
+        // その後 applyToScene が morph/textureTransformBind を反映する順にする。
         humanoid.updateRig();
         updateConstraints();// VRMC_node_constraint (roll/aim/rotation)
-        expressionManager.applyToScene();
         lookAt.update();
+        expressionManager.applyToScene();
         if (!springBone.empty()) {
             if (scene) scene->updateMatrixWorld(true);// 揺れ物理は最新 world 行列が要る
             springBone.update(deltaSec);
@@ -971,6 +1047,20 @@ void main() {
                                     e.morphBinds.push_back({m, idx, w});
                             }
                         }
+                        // textureTransformBind: material の UV offset/scale を動かす(瞳移動等)。
+                        // MToon 材生成後に resolveTexBinds で material を解決する。
+                        if (ex.contains("textureTransformBinds")) {
+                            for (const auto& b : ex["textureTransformBinds"]) {
+                                if (!b.contains("material")) continue;
+                                VRMExpressionManager::TexBindRaw raw;
+                                raw.matIndex = b["material"].get<int>();
+                                if (b.contains("offset") && b["offset"].is_array() && b["offset"].size() >= 2)
+                                    raw.offset.set(b["offset"][0].get<float>(), b["offset"][1].get<float>());
+                                if (b.contains("scale") && b["scale"].is_array() && b["scale"].size() >= 2)
+                                    raw.scale.set(b["scale"][0].get<float>(), b["scale"][1].get<float>());
+                                e.texBindsRaw.push_back(raw);
+                            }
+                        }
                         vrm->expressionManager.expressions_[it.key()] = std::move(e);
                     }
                 };
@@ -978,30 +1068,38 @@ void main() {
                 if (exprs.contains("custom")) addGroup(exprs["custom"]);
             }
 
-            // LookAt(1.0): type=="bone" のみ対応。eye ボーンを回転させる。
-            if (vrmExt.contains("lookAt") && vrmExt["lookAt"].value("type", std::string("bone")) == "bone") {
+            // LookAt(1.0): type=="bone"(eye ボーン回転) / "expression"(lookLeft 等の表情駆動)。
+            if (vrmExt.contains("lookAt")) {
                 const auto& la = vrmExt["lookAt"];
+                const std::string type = la.value("type", std::string("bone"));
                 auto& L = vrm->lookAt;
                 L.head_ = vrm->humanoid.getRawBoneNode("head");
-                L.leftEye_ = vrm->humanoid.getRawBoneNode("leftEye");
-                L.rightEye_ = vrm->humanoid.getRawBoneNode("rightEye");
-                if (L.leftEye_) L.leftRest_.copy(L.leftEye_->quaternion);
-                if (L.rightEye_) L.rightRest_.copy(L.rightEye_->quaternion);
+                if (type == "expression") {
+                    L.expressionMode_ = true;
+                    L.exprMgr_ = &vrm->expressionManager;
+                } else {
+                    L.leftEye_ = vrm->humanoid.getRawBoneNode("leftEye");
+                    L.rightEye_ = vrm->humanoid.getRawBoneNode("rightEye");
+                    if (L.leftEye_) L.leftRest_.copy(L.leftEye_->quaternion);
+                    if (L.rightEye_) L.rightRest_.copy(L.rightEye_->quaternion);
+                }
                 if (la.contains("offsetFromHeadBone") && la["offsetFromHeadBone"].is_array() &&
                     la["offsetFromHeadBone"].size() == 3) {
                     const auto& o = la["offsetFromHeadBone"];
                     L.offset_.set(o[0].get<float>(), o[1].get<float>(), o[2].get<float>());
                 }
-                auto rmap = [&](const char* key, float& inMax, float& outScale) {
+                auto rmap = [&](const char* key, float& inMax, float& outScale, float defOut) {
                     if (la.contains(key)) {
                         inMax = la[key].value("inputMaxValue", 90.0f);
-                        outScale = la[key].value("outputScale", 10.0f);
+                        outScale = la[key].value("outputScale", defOut);
                     }
                 };
+                // expression 方式は outputScale がウェイト(既定1)、bone 方式は角度(既定10)。
+                const float defOut = (type == "expression") ? 1.0f : 10.0f;
                 float dummy = 90.f;
-                rmap("rangeMapHorizontalOuter", L.inMaxH_, L.outH_);
-                rmap("rangeMapVerticalUp", L.inMaxV_, L.outVUp_);
-                rmap("rangeMapVerticalDown", dummy, L.outVDown_);
+                rmap("rangeMapHorizontalOuter", L.inMaxH_, L.outH_, defOut);
+                rmap("rangeMapVerticalUp", L.inMaxV_, L.outVUp_, defOut);
+                rmap("rangeMapVerticalDown", dummy, L.outVDown_, defOut);
             }
         } else {
             // ---- VRM 0.x (VRM) ---- Phase0 検証用の最小読み取り (Phase3 で軸/tail 等を拡充)
@@ -1422,11 +1520,13 @@ void main() {
             if (!mtoon.empty()) {
                 const auto& meshes = gltf["meshes"];
                 int swapped = 0, outlined = 0, rimmed = 0;
+                std::unordered_map<int, std::shared_ptr<threepp::ShaderMaterial>> matByIdx;// textureTransformBind 解決用
                 for (int meshI = 0; meshI < static_cast<int>(meshes.size()); ++meshI) {
                     if (!meshes[meshI].contains("primitives")) continue;
                     const auto& prims = meshes[meshI]["primitives"];
                     for (int primI = 0; primI < static_cast<int>(prims.size()); ++primI) {
-                        auto pit = mtoon.find(prims[primI].value("material", -1));
+                        const int matIdx = prims[primI].value("material", -1);
+                        auto pit = mtoon.find(matIdx);
                         if (pit == mtoon.end()) continue;
                         auto meshIt = result->meshPrimitives.find({meshI, primI});
                         if (meshIt == result->meshPrimitives.end() || !meshIt->second) continue;
@@ -1478,6 +1578,7 @@ void main() {
                             sp.side = mat0->side;
                         }
                         auto toon = makeMToonMaterial(sp);
+                        matByIdx[matIdx] = toon;// textureTransformBind 解決用
                         // uniform は raw Texture* 参照。元材差し替えで解放されないよう寿命保持。
                         if (map) vrm->keepAliveTextures.push_back(map);
                         if (emissiveMap) vrm->keepAliveTextures.push_back(emissiveMap);
@@ -1509,6 +1610,8 @@ void main() {
                         if (pit->second.hasRim) ++rimmed;
                     }
                 }
+                // textureTransformBind の material index を MToon 材へ解決 (瞳移動 UV 等)
+                vrm->expressionManager.resolveTexBinds(matByIdx);
                 std::cerr << "[VRM] MToon materials applied: " << swapped << " primitives ("
                           << mtoon.size() << " materials), outlines=" << outlined << " rims=" << rimmed
                           << " uvAnims=" << vrm->uvAnims.size() << "\n";
