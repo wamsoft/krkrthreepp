@@ -94,6 +94,53 @@ void main() {
             mat->lights = false;
             return mat;
         }
+
+        // MToon parametric rim (リムライト)。視線に対する法線のフレネルで縁が光る。
+        // 加算合成のオーバーレイメッシュとして重ねる(スキニング追従)。
+        std::shared_ptr<threepp::ShaderMaterial> makeRimMaterial(const threepp::Color& rimColor,
+                                                                float power, float lift) {
+            auto mat = threepp::ShaderMaterial::create();
+            mat->vertexShader = R"(
+#include <common>
+#include <skinning_pars_vertex>
+varying vec3 vRimN;
+varying vec3 vRimP;
+void main() {
+    #include <skinbase_vertex>
+    #include <beginnormal_vertex>
+    #include <skinnormal_vertex>
+    #include <begin_vertex>
+    #include <skinning_vertex>
+    vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );
+    vRimP = mvPosition.xyz;
+    vRimN = normalize( normalMatrix * objectNormal );
+    gl_Position = projectionMatrix * mvPosition;
+}
+)";
+            mat->fragmentShader = R"(
+uniform vec3 rimColor;
+uniform float rimPower;
+uniform float rimLift;
+varying vec3 vRimN;
+varying vec3 vRimP;
+void main() {
+    vec3 V = normalize( -vRimP );
+    float f = 1.0 - max( 0.0, dot( normalize( vRimN ), V ) );
+    f = clamp( f + rimLift, 0.0, 1.0 );
+    float rim = pow( f, max( 0.001, rimPower ) );
+    gl_FragColor = vec4( rimColor * rim, 1.0 );
+}
+)";
+            mat->uniforms = threepp::UniformMap{
+                    {"rimColor", threepp::Uniform(threepp::Vector3(rimColor.r, rimColor.g, rimColor.b))},
+                    {"rimPower", threepp::Uniform(power)},
+                    {"rimLift", threepp::Uniform(lift)}};
+            mat->blending = threepp::Blending::Additive;
+            mat->transparent = true;
+            mat->depthWrite = false;
+            mat->lights = false;
+            return mat;
+        }
     }// namespace
 
     // -----------------------------------------------------------------------
@@ -969,6 +1016,9 @@ void main() {
                 bool hasOutline = false;
                 threepp::Color outlineColor{0.f, 0.f, 0.f};
                 float outlineWidth = 0.f;
+                bool hasRim = false;
+                threepp::Color rimColor{0.f, 0.f, 0.f};
+                float rimPower = 5.f, rimLift = 0.f;
             };
             std::unordered_map<int, MToonParam> mtoon;
             const auto& mats = gltf["materials"];
@@ -996,11 +1046,37 @@ void main() {
                         p.outlineColor.setRGB(oc[0].get<float>(), oc[1].get<float>(), oc[2].get<float>());
                     }
                 }
+                // parametric rim (リムライト)。rimColor が実質黒なら無し。
+                if (mt.contains("parametricRimColorFactor") && mt["parametricRimColorFactor"].is_array() &&
+                    mt["parametricRimColorFactor"].size() >= 3) {
+                    const auto& rc = mt["parametricRimColorFactor"];
+                    threepp::Color rcol(rc[0].get<float>(), rc[1].get<float>(), rc[2].get<float>());
+                    if (rcol.r + rcol.g + rcol.b > 0.01f) {
+                        p.hasRim = true;
+                        p.rimColor.copy(rcol);
+                        p.rimPower = mt.value("parametricRimFresnelPowerFactor", 5.f);
+                        p.rimLift = mt.value("parametricRimLiftFactor", 0.f);
+                    }
+                }
                 mtoon[mi] = p;
             }
             if (!mtoon.empty()) {
                 const auto& meshes = gltf["meshes"];
-                int swapped = 0, outlined = 0;
+                int swapped = 0, outlined = 0, rimmed = 0;
+                // 同一 geometry+skeleton のオーバーレイ(反転ハル/リム)を子として重ねる
+                auto addOverlay = [](const std::shared_ptr<threepp::Mesh>& src,
+                                     const std::shared_ptr<threepp::Material>& m, const std::string& suffix) {
+                    std::shared_ptr<threepp::Object3D> obj;
+                    if (auto* skinned = src->as<threepp::SkinnedMesh>()) {
+                        auto sm = threepp::SkinnedMesh::create(src->geometry(), m);
+                        sm->bind(skinned->skeleton, skinned->bindMatrix);
+                        obj = sm;
+                    } else {
+                        obj = threepp::Mesh::create(src->geometry(), m);
+                    }
+                    obj->name = src->name + suffix;
+                    src->add(obj);
+                };
                 for (int meshI = 0; meshI < static_cast<int>(meshes.size()); ++meshI) {
                     if (!meshes[meshI].contains("primitives")) continue;
                     const auto& prims = meshes[meshI]["primitives"];
@@ -1049,25 +1125,19 @@ void main() {
                         mesh->setMaterial(toon);
                         ++swapped;
 
-                        // outline: 同一 geometry+skeleton の反転ハルメッシュを子として重ねる
+                        // outline (反転ハル) / rim (加算リムライト) を重ねる
                         if (pit->second.hasOutline) {
-                            auto outlineMat = makeOutlineMaterial(pit->second.outlineColor, pit->second.outlineWidth);
-                            std::shared_ptr<threepp::Object3D> outlineObj;
-                            if (auto* skinned = mesh->as<threepp::SkinnedMesh>()) {
-                                auto om = threepp::SkinnedMesh::create(mesh->geometry(), outlineMat);
-                                om->bind(skinned->skeleton, skinned->bindMatrix);
-                                outlineObj = om;
-                            } else {
-                                outlineObj = threepp::Mesh::create(mesh->geometry(), outlineMat);
-                            }
-                            outlineObj->name = mesh->name + "_outline";
-                            mesh->add(outlineObj);
+                            addOverlay(mesh, makeOutlineMaterial(pit->second.outlineColor, pit->second.outlineWidth), "_outline");
                             ++outlined;
+                        }
+                        if (pit->second.hasRim) {
+                            addOverlay(mesh, makeRimMaterial(pit->second.rimColor, pit->second.rimPower, pit->second.rimLift), "_rim");
+                            ++rimmed;
                         }
                     }
                 }
                 std::cerr << "[VRM] MToon materials applied: " << swapped << " primitives ("
-                          << mtoon.size() << " materials), outlines=" << outlined << "\n";
+                          << mtoon.size() << " materials), outlines=" << outlined << " rims=" << rimmed << "\n";
             }
         }
 
