@@ -914,6 +914,8 @@ template <> struct ThreeBaseOf<MeshBasicMaterial>    { typedef Material Type; };
 template <> struct ThreeBaseOf<MeshStandardMaterial> { typedef Material Type; };
 // BufferGeometry 系
 template <> struct ThreeBaseOf<BoxGeometry>        { typedef BufferGeometry Type; };
+// Texture 系 (Texture がルート)
+template <> struct ThreeBaseOf<DataTexture>        { typedef Texture Type; };
 
 // ルートラッパの空基底 (実体の所有/非所有は adaptor 側が管理する)
 class ThreeWrapperRoot {
@@ -1655,10 +1657,18 @@ static unsigned int MeshBasicMaterialGetColor(ThreeWrapper<MeshBasicMaterial> *s
 	return 0;
 }
 
+// map(カラーテクスチャ)を設定。tex は Texture(DataTexture 等)。is-a により
+// shared_ptr<Texture> コンバータが DataTexture の Texture 基底実体を取り出す。
+static void MeshBasicMaterialSetMap(ThreeWrapper<MeshBasicMaterial> *self, std::shared_ptr<Texture> tex)
+{
+	if (self && self->getObject()) self->getObject()->map = tex;
+}
+
 NCB_REGISTER_THREE_SUBCLASS(MeshBasicMaterial)
 Factory(MeshBasicMaterialFactory);
 NCB_THREE_PROPERTY_RO(type, type);
 NCB_PROPERTY_PROXY(color, MeshBasicMaterialGetColor, MeshBasicMaterialSetColor);
+NCB_METHOD_PROXY(setMap, MeshBasicMaterialSetMap);
 NCB_THREE_MEMBER_PROPERTY(wireframe, bool, wireframe);
 NCB_THREE_MEMBER_PROPERTY(wireframeLinewidth, float, wireframeLinewidth);
 };
@@ -2733,6 +2743,39 @@ DataTextureFactory(ThreeWrapper<DataTexture> **result, tjs_int numparams, tTJSVa
 NCB_REGISTER_THREE_SUBCLASS(DataTexture)
 Factory(DataTextureFactory);
 };
+
+// 吉里吉里 Layer の画像(32bit ARGB)から threepp テクスチャ(RGBA)を作る。
+// Layer は loadImages 等で画像を読み込んでおく。テクスチャ表示の実用パス。
+static std::shared_ptr<DataTexture> ThreeTextureFromLayer(tTJSVariant layerV)
+{
+	if (layerV.Type() != tvtObject) return nullptr;
+	iTJSDispatch2 *obj = layerV.AsObjectNoAddRef();
+	if (!obj) return nullptr;
+	ncbPropAccessor layer(obj);
+	tjs_int w     = layer.getIntValue(TJS_W("imageWidth"));
+	tjs_int h     = layer.getIntValue(TJS_W("imageHeight"));
+	tjs_int pitch = layer.getIntValue(TJS_W("mainImageBufferPitch"));
+	const unsigned char *buf = (const unsigned char *)layer.getIntPtrValue(TJS_W("mainImageBufferForWrite"));
+	if (!buf || w <= 0 || h <= 0) return nullptr;
+
+	std::vector<unsigned char> data((size_t)w * h * 4);
+	for (tjs_int y = 0; y < h; y++) {
+		const unsigned char *src = buf + (intptr_t)pitch * y;
+		unsigned char *dst = data.data() + (size_t)y * w * 4;
+		for (tjs_int x = 0; x < w; x++) {
+			// 吉里吉里は 32bit ARGB (メモリ上 B,G,R,A リトルエンディアン) → threepp RGBA
+			dst[x * 4 + 0] = src[x * 4 + 2]; // R
+			dst[x * 4 + 1] = src[x * 4 + 1]; // G
+			dst[x * 4 + 2] = src[x * 4 + 0]; // B
+			dst[x * 4 + 3] = src[x * 4 + 3]; // A
+		}
+	}
+	auto tex = DataTexture::create<unsigned char>(4, (unsigned int)w, (unsigned int)h);
+	tex->image().setData(ImageData(std::move(data)));
+	tex->needsUpdate();
+	return tex;
+}
+NCB_REGISTER_FUNCTION(textureFromLayer, ThreeTextureFromLayer);
 
 // ======================================================================
 // TextureLoader

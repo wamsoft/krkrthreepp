@@ -64,7 +64,26 @@ class BasicViewer extends Window
         // キューブ
         var geom = new Threepp.BoxGeometry(1, 1, 1);
         var mat;
-        if (System.getArgument("-lit") !== void) {
+        if (System.getArgument("-tex") !== void) {
+            // テクスチャ確認: Layer にチェッカーボードを描いて threepp テクスチャ化。
+            // (プライマリレイヤ(parent=null)は LayerManager を作り invalidate 時に
+            //  競合するため、既存レイヤの子として作る)
+            var texLayer = new Layer(this, back);
+            texLayer.setImageSize(64, 64);
+            texLayer.setSize(64, 64);
+            texLayer.visible = false;
+            for (var ty = 0; ty < 8; ty++)
+                for (var tx = 0; tx < 8; tx++) {
+                    var c = (((tx + ty) & 1) != 0) ? 0xffff8020 : 0xff2050ff;
+                    texLayer.fillRect(tx * 8, ty * 8, 8, 8, c);
+                }
+            var tex = textureFromLayer(texLayer);
+            mat = new Threepp.MeshBasicMaterial();
+            mat.color = 0xffffff;               // 白 = テクスチャ色をそのまま出す
+            mat.setMap(tex);
+            invalidate texLayer;                // 画素はテクスチャへコピー済み
+            Debug.message("tex mode: textured cube tex=" + (tex !== void));
+        } else if (System.getArgument("-lit") !== void) {
             mat = new Threepp.MeshStandardMaterial();
             mat.color = 0xff3030;
             // ライト
