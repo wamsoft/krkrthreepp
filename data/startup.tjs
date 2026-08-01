@@ -107,7 +107,7 @@ class VRMViewer extends Window
 
         // ライト (three-vrm の標準的な構成に近い)
         var dir = new Threepp.DirectionalLight(0xffffff, 1.4);
-        dir.position.set(1, 1, 1);
+        dir.setPosition(1, 1, 1);
         scene.add(dir);
         var amb = new Threepp.AmbientLight(0xffffff, 0.6);
         scene.add(amb);
@@ -204,7 +204,7 @@ class VRMViewer extends Window
         var px = camDist * Math.sin(camYaw) * cy;
         var py = targetY + camDist * Math.sin(camPitch);
         var pz = camDist * Math.cos(camYaw) * cy;
-        camera.position.set(px, py, pz);
+        camera.setPosition(px, py, pz);
         camera.lookAt(0, targetY, 0);
     }
 

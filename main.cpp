@@ -900,13 +900,20 @@ template <>        struct ThreeSubClassBase<void>  { typedef void Type; };
 template <class X> struct ThreeIsVoid       { enum { value = 0 }; };
 template <>        struct ThreeIsVoid<void> { enum { value = 1 }; };
 
-// --- is-a 継承マップ本体 (PoC: Object3D → Camera チェーン) ---
-// Object3D はルート (void)。ここを増やすとチェーンが伸びる。
+// --- is-a 継承マップ本体 ---
+// 各ルート (Object3D / Material / BufferGeometry) は void。ここを増やすとチェーンが伸びる。
+// Object3D 系
 template <> struct ThreeBaseOf<Scene>              { typedef Object3D Type; };
 template <> struct ThreeBaseOf<Group>              { typedef Object3D Type; };
 template <> struct ThreeBaseOf<Camera>             { typedef Object3D Type; };
 template <> struct ThreeBaseOf<PerspectiveCamera>  { typedef Camera   Type; };
 template <> struct ThreeBaseOf<OrthographicCamera> { typedef Camera   Type; };
+template <> struct ThreeBaseOf<Mesh>               { typedef Object3D Type; };
+// Material 系 (threepp の Material は仮想基底。伝播は暗黙アップキャストで対応)
+template <> struct ThreeBaseOf<MeshBasicMaterial>    { typedef Material Type; };
+template <> struct ThreeBaseOf<MeshStandardMaterial> { typedef Material Type; };
+// BufferGeometry 系
+template <> struct ThreeBaseOf<BoxGeometry>        { typedef BufferGeometry Type; };
 
 // ルートラッパの空基底 (実体の所有/非所有は adaptor 側が管理する)
 class ThreeWrapperRoot {
@@ -954,10 +961,13 @@ public:
 	};
 };
 
-// 非ルート: 基底ラッパへ static_pointer_cast した実体を setObject (さらに上へ再帰)
+// 非ルート: 基底ラッパへ upcast した実体を setObject (さらに上へ再帰)。
+// 暗黙アップキャスト (shared_ptr<B> の変換コンストラクタ) を使うので、
+// threepp の仮想継承 (例: MeshBasicMaterial : public virtual Material) でも成立する
+// (static_pointer_cast は仮想基底へは不可なため使わない)。
 template <class T, class B>
 void ThreeWrapperAssignBase<T, B>::assign(ThreeWrapper<T> *self, const std::shared_ptr<T> &src) {
-	static_cast<ThreeWrapper<B>*>(self)->setObject(std::static_pointer_cast<B>(src));
+	static_cast<ThreeWrapper<B>*>(self)->setObject(std::shared_ptr<B>(src));
 }
 
 // ThreeWrapper<T> の is-a 基底を ncbind に伝える (ThreeBaseOf に基づき自動導出)。
@@ -1235,6 +1245,11 @@ template <class T> static void ThreeObjRotateZ(ThreeWrapper<T> *self, float a) {
 template <class T> static void ThreeObjTranslateX(ThreeWrapper<T> *self, float d) { if (self && self->getObject()) self->getObject()->translateX(d); }
 template <class T> static void ThreeObjTranslateY(ThreeWrapper<T> *self, float d) { if (self && self->getObject()) self->getObject()->translateY(d); }
 template <class T> static void ThreeObjTranslateZ(ThreeWrapper<T> *self, float d) { if (self && self->getObject()) self->getObject()->translateZ(d); }
+// position/rotation/scale の getter は値コピー(RO)なので .set() では実体に反映されない。
+// 実体を変更するには下の setter メソッドを使う (setPosition/setScale/setRotation)。
+template <class T> static void ThreeObjSetPosition(ThreeWrapper<T> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->position.set(x, y, z); }
+template <class T> static void ThreeObjSetScale(ThreeWrapper<T> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->scale.set(x, y, z); }
+template <class T> static void ThreeObjSetRotation(ThreeWrapper<T> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->rotation.set(x, y, z); }
 
 // 各 Object3D 派生クラスの登録ブロックに書く共通メンバ群。
 // type は各クラスが独自の RO プロパティを持つため含めない (衝突回避)。
@@ -1260,6 +1275,9 @@ template <class T> static void ThreeObjTranslateZ(ThreeWrapper<T> *self, float d
 	NCB_METHOD_PROXY(translateX, ThreeObjTranslateX<ThreeClass>); \
 	NCB_METHOD_PROXY(translateY, ThreeObjTranslateY<ThreeClass>); \
 	NCB_METHOD_PROXY(translateZ, ThreeObjTranslateZ<ThreeClass>); \
+	NCB_METHOD_PROXY(setPosition, ThreeObjSetPosition<ThreeClass>); \
+	NCB_METHOD_PROXY(setScale, ThreeObjSetScale<ThreeClass>); \
+	NCB_METHOD_PROXY(setRotation, ThreeObjSetRotation<ThreeClass>); \
 	NCB_THREE_METHOD2(updateMatrix, void, updateMatrix, ()); \
 	NCB_THREE_METHOD2(updateMatrixWorld, void, updateMatrixWorld, (bool))
 
@@ -2441,6 +2459,11 @@ static void GLRendererOnBeginScene(ThreeWrapper<GLRenderer> *self, int w, int h)
 {
 	if (self && self->getObject()) {
 		auto r = self->getObject();
+		// ホスト(GLESAdaptor.capture)が捕捉用 FBO を bind した状態でここに入る。
+		// その FBO を threepp の画面ターゲット(デフォルト FBO)として取り込む。
+		// これをしないと threepp は FBO 0 に描き、ホストの読み戻し先 FBO が空になる。
+		// (resetState は framebuffer 0 を bind し直すので、その前に取り込む)
+		r->setDefaultFramebufferToCurrent();
 		// ホストが GL ステートを変更している可能性があるため、threepp 内部のステート
 		// キャッシュを無効化してから描画する (コンテキスト共有対策)。
 		r->resetState();

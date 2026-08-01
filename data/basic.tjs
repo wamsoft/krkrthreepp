@@ -1,0 +1,142 @@
+/**
+ * threepp 基本描画スモークテスト (VRM 抜き)
+ *
+ * 目的: GLES 描画パイプライン(GLRenderer→adaptor.capture→dest レイヤ)が
+ * 実際にピクセルを出せるかを、最小構成の回転キューブで確認する。
+ * まず MeshBasicMaterial(unlit=ライト非依存) の赤いキューブで「何か映るか」を見る。
+ *
+ *   -shot=out … 60 フレーム後に out.png を保存して終了 (自動確認用)
+ *   -lit      … MeshStandardMaterial + ライトに切り替える (ライティング確認用)
+ */
+
+Plugins.link("krkrgles.dll");
+Plugins.link("../build/x64-windows/Release/krkr_threepp.dll");
+
+var SCREEN_W = 800;
+var SCREEN_H = 800;
+
+class BasicViewer extends Window
+{
+    var adaptor, renderer, scene, camera, mesh;
+    var back, dest, timer, shotName, frameCount = 0;
+
+    function BasicViewer()
+    {
+        super.Window();
+        caption = "threepp basic smoke";
+        setInnerSize(SCREEN_W, SCREEN_H);
+
+        // 背景 (暗い単色。3D が乗れば分かる)
+        back = new Layer(this, null);
+        back.setImageSize(SCREEN_W, SCREEN_H);
+        back.setSize(SCREEN_W, SCREEN_H);
+        back.fillRect(0, 0, SCREEN_W, SCREEN_H, 0xff102030);
+        back.visible = true;
+        add(back);
+
+        // 3D 描画結果 (α 非保持のため加算合成)
+        dest = new Layer(this, back);
+        dest.setImageSize(SCREEN_W, SCREEN_H);
+        dest.setSize(SCREEN_W, SCREEN_H);
+        dest.type = ltAdditive;
+        dest.visible = true;
+        add(dest);
+
+        // GLES コンテキスト
+        adaptor = new GLESAdaptor(this);
+        adaptor.setScreenSize(SCREEN_W, SCREEN_H);
+        adaptor.makeCurrent();
+
+        renderer = new Threepp.GLRenderer(adaptor, SCREEN_W, SCREEN_H);
+        // -clear: クリアカラーを不透明の明色にして「読み戻し自体が効くか」を切り分ける。
+        // (画面全体が水色になれば clear+readback は動作 → 問題は geometry 描画側)
+        if (System.getArgument("-clear") !== void)
+            renderer.setClearColor(0x0060c0, 1.0);
+        else
+            renderer.setClearColor(0x000000, 0.0);
+        Debug.message("GLRenderer constructed OK");
+
+        scene  = new Threepp.Scene();
+        camera = new Threepp.PerspectiveCamera(50, SCREEN_W / SCREEN_H, 0.1, 100);
+        camera.setPosition(0, 0, 3);        // +Z 側からキューブを見る
+        camera.lookAt(0, 0, 0);
+
+        // キューブ
+        var geom = new Threepp.BoxGeometry(1, 1, 1);
+        var mat;
+        if (System.getArgument("-lit") !== void) {
+            mat = new Threepp.MeshStandardMaterial();
+            mat.color = 0xff3030;
+            // ライト
+            var dir = new Threepp.DirectionalLight(0xffffff, 1.0);
+            dir.setPosition(2, 3, 4);
+            scene.add(dir);
+            var amb = new Threepp.AmbientLight(0xffffff, 0.4);
+            scene.add(amb);
+            Debug.message("lit mode: MeshStandardMaterial + lights");
+        } else {
+            mat = new Threepp.MeshBasicMaterial();
+            mat.color = 0xff3030;               // 赤 (unlit なので常に見えるはず)
+            Debug.message("unlit mode: MeshBasicMaterial");
+        }
+        mesh = new Threepp.Mesh(geom, mat);
+        scene.add(mesh);
+        Debug.message("cube added: geom=" + (geom !== void) + " mat=" + (mat !== void) + " mesh=" + (mesh !== void));
+
+        shotName = System.getArgument("-shot");
+        if (shotName !== void) shotName += ".png";
+
+        timer = new Timer(this, "onFrame");
+        timer.interval = 16;
+        timer.enabled = true;
+        add(timer);
+    }
+
+    function onFrame()
+    {
+        if (mesh !== void) { mesh.rotateY(0.02); mesh.rotateX(0.01); }
+
+        adaptor.capture(dest, onRender, this, 0x00000000);
+        dest.update();
+        frameCount++;
+
+        if (shotName !== void && frameCount >= 60) {
+            timer.enabled = false;
+            saveShot(shotName);
+            System.exit(0);
+        }
+    }
+
+    function onRender(w, h, self)
+    {
+        if (self.frameCount <= 2) Debug.message("onRender called: w=" + w + " h=" + h);
+        self.renderer.onBeginScene(w, h);
+        self.renderer.render(self.scene, self.camera);
+        self.renderer.onEndScene();
+    }
+
+    function saveShot(name)
+    {
+        var shot = new Layer(this, back);
+        shot.visible = false;
+        shot.setImageSize(SCREEN_W, SCREEN_H);
+        shot.setSize(SCREEN_W, SCREEN_H);
+        shot.copyRect(0, 0, back, 0, 0, SCREEN_W, SCREEN_H);
+        shot.operateRect(0, 0, dest, 0, 0, SCREEN_W, SCREEN_H, omAdditive);
+        shot.saveLayerImage(name, "png24");
+        invalidate shot;
+        Debug.message("saved: " + name);
+    }
+
+    function finalize()
+    {
+        if (timer !== void) timer.enabled = false;
+        invalidate mesh     if mesh     !== void;
+        invalidate renderer if renderer !== void;
+        invalidate adaptor  if adaptor  !== void;
+        super.finalize(...);
+    }
+}
+
+var win = new BasicViewer();
+win.visible = true;
