@@ -27,11 +27,12 @@ No test suite is built for the plugin itself (threepp's tests are disabled via C
 
 ## Architecture
 
-The plugin has three layers:
+The plugin has four layers:
 
-1. **threepp** (git submodule, `threepp/`): Pure C++ 3D library (fork at `wtnbgo/threepp`, branch `work_sdl3`). Uses `THREEPP_WITH_GENERIC` mode for custom rendering integration.
+1. **threepp** (git submodule, `threepp/`): Pure C++ 3D library (fork at `wtnbgo/threepp`, branch `work_sdl3`). Uses `THREEPP_WITH_GENERIC` mode for custom rendering integration. GLES 化・GLTFLoader 露出・MToon 用の追加あり。
 2. **ncbind** (sibling directory `../ncbind`): C++ template library that bridges native C++ classes to Kirikiri's TJS2 scripting engine.
-3. **main.cpp**: The binding layer that registers 70+ threepp classes with ncbind macros for TJS2 access.
+3. **vrm** (`vrm/VRM.cpp` `vrm/VRM.hpp`): threepp の上に構築した VRM ランタイム (0.x/1.0 読込・humanoid・表情・視線・VRMA・springBone・node_constraint・MToon)。ncbind 非依存の純 C++。詳細は [`docs/vrm_support_status.md`](docs/vrm_support_status.md)。
+4. **main.cpp**: The binding layer that registers 100+ threepp/VRM classes with ncbind macros for TJS2 access.
 
 ### Key Binding Patterns in main.cpp
 
@@ -58,17 +59,30 @@ The plugin has three layers:
 
 ## Current Status
 
-- ビルド成功（Release / Debug）
-- 本家 threepp をタグ 2026-06-17 へ同期済み（fork の3コミットを rebase）
-- GLES 接続の機能結線を実装済み（siblings の effekseer/motion と同じ Device 方式）:
-  - `new Threepp.GLRenderer(adaptor[, w, h])` で、ホスト(`../gles` の `GLESAdaptor` 等)の
-    `GLGetProcAddress` を取得し `initGlad()` → GLRenderer をヘッドレス生成する。
-  - 描画は `adaptor.capture()` のコールバック内で `onBeginScene(w,h)` → `render(scene,camera)`
-    → `onEndScene()` の順に呼ぶ。
-  - 実装は `main.cpp` の `GLRendererFactory` / `GLRendererOnBeginScene` / `GLRendererOnEndScene`。
-- **要実行時検証**: threepp は desktop OpenGL glad（`gladLoadGLLoader`）を使うため、ホストの
-  ANGLE GLES3 コンテキスト上で全 GL 呼び出しが解決するかは未検証（effekseer が苦労した点）。
-  また GL ステート共有時の復帰ポリシーも実機で調整が必要。
+64bit 実機 (krkrz64 + `../gles` の GLESAdaptor) で threepp 描画と VRM が一通り動作する状態。
+ビルドは Release / Debug 成功。
+
+### 描画基盤 (実機検証済み)
+- **threepp を GLES 化済み** (fork): glad を desktop GL → GLES(glad2) へ差替え、シェーダを
+  `300 es` 化 (`THREEPP_GLES`)。当初の「ANGLE GLES 上で desktop glad が解決しない」問題は解消。
+- **捕捉 FBO へ描画**: threepp に `setDefaultFramebuffer*` を追加し、`adaptor.capture()` が bind した
+  中間 FBO へ描く。`GLRenderer` は `onBeginScene(w,h)` → `render(scene,camera)` → `onEndScene()`。
+- **MSAA** (`setSampleCount`) + gles.dll の `unpremultiply` で縁の AA と premultiplied 補正。
+- 合成は `dest.type = ltAlpha`。実装は `main.cpp` の `GLRenderer*` 群。
+
+### VRM (`vrm/VRM.cpp` `vrm/VRM.hpp`)
+VRM 0.x / 1.0 の読込・humanoid・表情(morph/override/textureTransformBind)・視線(bone/expression)・
+VRMA アニメ(+hips ルートモーション)・揺れ物(springBone, center 空間)・制約(node_constraint)・
+**MToon**(lit/shade・輪郭線・matcap・normalMap・UVアニメ) を実装。three-vrm / vrm-specification を
+参照に実装・検証。**機能ごとの詳細な対応状況は [`docs/vrm_support_status.md`](docs/vrm_support_status.md)**。
+未対応の主なもの: materialColorBind / VRMA 顔トラック / FirstPerson / scene ライティング(固定ライト)。
+
+### リポジトリ
+- 親 (`.`): VRM 実装 + ncbind バインド (`main.cpp`)。
+- threepp fork (`threepp/`, branch `work_sdl3`): GLES 化 / GLTFLoader 露出・修正 / MToon 用の
+  ShaderMaterial・MeshToonMaterial mixin 追加 等。**push は force 必要 (rebase 履歴)、未 push**。
+- ncbind (`../ncbind`): 単一継承(is-a)拡張 + CreateAdaptor 祖先 attach。
+- gles (`../gles`): git 管理外。`unpremultiply` 追加分はソース保存 + DLL を plugin64 に配置。
 
 ## Build Configuration
 
