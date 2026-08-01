@@ -79,6 +79,10 @@ void main() {
             threepp::Texture* emissiveMap = nullptr;
             threepp::Color rimColor{0.f, 0.f, 0.f};
             float rimPower = 5.f, rimLift = 0.f;
+            threepp::Texture* normalMap = nullptr;
+            float normalScale = 1.f;
+            threepp::Texture* matcapMap = nullptr;      ///< 0.x _SphereAdd / 1.0 matcapTexture (加算)
+            threepp::Color matcapColor{1.f, 1.f, 1.f};
             float opacity = 1.f, alphaTest = 0.f;
             bool transparent = false;
             threepp::Side side = threepp::Side::Front;
@@ -136,19 +140,37 @@ uniform float rimLift;
 uniform vec3 keyLightDir;    // view 空間の主光源方向 (面→光源)
 uniform vec3 keyLightColor;
 uniform vec3 ambientColor;
+uniform vec3 matcapColor;
+uniform float normalScale;
 uniform sampler2D baseMap;     uniform int hasBaseMap;
 uniform sampler2D emissiveMap; uniform int hasEmissiveMap;
+uniform sampler2D normalMap;   uniform int hasNormalMap;
+uniform sampler2D matcapMap;   uniform int hasMatcap;
 varying vec2 vMUv;
 varying vec3 vMNormal;
 varying vec3 vMViewPos;
 float linstep( float a, float b, float t ) { return clamp( ( t - a ) / max( 1e-4, b - a ), 0.0, 1.0 ); }
+// tangent 属性が無い VRM 向け: 画面微分から接空間を組んで法線マップを適用 (three.js perturbNormal2Arb 相当)
+vec3 perturbNormal( vec3 N, vec3 pos, vec2 uv, vec3 mapN ) {
+    vec3 q0 = dFdx( pos ); vec3 q1 = dFdy( pos );
+    vec2 st0 = dFdx( uv ); vec2 st1 = dFdy( uv );
+    vec3 S = normalize( q0 * st1.t - q1 * st0.t );
+    vec3 T = normalize( -q0 * st1.s + q1 * st0.s );
+    return normalize( mat3( S, T, N ) * mapN );
+}
 void main() {
     vec4 tex = ( hasBaseMap != 0 ) ? texture2D( baseMap, vMUv ) : vec4( 1.0 );
     vec3 lit   = litFactor   * tex.rgb;
     vec3 shade = shadeFactor * tex.rgb;
     float alpha = opacity * tex.a;
     if ( alphaCutoff > 0.0 ) { if ( alpha < alphaCutoff ) discard; alpha = 1.0; }
+    vec3 pos = -vMViewPos;                 // view 空間の面位置 (= mvPosition.xyz)
     vec3 N = normalize( vMNormal );
+    if ( hasNormalMap != 0 ) {
+        vec3 mapN = texture2D( normalMap, vMUv ).xyz * 2.0 - 1.0;
+        mapN.xy *= normalScale;
+        N = perturbNormal( N, pos, vMUv, mapN );
+    }
     vec3 V = normalize( vMViewPos );
     float dotNL = dot( N, normalize( keyLightDir ) );
     float sh = linstep( -1.0 + shadingToony, 1.0 - shadingToony, dotNL + shadingShift );
@@ -157,6 +179,10 @@ void main() {
     col += emissiveFactor * ( ( hasEmissiveMap != 0 ) ? texture2D( emissiveMap, vMUv ).rgb : vec3( 1.0 ) );
     float f = clamp( 1.0 - max( 0.0, dot( N, V ) ) + rimLift, 0.0, 1.0 );
     col += rimFactor * pow( f, max( 0.001, rimPower ) );
+    if ( hasMatcap != 0 ) {                // matcap (0.x _SphereAdd 相当): view法線→球UVで加算
+        vec2 muv = N.xy * 0.5 + 0.5;
+        col += matcapColor * texture2D( matcapMap, muv ).rgb;
+    }
     gl_FragColor = vec4( col, alpha );
 }
 )";
@@ -172,10 +198,16 @@ void main() {
                     {"rimFactor", threepp::Uniform(v3(p.rimColor))},
                     {"rimPower", threepp::Uniform(p.rimPower)},
                     {"rimLift", threepp::Uniform(p.rimLift)},
+                    {"matcapColor", threepp::Uniform(v3(p.matcapColor))},
+                    {"normalScale", threepp::Uniform(p.normalScale)},
                     {"baseMap", threepp::Uniform(p.baseMap ? p.baseMap : whiteDummyTexture().get())},
                     {"hasBaseMap", threepp::Uniform(p.baseMap ? 1 : 0)},
                     {"emissiveMap", threepp::Uniform(p.emissiveMap ? p.emissiveMap : whiteDummyTexture().get())},
                     {"hasEmissiveMap", threepp::Uniform(p.emissiveMap ? 1 : 0)},
+                    {"normalMap", threepp::Uniform(p.normalMap ? p.normalMap : whiteDummyTexture().get())},
+                    {"hasNormalMap", threepp::Uniform(p.normalMap ? 1 : 0)},
+                    {"matcapMap", threepp::Uniform(p.matcapMap ? p.matcapMap : whiteDummyTexture().get())},
+                    {"hasMatcap", threepp::Uniform(p.matcapMap ? 1 : 0)},
                     // 固定キーライト(view 空間・カメラ相対)。threepp lights=true の ShaderMaterial は
                     // renderer 側 uniform 前提で不安定なため、自前の単一ライトで MToon 陰影を出す。
                     {"keyLightDir", threepp::Uniform(threepp::Vector3(0.25f, 0.40f, 1.0f))},
@@ -186,6 +218,21 @@ void main() {
             mat->opacity = p.opacity;
             mat->side = p.side;
             return mat;
+        }
+
+        // 同一 geometry+skeleton のオーバーレイ(反転ハル outline 等)を src の子として重ねる。
+        void addMToonOverlay(const std::shared_ptr<threepp::Mesh>& src,
+                             const std::shared_ptr<threepp::Material>& m, const std::string& suffix) {
+            std::shared_ptr<threepp::Object3D> obj;
+            if (auto* skinned = src->as<threepp::SkinnedMesh>()) {
+                auto sm = threepp::SkinnedMesh::create(src->geometry(), m);
+                sm->bind(skinned->skeleton, skinned->bindMatrix);
+                obj = sm;
+            } else {
+                obj = threepp::Mesh::create(src->geometry(), m);
+            }
+            obj->name = src->name + suffix;
+            src->add(obj);
         }
     }// namespace
 
@@ -1272,20 +1319,7 @@ void main() {
             if (!mtoon.empty()) {
                 const auto& meshes = gltf["meshes"];
                 int swapped = 0, outlined = 0, rimmed = 0;
-                // 同一 geometry+skeleton のオーバーレイ(反転ハル/リム)を子として重ねる
-                auto addOverlay = [](const std::shared_ptr<threepp::Mesh>& src,
-                                     const std::shared_ptr<threepp::Material>& m, const std::string& suffix) {
-                    std::shared_ptr<threepp::Object3D> obj;
-                    if (auto* skinned = src->as<threepp::SkinnedMesh>()) {
-                        auto sm = threepp::SkinnedMesh::create(src->geometry(), m);
-                        sm->bind(skinned->skeleton, skinned->bindMatrix);
-                        obj = sm;
-                    } else {
-                        obj = threepp::Mesh::create(src->geometry(), m);
-                    }
-                    obj->name = src->name + suffix;
-                    src->add(obj);
-                };
+                auto addOverlay = &addMToonOverlay;
                 for (int meshI = 0; meshI < static_cast<int>(meshes.size()); ++meshI) {
                     if (!meshes[meshI].contains("primitives")) continue;
                     const auto& prims = meshes[meshI]["primitives"];
@@ -1321,6 +1355,7 @@ void main() {
                         sp.emissive.copy(emissive);
                         sp.emissive.multiplyScalar(emissiveIntensity);
                         sp.emissiveMap = emissiveMap.get();
+                        sp.normalMap = normalMap.get();
                         if (pit->second.hasRim) {
                             sp.rimColor.copy(pit->second.rimColor);
                             sp.rimPower = pit->second.rimPower;
@@ -1336,6 +1371,7 @@ void main() {
                         // uniform は raw Texture* 参照。元材差し替えで解放されないよう寿命保持。
                         if (map) vrm->keepAliveTextures.push_back(map);
                         if (emissiveMap) vrm->keepAliveTextures.push_back(emissiveMap);
+                        if (normalMap) vrm->keepAliveTextures.push_back(normalMap);
                         // morph を持つ mesh(顔等)は morphTargets を有効化(頂点シェーダに morph include 済み)
                         if (auto geo = mesh->geometry()) {
                             if (geo->getMorphAttribute("position")) {
@@ -1357,6 +1393,107 @@ void main() {
                 std::cerr << "[VRM] MToon materials applied: " << swapped << " primitives ("
                           << mtoon.size() << " materials), outlines=" << outlined << " rims=" << rimmed << "\n";
             }
+        }
+
+        // VRM 0.x MToon: VRM.materialProperties(shader=="VRM/MToon") を makeMToonMaterial へ。
+        // 0.x はテクスチャを index で持つので result->textures から解決する。matcap(_SphereAdd)対応。
+        if (!isVrm1 && gltf.contains("extensions") && gltf["extensions"].contains("VRM") &&
+            gltf["extensions"]["VRM"].contains("materialProperties") && gltf.contains("meshes")) {
+            const auto& mps = gltf["extensions"]["VRM"]["materialProperties"];
+            const auto& meshes = gltf["meshes"];
+            auto texAt = [&](int idx) -> threepp::Texture* {
+                auto it = result->textures.find(idx);
+                return it != result->textures.end() ? it->second.get() : nullptr;
+            };
+            auto keepTex = [&](int idx) {
+                auto it = result->textures.find(idx);
+                if (it != result->textures.end() && it->second) vrm->keepAliveTextures.push_back(it->second);
+            };
+            auto getFloat = [](const nlohmann::json& mp, const char* k, float def) {
+                const auto& fp = mp.contains("floatProperties") ? mp["floatProperties"] : nlohmann::json::object();
+                return fp.contains(k) ? fp[k].get<float>() : def;
+            };
+            auto getVec = [](const nlohmann::json& mp, const char* k, threepp::Color& c) {
+                if (!mp.contains("vectorProperties")) return;
+                const auto& vp = mp["vectorProperties"];
+                if (vp.contains(k) && vp[k].is_array() && vp[k].size() >= 3)
+                    c.setRGB(vp[k][0].get<float>(), vp[k][1].get<float>(), vp[k][2].get<float>());
+            };
+            auto getTexIdx = [](const nlohmann::json& mp, const char* k) -> int {
+                if (!mp.contains("textureProperties")) return -1;
+                const auto& tp = mp["textureProperties"];
+                return tp.contains(k) ? tp[k].get<int>() : -1;
+            };
+            int swapped = 0, outlined = 0;
+            for (int meshI = 0; meshI < static_cast<int>(meshes.size()); ++meshI) {
+                if (!meshes[meshI].contains("primitives")) continue;
+                const auto& prims = meshes[meshI]["primitives"];
+                for (int primI = 0; primI < static_cast<int>(prims.size()); ++primI) {
+                    const int mi = prims[primI].value("material", -1);
+                    if (mi < 0 || mi >= static_cast<int>(mps.size())) continue;
+                    const auto& mp = mps[mi];
+                    if (mp.value("shader", std::string()) != "VRM/MToon") continue;
+                    auto meshIt = result->meshPrimitives.find({meshI, primI});
+                    if (meshIt == result->meshPrimitives.end() || !meshIt->second) continue;
+                    auto mesh = meshIt->second;
+
+                    MToonShaderParams sp;
+                    getVec(mp, "_Color", sp.litColor);
+                    getVec(mp, "_ShadeColor", sp.shadeColor);
+                    getVec(mp, "_EmissionColor", sp.emissive);
+                    // 0.x の _ShadeShift/_ShadeToony は空間/符号が 1.0 と異なるため、
+                    // 既定の柔らかいトゥーンランプで近似する(shade 色/ matcap が視覚的主眼)。
+                    sp.shadingShift = -0.05f;
+                    sp.shadingToony = 0.85f;
+                    const int mainTex = getTexIdx(mp, "_MainTex");
+                    sp.baseMap = texAt(mainTex);
+                    keepTex(mainTex);
+                    const int emiTex = getTexIdx(mp, "_EmissionMap");
+                    sp.emissiveMap = texAt(emiTex);
+                    keepTex(emiTex);
+                    const int bump = getTexIdx(mp, "_BumpMap");
+                    sp.normalMap = texAt(bump);
+                    keepTex(bump);
+                    sp.normalScale = getFloat(mp, "_BumpScale", 1.f);
+                    const int sphere = getTexIdx(mp, "_SphereAdd");
+                    sp.matcapMap = texAt(sphere);
+                    keepTex(sphere);
+                    threepp::Color rim{0.f, 0.f, 0.f};
+                    getVec(mp, "_RimColor", rim);
+                    if (rim.r + rim.g + rim.b > 0.01f) {
+                        sp.rimColor.copy(rim);
+                        sp.rimPower = getFloat(mp, "_RimFresnelPower", 5.f);
+                        sp.rimLift = getFloat(mp, "_RimLift", 0.f);
+                    }
+                    std::string rt = "Opaque";
+                    if (mp.contains("tagMap") && mp["tagMap"].contains("RenderType"))
+                        rt = mp["tagMap"]["RenderType"].get<std::string>();
+                    if (rt == "TransparentCutout") sp.alphaTest = getFloat(mp, "_Cutoff", 0.5f);
+                    else if (rt == "Transparent") sp.transparent = true;
+
+                    auto toon = makeMToonMaterial(sp);
+                    if (auto geo = mesh->geometry()) {
+                        if (geo->getMorphAttribute("position")) {
+                            toon->morphTargets = true;
+                            if (geo->getMorphAttribute("normal")) toon->morphNormals = true;
+                        }
+                    }
+                    mesh->setMaterial(toon);
+                    ++swapped;
+                    // outline: _OutlineWidthMode(0=none) & width>0。0.x width は *0.01 スケール。
+                    if (getFloat(mp, "_OutlineWidthMode", 0.f) > 0.5f) {
+                        const float ow = getFloat(mp, "_OutlineWidth", 0.f);
+                        if (ow > 0.f) {
+                            threepp::Color oc{0.f, 0.f, 0.f};
+                            getVec(mp, "_OutlineColor", oc);
+                            addMToonOverlay(mesh, makeOutlineMaterial(oc, ow * 0.01f), "_outline");
+                            ++outlined;
+                        }
+                    }
+                }
+            }
+            if (swapped > 0)
+                std::cerr << "[VRM] MToon(0.x) applied: " << swapped << " primitives, outlines=" << outlined << "\n";
         }
 
         // morph target をレンダリングへ反映させる: morph 属性を持つ mesh の material に
