@@ -14,7 +14,11 @@
 #include <threepp/math/Matrix4.hpp>
 #include <threepp/materials/MeshToonMaterial.hpp>
 #include <threepp/materials/MeshStandardMaterial.hpp>
+#include <threepp/materials/ShaderMaterial.hpp>
 #include <threepp/textures/DataTexture.hpp>
+#include <threepp/objects/SkinnedMesh.hpp>
+#include <threepp/core/Uniform.hpp>
+#include <threepp/math/Vector3.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -55,6 +59,40 @@ namespace krkrvrm {
             tex->wrapT = threepp::TextureWrapping::ClampToEdge;
             tex->needsUpdate();
             return tex;
+        }
+
+        // MToon outline (反転ハル法)。法線方向に outlineWidth 押し出した back-face のみを
+        // 描いてモデル背後にはみ出させ輪郭線にする。スキニング対応(SkinnedMesh でも変形追従)。
+        std::shared_ptr<threepp::ShaderMaterial> makeOutlineMaterial(const threepp::Color& color, float width) {
+            auto mat = threepp::ShaderMaterial::create();
+            mat->vertexShader = R"(
+#include <common>
+#include <skinning_pars_vertex>
+uniform float outlineWidth;
+void main() {
+    #include <skinbase_vertex>
+    #include <beginnormal_vertex>
+    #include <skinnormal_vertex>
+    #include <begin_vertex>
+    #include <skinning_vertex>
+    vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );
+    vec3 mvNormal = normalize( normalMatrix * objectNormal );
+    mvPosition.xyz += mvNormal * outlineWidth;
+    gl_Position = projectionMatrix * mvPosition;
+}
+)";
+            mat->fragmentShader = R"(
+uniform vec3 outlineColor;
+void main() {
+    gl_FragColor = vec4( outlineColor, 1.0 );
+}
+)";
+            mat->uniforms = threepp::UniformMap{
+                    {"outlineWidth", threepp::Uniform(width)},
+                    {"outlineColor", threepp::Uniform(threepp::Vector3(color.r, color.g, color.b))}};
+            mat->side = threepp::Side::Back;// 反転ハル(front cull)
+            mat->lights = false;
+            return mat;
         }
     }// namespace
 
@@ -925,7 +963,13 @@ namespace krkrvrm {
         // gradientMap の色ランプで表現。テクスチャ/emissive/透明度は元材から引き継ぐ。
         // (outline/rim/matcap/normalScale 等の細部は未対応)
         if (isVrm1 && gltf.contains("materials") && gltf.contains("meshes")) {
-            struct MToonParam { threepp::Color shade{1.f, 1.f, 1.f}; float shift = -0.05f, toony = 0.9f; };
+            struct MToonParam {
+                threepp::Color shade{1.f, 1.f, 1.f};
+                float shift = -0.05f, toony = 0.9f;
+                bool hasOutline = false;
+                threepp::Color outlineColor{0.f, 0.f, 0.f};
+                float outlineWidth = 0.f;
+            };
             std::unordered_map<int, MToonParam> mtoon;
             const auto& mats = gltf["materials"];
             for (int mi = 0; mi < static_cast<int>(mats.size()); ++mi) {
@@ -940,11 +984,23 @@ namespace krkrvrm {
                 }
                 p.shift = mt.value("shadingShiftFactor", -0.05f);
                 p.toony = mt.value("shadingToonyFactor", 0.9f);
+                // outline (輪郭線)。none/未指定は無し。width>0 のときのみ。
+                const std::string owm = mt.value("outlineWidthMode", std::string("none"));
+                const float ow = mt.value("outlineWidthFactor", 0.f);
+                if (owm != "none" && ow > 0.f) {
+                    p.hasOutline = true;
+                    p.outlineWidth = ow;// worldCoordinates=メートル。screenCoordinatesも近似で同扱い
+                    if (mt.contains("outlineColorFactor") && mt["outlineColorFactor"].is_array() &&
+                        mt["outlineColorFactor"].size() >= 3) {
+                        const auto& oc = mt["outlineColorFactor"];
+                        p.outlineColor.setRGB(oc[0].get<float>(), oc[1].get<float>(), oc[2].get<float>());
+                    }
+                }
                 mtoon[mi] = p;
             }
             if (!mtoon.empty()) {
                 const auto& meshes = gltf["meshes"];
-                int swapped = 0;
+                int swapped = 0, outlined = 0;
                 for (int meshI = 0; meshI < static_cast<int>(meshes.size()); ++meshI) {
                     if (!meshes[meshI].contains("primitives")) continue;
                     const auto& prims = meshes[meshI]["primitives"];
@@ -992,10 +1048,26 @@ namespace krkrvrm {
                         }
                         mesh->setMaterial(toon);
                         ++swapped;
+
+                        // outline: 同一 geometry+skeleton の反転ハルメッシュを子として重ねる
+                        if (pit->second.hasOutline) {
+                            auto outlineMat = makeOutlineMaterial(pit->second.outlineColor, pit->second.outlineWidth);
+                            std::shared_ptr<threepp::Object3D> outlineObj;
+                            if (auto* skinned = mesh->as<threepp::SkinnedMesh>()) {
+                                auto om = threepp::SkinnedMesh::create(mesh->geometry(), outlineMat);
+                                om->bind(skinned->skeleton, skinned->bindMatrix);
+                                outlineObj = om;
+                            } else {
+                                outlineObj = threepp::Mesh::create(mesh->geometry(), outlineMat);
+                            }
+                            outlineObj->name = mesh->name + "_outline";
+                            mesh->add(outlineObj);
+                            ++outlined;
+                        }
                     }
                 }
                 std::cerr << "[VRM] MToon materials applied: " << swapped << " primitives ("
-                          << mtoon.size() << " materials)\n";
+                          << mtoon.size() << " materials), outlines=" << outlined << "\n";
             }
         }
 
