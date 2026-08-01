@@ -332,8 +332,52 @@ void main() {
         return v;
     }
 
+    namespace {
+        // 表情名 -> グループ (blink/mouth/lookAt)。override はこのグループ単位で効く。
+        bool isBlinkName(const std::string& n) {
+            return n == "blink" || n == "blinkLeft" || n == "blinkRight";
+        }
+        bool isMouthName(const std::string& n) {
+            return n == "aa" || n == "ee" || n == "ih" || n == "oh" || n == "ou";
+        }
+        bool isLookAtName(const std::string& n) {
+            return n == "lookUp" || n == "lookDown" || n == "lookLeft" || n == "lookRight";
+        }
+    }// namespace
+
     void VRMExpressionManager::applyToScene() {
-        // 1) bind 対象の morph 影響度を 0 クリア
+        // 各表情の実効ウェイト (binary 適用済み) を先に確定
+        auto effWeight = [&](const std::string& name, const Expression& e) -> float {
+            auto vit = values_.find(name);
+            float v = (vit != values_.end()) ? vit->second : 0.f;
+            if (v < 0.f) v = 0.f;
+            if (v > 1.f) v = 1.f;
+            if (e.isBinary) v = (v >= 0.5f) ? 1.f : 0.f;
+            return v;
+        };
+
+        // 1) override 集計: block=活性なら 1 減算, blend=weight 減算。max(0,1-Σ) が抑制係数。
+        auto amount = [](Override o, float w) -> float {
+            switch (o) {
+                case Override::Block: return w > 0.f ? 1.f : 0.f;
+                case Override::Blend: return w;
+                default: return 0.f;
+            }
+        };
+        float mBlink = 1.f, mMouth = 1.f, mLookAt = 1.f;
+        for (auto& [name, expr] : expressions_) {
+            const float w = effWeight(name, expr);
+            if (w <= 0.f) continue;
+            mBlink -= amount(expr.overrideBlink, w);
+            mMouth -= amount(expr.overrideMouth, w);
+            mLookAt -= amount(expr.overrideLookAt, w);
+        }
+        mBlink = std::max(0.f, mBlink);
+        mMouth = std::max(0.f, mMouth);
+        mLookAt = std::max(0.f, mLookAt);
+        lookAtMul_ = mLookAt;
+
+        // 2) bind 対象の morph 影響度を 0 クリア
         for (auto& [name, expr] : expressions_) {
             for (auto& b : expr.morphBinds) {
                 if (!b.mesh) continue;
@@ -342,12 +386,14 @@ void main() {
                     inf[b.index] = 0.f;
             }
         }
-        // 2) 各表情ウェイト x bind ウェイトを加算
+        // 3) 各表情ウェイト(グループ抑制込み) x bind ウェイトを加算
         for (auto& [name, expr] : expressions_) {
-            auto vit = values_.find(name);
-            float v = (vit != values_.end()) ? vit->second : 0.f;
+            float v = effWeight(name, expr);
             if (v <= 0.f) continue;
-            if (expr.isBinary) v = (v >= 0.5f) ? 1.f : 0.f;
+            if (isBlinkName(name)) v *= mBlink;
+            else if (isMouthName(name)) v *= mMouth;
+            else if (isLookAtName(name)) v *= mLookAt;
+            if (v <= 0.f) continue;
             for (auto& b : expr.morphBinds) {
                 if (!b.mesh) continue;
                 auto& inf = b.mesh->morphTargetInfluences();
@@ -739,6 +785,14 @@ void main() {
                         VRMExpressionManager::Expression e;
                         const auto& ex = it.value();
                         e.isBinary = ex.value("isBinary", false);
+                        auto parseOverride = [](const std::string& s) {
+                            if (s == "block") return VRMExpressionManager::Override::Block;
+                            if (s == "blend") return VRMExpressionManager::Override::Blend;
+                            return VRMExpressionManager::Override::None;
+                        };
+                        e.overrideBlink = parseOverride(ex.value("overrideBlink", std::string("none")));
+                        e.overrideLookAt = parseOverride(ex.value("overrideLookAt", std::string("none")));
+                        e.overrideMouth = parseOverride(ex.value("overrideMouth", std::string("none")));
                         if (ex.contains("morphTargetBinds")) {
                             for (const auto& b : ex["morphTargetBinds"]) {
                                 if (!b.contains("node") || !b.contains("index")) continue;
@@ -1158,6 +1212,28 @@ void main() {
                 std::cerr << "[VRM] MToon materials applied: " << swapped << " primitives ("
                           << mtoon.size() << " materials), outlines=" << outlined << " rims=" << rimmed << "\n";
             }
+        }
+
+        // morph target をレンダリングへ反映させる: morph 属性を持つ mesh の material に
+        // morphTargets/morphNormals を立てる (threepp は既定 false のため表情が出ない)。
+        // overlay(outline/rim)は独自頂点シェーダの ShaderMaterial なので除外する。
+        if (vrm->scene) {
+            int morphMats = 0;
+            vrm->scene->traverseType<threepp::Mesh>([&](threepp::Mesh& mesh) {
+                auto geo = mesh.geometry();
+                if (!geo || geo->getMorphAttribute("position") == nullptr) return;
+                const bool hasNrm = geo->getMorphAttribute("normal") != nullptr;
+                for (auto& m : mesh.materials()) {
+                    if (!m || std::dynamic_pointer_cast<threepp::ShaderMaterial>(m)) continue;
+                    if (auto mm = m->as<threepp::MaterialWithMorphTargets>()) {
+                        mm->morphTargets = true;
+                        if (hasNrm) mm->morphNormals = true;
+                        ++morphMats;
+                    }
+                }
+            });
+            if (morphMats > 0)
+                std::cerr << "[VRM] morphTargets enabled on " << morphMats << " materials\n";
         }
 
         std::cerr << "[VRM] loaded (" << (isVrm1 ? "1.0" : "0.x") << "): bones="

@@ -85,9 +85,14 @@ namespace krkrvrm {
         [[nodiscard]] std::size_t size() const { return expressions_.size(); }
 
         /// 全表情ウェイトを morph target 影響度へ適用 (bind 対象を 0 クリアしてから加算)。
+        /// override(block/blend) を考慮し、blink/mouth/lookAt グループの表情を抑制する。
         void applyToScene();
 
+        /// lookAt override による抑制係数 (0..1)。VRMLookAt が視線適用量に掛ける。
+        [[nodiscard]] float lookAtMultiplier() const { return lookAtMul_; }
+
     private:
+        enum class Override { None, Block, Blend };
         struct MorphBind {
             std::shared_ptr<threepp::Mesh> mesh;
             int index;    ///< morph target index
@@ -96,7 +101,11 @@ namespace krkrvrm {
         struct Expression {
             std::vector<MorphBind> morphBinds;
             bool isBinary = false;///< true なら 0.5 閾値で 0/1
+            Override overrideBlink = Override::None;
+            Override overrideLookAt = Override::None;
+            Override overrideMouth = Override::None;
         };
+        float lookAtMul_ = 1.f;///< applyToScene が更新する lookAt 抑制係数
         std::unordered_map<std::string, Expression> expressions_;
         std::unordered_map<std::string, float> values_;
         friend class VRMLoader;
