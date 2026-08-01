@@ -15,7 +15,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <functional>
 #include <iostream>
+#include <unordered_map>
 
 namespace krkrvrm {
 
@@ -276,11 +278,75 @@ namespace krkrvrm {
     }
 
     // -----------------------------------------------------------------------
+    // VRMNodeConstraint (VRMC_node_constraint)。式は three-vrm 実装に準拠。
+    // -----------------------------------------------------------------------
+    void VRMNodeConstraint::setInitState() {
+        if (!dst) return;
+        dstRest.copy(dst->quaternion);
+        invDstRest.copy(dstRest).invert();
+        if (src) {
+            invSrcRest.copy(src->quaternion).invert();
+            invSrcRestMulDstRest.copy(src->quaternion).invert().multiply(dstRest);
+        }
+    }
+
+    void VRMNodeConstraint::update() {
+        if (!dst || !src) return;
+        if (type == Type::Rotation) {
+            // dst = slerp(dstRest, dstRest * (invSrcRest * srcCurrent), weight)
+            threepp::Quaternion srcDelta;
+            srcDelta.copy(invSrcRest).multiply(src->quaternion);
+            threepp::Quaternion target;
+            target.copy(dstRest).multiply(srcDelta);
+            dst->quaternion.copy(dstRest).slerp(target, weight);
+        } else if (type == Type::Roll) {
+            // t = invDstRest * srcCurrent * (invSrcRest * dstRest)
+            threepp::Quaternion t;
+            t.copy(invDstRest).multiply(src->quaternion).multiply(invSrcRestMulDstRest);
+            // ロール軸まわりの成分のみ抽出: e = t*axis, fromTo = (e→axis)
+            threepp::Vector3 e;
+            e.copy(axis).applyQuaternion(t);
+            threepp::Quaternion fromTo;
+            fromTo.setFromUnitVectors(e, axis);
+            // target = dstRest * fromTo * t
+            threepp::Quaternion target;
+            target.copy(fromTo).premultiply(dstRest).multiply(t);
+            dst->quaternion.copy(dstRest).slerp(target, weight);
+        } else { // Aim: dst の aim軸を src へ向ける
+            dst->updateWorldMatrix(true, false);
+            src->updateWorldMatrix(true, false);
+            threepp::Quaternion parentWorld, invParentWorld;
+            if (dst->parent) {
+                dst->parent->getWorldQuaternion(parentWorld);
+                invParentWorld.copy(parentWorld).invert();
+            }
+            threepp::Vector3 n;// rest の aim軸 (world)
+            n.copy(axis).applyQuaternion(dstRest).applyQuaternion(parentWorld);
+            threepp::Vector3 srcPos, dstPos;
+            src->getWorldPosition(srcPos);
+            dst->getWorldPosition(dstPos);
+            threepp::Vector3 dir;
+            dir.copy(srcPos).sub(dstPos).normalize();
+            threepp::Quaternion fromTo;
+            fromTo.setFromUnitVectors(n, dir);
+            // target = invParentWorld * fromTo * parentWorld * dstRest
+            threepp::Quaternion target;
+            target.copy(fromTo).premultiply(invParentWorld).multiply(parentWorld).multiply(dstRest);
+            dst->quaternion.copy(dstRest).slerp(target, weight);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // VRM
     // -----------------------------------------------------------------------
+    void VRM::updateConstraints() {
+        for (auto& c : constraints) c.update();
+    }
+
     void VRM::update(float /*deltaSec*/) {
-        // Phase1: ポーズ(正規化rig転写) → 表情 → 視線。Phase2 で springBone を追加。
+        // Phase1: ポーズ(正規化rig転写) → 制約 → 表情 → 視線。Phase2 で springBone を追加。
         humanoid.updateRig();
+        updateConstraints();// VRMC_node_constraint (roll/aim/rotation)
         expressionManager.applyToScene();
         lookAt.update();
     }
@@ -523,6 +589,81 @@ namespace krkrvrm {
         if (vrm->scene) {
             vrm->scene->updateMatrixWorld(true);
             vrm->humanoid.buildRig();
+        }
+
+        // VRMC_node_constraint (roll/aim/rotation) を各 glTF ノードから収集する。
+        // ツイスト/ロールボーンが親等の回転を追従する。rest ポーズで初期状態を捕捉し、
+        // src が別制約の dst なら先に処理されるよう依存順にソートする。
+        if (gltf.contains("nodes")) {
+            const auto& nodes = gltf["nodes"];
+            for (int ni = 0; ni < static_cast<int>(nodes.size()); ++ni) {
+                const auto& nd = nodes[ni];
+                if (!nd.contains("extensions") ||
+                    !nd["extensions"].contains("VRMC_node_constraint"))
+                    continue;
+                const auto& ext = nd["extensions"]["VRMC_node_constraint"];
+                if (!ext.contains("constraint")) continue;
+                const auto& con = ext["constraint"];
+
+                auto dstIt = result->nodes.find(ni);
+                if (dstIt == result->nodes.end()) continue;
+
+                VRMNodeConstraint c;
+                c.dst = dstIt->second;
+                const nlohmann::json* spec = nullptr;
+                if (con.contains("roll")) {
+                    c.type = VRMNodeConstraint::Type::Roll;
+                    spec = &con["roll"];
+                } else if (con.contains("aim")) {
+                    c.type = VRMNodeConstraint::Type::Aim;
+                    spec = &con["aim"];
+                } else if (con.contains("rotation")) {
+                    c.type = VRMNodeConstraint::Type::Rotation;
+                    spec = &con["rotation"];
+                } else {
+                    continue;
+                }
+                const int srcIdx = spec->value("source", -1);
+                auto srcIt = result->nodes.find(srcIdx);
+                if (srcIt == result->nodes.end()) continue;
+                c.src = srcIt->second;
+                c.weight = spec->value("weight", 1.0f);
+                if (c.type == VRMNodeConstraint::Type::Roll) {
+                    const std::string ax = spec->value("rollAxis", std::string("X"));
+                    c.axis.set(ax == "X" ? 1.f : 0.f, ax == "Y" ? 1.f : 0.f, ax == "Z" ? 1.f : 0.f);
+                } else if (c.type == VRMNodeConstraint::Type::Aim) {
+                    const std::string ax = spec->value("aimAxis", std::string("PositiveX"));
+                    c.axis.set(ax == "PositiveX" ? 1.f : (ax == "NegativeX" ? -1.f : 0.f),
+                               ax == "PositiveY" ? 1.f : (ax == "NegativeY" ? -1.f : 0.f),
+                               ax == "PositiveZ" ? 1.f : (ax == "NegativeZ" ? -1.f : 0.f));
+                }
+                vrm->constraints.push_back(std::move(c));
+            }
+
+            // rest ポーズで初期状態を捕捉
+            for (auto& c : vrm->constraints) c.setInitState();
+
+            // 依存順(src が別制約の dst なら先)にトポロジカルソート
+            if (vrm->constraints.size() > 1) {
+                std::unordered_map<threepp::Object3D*, int> dstToIdx;
+                for (int i = 0; i < static_cast<int>(vrm->constraints.size()); ++i)
+                    dstToIdx[vrm->constraints[i].dst.get()] = i;
+                std::vector<VRMNodeConstraint> ordered;
+                std::vector<int> state(vrm->constraints.size(), 0);// 0=未,1=処理中,2=済
+                std::function<void(int)> visit = [&](int i) {
+                    if (state[i] != 0) return;
+                    state[i] = 1;
+                    auto sit = dstToIdx.find(vrm->constraints[i].src.get());
+                    if (sit != dstToIdx.end() && sit->second != i && state[sit->second] == 0)
+                        visit(sit->second);
+                    state[i] = 2;
+                    ordered.push_back(vrm->constraints[i]);
+                };
+                for (int i = 0; i < static_cast<int>(vrm->constraints.size()); ++i) visit(i);
+                vrm->constraints = std::move(ordered);
+            }
+            if (!vrm->constraints.empty())
+                std::cerr << "[VRM] node constraints: " << vrm->constraints.size() << "\n";
         }
 
         std::cerr << "[VRM] loaded (" << (isVrm1 ? "1.0" : "0.x") << "): bones="

@@ -117,6 +117,27 @@ namespace krkrvrm {
 
     class VRMAnimation;// 前方宣言 (定義は下方)
 
+    /// VRMC_node_constraint (roll / aim / rotation)。あるノードが別ノード(source)の
+    /// 回転や向きを追従する。ツイスト/ロールボーン等に使われる。humanoid rig 転写後・
+    /// 描画前に update() で適用する。式は three-vrm 実装に準拠。
+    struct VRMNodeConstraint {
+        enum class Type { Roll, Aim, Rotation };
+        Type type = Type::Roll;
+        std::shared_ptr<threepp::Object3D> dst;///< 制約を受けるノード
+        std::shared_ptr<threepp::Object3D> src;///< 参照元ノード
+        float weight = 1.0f;
+        threepp::Vector3 axis{1.f, 0.f, 0.f};  ///< roll軸 / aim軸 (単位)
+
+        // rest 状態 (setInitState で rest ポーズ時に捕捉)
+        threepp::Quaternion dstRest;
+        threepp::Quaternion invDstRest;
+        threepp::Quaternion invSrcRest;
+        threepp::Quaternion invSrcRestMulDstRest;
+
+        void setInitState();///< rest ポーズ(ロード直後)で呼ぶ
+        void update();      ///< 毎フレーム (src が更新済みの状態で呼ぶ)
+    };
+
     /// VRM モデル 1 体。scene + humanoid(raw) + meta + expressionManager + lookAt。
     /// Phase2+ で springBoneManager を追加。
     class VRM {
@@ -126,9 +147,13 @@ namespace krkrvrm {
         VRMExpressionManager expressionManager;
         VRMLookAt lookAt;
         VRMMeta meta;
+        std::vector<VRMNodeConstraint> constraints;///< VRMC_node_constraint (dependency 順)
 
         /// 毎フレーム更新 (Phase1: ポーズ + 表情 + 視線。Phase2 で springBone を追加)。
         void update(float deltaSec = 0.0f);
+
+        /// VRMC_node_constraint を全て適用 (humanoid rig 転写後・描画前)。
+        void updateConstraints();
 
         /// VRM アニメーションを時刻 time(sec) で正規化ボーンへ適用する。
         /// 適用後 update() を呼ぶと raw へ転写される (update 内で updateRig)。
