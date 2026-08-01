@@ -177,7 +177,8 @@ VRoid/VRM アバター (0.x・1.0 両対応)。読み込み・humanoid リグ・
 
 グローバル関数 `textureFromLayer(layer)` — 吉里吉里 Layer を threepp テクスチャへ変換。
 
-詳細な API は [`manual.tjs`](manual.tjs) を参照。
+詳細な API は [`manual.tjs`](manual.tjs)、**VRM の機能ごとの対応状況**は
+[`docs/vrm_support_status.md`](docs/vrm_support_status.md) を参照。
 
 ---
 
