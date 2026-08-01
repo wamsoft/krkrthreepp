@@ -18,6 +18,7 @@
 #include <threepp/textures/DataTexture.hpp>
 #include <threepp/objects/SkinnedMesh.hpp>
 #include <threepp/core/Uniform.hpp>
+#include <threepp/math/Vector2.hpp>
 #include <threepp/math/Vector3.hpp>
 
 #include <algorithm>
@@ -167,6 +168,9 @@ uniform vec3 keyLightColor;
 uniform vec3 ambientColor;
 uniform vec3 matcapColor;
 uniform float normalScale;
+uniform vec2 uvOffset;         // textureTransformBind / UVアニメ scroll: uv = rot(vMUv)*uvScale + uvOffset
+uniform vec2 uvScale;
+uniform float uvRotPhase;      // UVアニメ回転 (中心まわり, ラジアン)
 uniform sampler2D baseMap;     uniform int hasBaseMap;
 uniform sampler2D emissiveMap; uniform int hasEmissiveMap;
 uniform sampler2D normalMap;   uniform int hasNormalMap;
@@ -184,7 +188,13 @@ vec3 perturbNormal( vec3 N, vec3 pos, vec2 uv, vec3 mapN ) {
     return normalize( mat3( S, T, N ) * mapN );
 }
 void main() {
-    vec4 tex = ( hasBaseMap != 0 ) ? texture2D( baseMap, vMUv ) : vec4( 1.0 );
+    vec2 uv = vMUv;
+    if ( uvRotPhase != 0.0 ) {              // UVアニメ回転 (中心まわり)
+        float c = cos( uvRotPhase ), s = sin( uvRotPhase );
+        uv = mat2( c, -s, s, c ) * ( uv - 0.5 ) + 0.5;
+    }
+    uv = uv * uvScale + uvOffset;          // textureTransformBind / UVアニメ scroll
+    vec4 tex = ( hasBaseMap != 0 ) ? texture2D( baseMap, uv ) : vec4( 1.0 );
     vec3 lit   = litFactor   * tex.rgb;
     vec3 shade = shadeFactor * tex.rgb;
     float alpha = opacity * tex.a;
@@ -193,16 +203,16 @@ void main() {
     vec3 pos = -vMViewPos;                 // view 空間の面位置 (= mvPosition.xyz)
     vec3 N = normalize( vMNormal );
     if ( hasNormalMap != 0 ) {
-        vec3 mapN = texture2D( normalMap, vMUv ).xyz * 2.0 - 1.0;
+        vec3 mapN = texture2D( normalMap, uv ).xyz * 2.0 - 1.0;
         mapN.xy *= normalScale;
-        N = perturbNormal( N, pos, vMUv, mapN );
+        N = perturbNormal( N, pos, uv, mapN );
     }
     vec3 V = normalize( vMViewPos );
     float dotNL = dot( N, normalize( keyLightDir ) );
     float sh = linstep( -1.0 + shadingToony, 1.0 - shadingToony, dotNL + shadingShift );
     vec3 col = mix( shade, lit, sh ) * keyLightColor;
     col += lit * ambientColor;                       // ambient/GI は lit 全開扱い
-    col += emissiveFactor * ( ( hasEmissiveMap != 0 ) ? texture2D( emissiveMap, vMUv ).rgb : vec3( 1.0 ) );
+    col += emissiveFactor * ( ( hasEmissiveMap != 0 ) ? texture2D( emissiveMap, uv ).rgb : vec3( 1.0 ) );
     float f = clamp( 1.0 - max( 0.0, dot( N, V ) ) + rimLift, 0.0, 1.0 );
     col += rimFactor * pow( f, max( 0.001, rimPower ) );
     if ( hasMatcap != 0 ) {                // matcap (0.x _SphereAdd 相当): three-vrm 準拠の球UVで加算
@@ -229,6 +239,9 @@ void main() {
                     {"rimLift", threepp::Uniform(p.rimLift)},
                     {"matcapColor", threepp::Uniform(v3(p.matcapColor))},
                     {"normalScale", threepp::Uniform(p.normalScale)},
+                    {"uvOffset", threepp::Uniform(threepp::Vector2(0.f, 0.f))},
+                    {"uvScale", threepp::Uniform(threepp::Vector2(1.f, 1.f))},
+                    {"uvRotPhase", threepp::Uniform(0.f)},
                     {"baseMap", threepp::Uniform(p.baseMap ? p.baseMap : whiteDummyTexture().get())},
                     {"hasBaseMap", threepp::Uniform(p.baseMap ? 1 : 0)},
                     {"emissiveMap", threepp::Uniform(p.emissiveMap ? p.emissiveMap : whiteDummyTexture().get())},
@@ -816,6 +829,19 @@ void main() {
             if (scene) scene->updateMatrixWorld(true);// 揺れ物理は最新 world 行列が要る
             springBone.update(deltaSec);
         }
+        // MToon UV アニメーション: scroll offset / rotation phase を時間で進める
+        if (!uvAnims.empty()) {
+            uvAnimTime += deltaSec;
+            for (auto& a : uvAnims) {
+                if (!a.material) continue;
+                const float ox = std::fmod(a.scrollX * uvAnimTime, 1.f);
+                const float oy = std::fmod(a.scrollY * uvAnimTime, 1.f);
+                const float rot = std::fmod(a.rotSpeed * uvAnimTime, 6.2831853f);
+                a.material->uniforms.at("uvOffset").setValue(threepp::Vector2(ox, oy));
+                a.material->uniforms.at("uvRotPhase").setValue(rot);
+                a.material->uniformsNeedUpdate = true;
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1338,6 +1364,7 @@ void main() {
                 float rimPower = 5.f, rimLift = 0.f;
                 int matcapTex = -1;
                 threepp::Color matcapColor{1.f, 1.f, 1.f};
+                float uvScrollX = 0.f, uvScrollY = 0.f, uvRotSpeed = 0.f;
             };
             std::unordered_map<int, MToonParam> mtoon;
             const auto& mats = gltf["materials"];
@@ -1386,6 +1413,10 @@ void main() {
                         p.matcapColor.setRGB(mf[0].get<float>(), mf[1].get<float>(), mf[2].get<float>());
                     }
                 }
+                // UV アニメーション (scroll/rotation)
+                p.uvScrollX = mt.value("uvAnimationScrollXSpeedFactor", 0.f);
+                p.uvScrollY = mt.value("uvAnimationScrollYSpeedFactor", 0.f);
+                p.uvRotSpeed = mt.value("uvAnimationRotationSpeedFactor", 0.f);
                 mtoon[mi] = p;
             }
             if (!mtoon.empty()) {
@@ -1461,6 +1492,13 @@ void main() {
                         mesh->setMaterial(toon);
                         ++swapped;
 
+                        // UV アニメーション材を登録 (update(dt) で uvOffset/uvRotPhase を更新)
+                        if (pit->second.uvScrollX != 0.f || pit->second.uvScrollY != 0.f ||
+                            pit->second.uvRotSpeed != 0.f) {
+                            vrm->uvAnims.push_back({toon, pit->second.uvScrollX,
+                                                    pit->second.uvScrollY, pit->second.uvRotSpeed});
+                        }
+
                         // outline (反転ハル) を重ねる。rim は MToon シェーダに統合済み。
                         // surface と同じアルファ discard のため base map + alphaTest を渡す。
                         if (pit->second.hasOutline) {
@@ -1472,7 +1510,8 @@ void main() {
                     }
                 }
                 std::cerr << "[VRM] MToon materials applied: " << swapped << " primitives ("
-                          << mtoon.size() << " materials), outlines=" << outlined << " rims=" << rimmed << "\n";
+                          << mtoon.size() << " materials), outlines=" << outlined << " rims=" << rimmed
+                          << " uvAnims=" << vrm->uvAnims.size() << "\n";
             }
         }
 
