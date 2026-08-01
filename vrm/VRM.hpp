@@ -45,8 +45,13 @@ namespace krkrvrm {
         // 正規化ノードの local 回転にポーズを与え、updateRig() で raw ボーンへ転写する。
         [[nodiscard]] std::shared_ptr<threepp::Object3D> getNormalizedBoneNode(const std::string& name) const;
         void resetNormalizedPose();///< 正規化ノードを rest(identity) に戻す
-        void updateRig();          ///< 正規化ポーズを raw ボーンへ転写
+        void updateRig();          ///< 正規化ポーズを raw ボーンへ転写 (hips は位置も転写)
         [[nodiscard]] bool hasRig() const { return static_cast<bool>(rigRoot_); }
+
+        // --- hips ルートモーション用 ---
+        [[nodiscard]] bool hasHips() const { return hasHips_; }
+        [[nodiscard]] float hipsRestWorldY() const { return hipsRestWorldY_; }///< raw hips の rest world Y
+        [[nodiscard]] threepp::Vector3 hipsRestNormPos() const { return hipsRestNormPos_; }///< 正規化 hips の rest 位置
 
     private:
         std::unordered_map<std::string, std::shared_ptr<threepp::Bone>> rawBones_;
@@ -60,6 +65,9 @@ namespace krkrvrm {
         std::unordered_map<std::string, RigBone> rig_;
         std::vector<std::string> rigOrder_;///< 親→子の順
         std::shared_ptr<threepp::Group> rigRoot_;
+        bool hasHips_ = false;
+        threepp::Vector3 hipsRestNormPos_;///< buildRig 時の正規化 hips 位置 (rest)
+        float hipsRestWorldY_ = 0.f;      ///< raw hips の rest world Y (VRMA 高さスケール用)
 
         void buildRig();///< rawBones_ 確定後・scene の world 行列更新後に呼ぶ
         friend class VRMLoader;
@@ -224,12 +232,30 @@ namespace krkrvrm {
         [[nodiscard]] std::size_t boneTrackCount() const { return boneRotations_.size(); }
         [[nodiscard]] bool has(const std::string& boneName) const { return boneRotations_.count(boneName) > 0; }
 
+        [[nodiscard]] bool hasHipsTranslation() const { return hasHips_; }
+        [[nodiscard]] std::size_t expressionTrackCount() const { return expressionTracks_.size(); }
+
     private:
         struct RotTrack {
             std::vector<float> times; ///< キー時刻 (sec)
             std::vector<float> values;///< クォータニオン xyzw を各キー分 (times.size()*4)
         };
+        struct VecTrack {
+            std::vector<float> times; ///< キー時刻 (sec)
+            std::vector<float> values;///< xyz を各キー分 (times.size()*3)
+        };
+        struct ScalarTrack {
+            std::vector<float> times;
+            std::vector<float> values;///< 1 キー 1 値
+        };
         std::unordered_map<std::string, RotTrack> boneRotations_;
+        // hips ルートモーション: 正規化空間での hips 位置トラック (VRMA ローカル)
+        bool hasHips_ = false;
+        VecTrack hipsTranslation_;
+        float vrmaHipsRestY_ = 0.f;      ///< VRMA の hips rest world Y (高さスケール用)
+        threepp::Vector3 vrmaHipsRest_;  ///< VRMA hips ノードの rest ローカル位置 (offset 基準)
+        // 表情トラック: 表情名 -> ウェイト時系列 (VRMA node.translation.x を採用)
+        std::unordered_map<std::string, ScalarTrack> expressionTracks_;
         float duration_ = 0.f;
         friend class VRMAnimationLoader;
         friend class VRM;

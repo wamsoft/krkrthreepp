@@ -250,6 +250,11 @@ void main() {
                     if (rootBone) pwp.set(0.f, 0.f, 0.f);
                     else rig_[rb.parent].raw->getWorldPosition(pwp);
                     rb.norm->position.copy(wp).sub(pwp);
+                    if (name == "hips") {
+                        hasHips_ = true;
+                        hipsRestNormPos_.copy(rb.norm->position);
+                        hipsRestWorldY_ = wp.y;
+                    }
                     parentNode->add(rb.norm);
                     rigOrder_.push_back(name);
                     ++placed;
@@ -287,6 +292,20 @@ void main() {
             threepp::Quaternion local;
             local.copy(pw).invert().multiply(target);// parentWorld^-1 * target
             rb.raw->quaternion.copy(local);
+
+            // hips(ルート)は位置も転写: 正規化ノードの world 位置を raw hips の親ローカルへ。
+            // (rest では正規化 hips=raw hips world 位置なので no-op。ルートモーション時のみ移動)
+            if (name == "hips") {
+                threepp::Vector3 nwp;
+                rb.norm->getWorldPosition(nwp);// 正規化 hips の world 位置
+                if (rb.raw->parent) {
+                    rb.raw->parent->updateWorldMatrix(true, false);
+                    threepp::Matrix4 inv;
+                    inv.copy(*rb.raw->parent->matrixWorld).invert();
+                    nwp.applyMatrix4(inv);
+                }
+                rb.raw->position.copy(nwp);
+            }
         }
     }
 
@@ -1184,30 +1203,98 @@ void main() {
 
         // VRMA node index -> human bone 名
         std::unordered_map<int, std::string> nodeToBone;
+        int hipsNode = -1;
         if (va.contains("humanoid") && va["humanoid"].contains("humanBones")) {
             const auto& hb = va["humanoid"]["humanBones"];
             for (auto it = hb.begin(); it != hb.end(); ++it)
-                if (it.value().contains("node"))
-                    nodeToBone[it.value()["node"].get<int>()] = it.key();
+                if (it.value().contains("node")) {
+                    const int ni = it.value()["node"].get<int>();
+                    nodeToBone[ni] = it.key();
+                    if (it.key() == "hips") hipsNode = ni;
+                }
         }
         if (nodeToBone.empty()) return nullptr;
+
+        // 表情 node index -> 表情名 (preset/custom)
+        std::unordered_map<int, std::string> nodeToExpr;
+        if (va.contains("expressions")) {
+            for (const char* grp : {"preset", "custom"}) {
+                if (!va["expressions"].contains(grp)) continue;
+                const auto& g = va["expressions"][grp];
+                for (auto it = g.begin(); it != g.end(); ++it)
+                    if (it.value().contains("node"))
+                        nodeToExpr[it.value()["node"].get<int>()] = it.key();
+            }
+        }
 
         auto anim = std::make_shared<VRMAnimation>();
         if (!result->rawAnimations.empty()) {
             const auto& ra = result->rawAnimations.front();
             for (const auto& ch : ra.channels) {
-                if (ch.path != "rotation") continue;// Phase1: rotation のみ
-                auto bit = nodeToBone.find(ch.node);
-                if (bit == nodeToBone.end()) continue;
-                VRMAnimation::RotTrack t;
-                t.times = ch.times;
-                t.values = ch.values;
-                if (!t.times.empty())
-                    anim->duration_ = std::max(anim->duration_, t.times.back());
-                anim->boneRotations_[bit->second] = std::move(t);
+                if (ch.path == "rotation") {
+                    auto bit = nodeToBone.find(ch.node);
+                    if (bit == nodeToBone.end()) continue;
+                    VRMAnimation::RotTrack t;
+                    t.times = ch.times;
+                    t.values = ch.values;
+                    if (!t.times.empty())
+                        anim->duration_ = std::max(anim->duration_, t.times.back());
+                    anim->boneRotations_[bit->second] = std::move(t);
+                } else if (ch.path == "translation") {
+                    if (ch.node == hipsNode) {// hips ルートモーション
+                        anim->hasHips_ = true;
+                        anim->hipsTranslation_.times = ch.times;
+                        anim->hipsTranslation_.values = ch.values;
+                        if (!ch.times.empty())
+                            anim->duration_ = std::max(anim->duration_, ch.times.back());
+                    } else {// 表情 (translation.x をウェイトとして採用)
+                        auto eit = nodeToExpr.find(ch.node);
+                        if (eit == nodeToExpr.end()) continue;
+                        VRMAnimation::ScalarTrack t;
+                        t.times = ch.times;
+                        t.values.reserve(ch.times.size());
+                        for (std::size_t k = 0; k < ch.times.size(); ++k)
+                            t.values.push_back(ch.values.size() > k * 3 ? ch.values[k * 3] : 0.f);
+                        if (!t.times.empty())
+                            anim->duration_ = std::max(anim->duration_, t.times.back());
+                        anim->expressionTracks_[eit->second] = std::move(t);
+                    }
+                }
             }
         }
+
+        // VRMA hips の rest 位置 (ローカル) と rest world Y を glTF ノード階層から算出。
+        // 高さスケール = model_hipsRestWorldY / vrmaHipsRestWorldY で hips 移動量を補正する。
+        if (anim->hasHips_ && hipsNode >= 0 && gltf.contains("nodes")) {
+            const auto& nodes = gltf["nodes"];
+            std::unordered_map<int, int> childToParent;
+            for (int i = 0; i < static_cast<int>(nodes.size()); ++i)
+                if (nodes[i].contains("children"))
+                    for (const auto& c : nodes[i]["children"])
+                        childToParent[c.get<int>()] = i;
+            auto localT = [&](int idx) -> threepp::Vector3 {
+                threepp::Vector3 v;
+                if (nodes[idx].contains("translation")) {
+                    const auto& t = nodes[idx]["translation"];
+                    v.set(t[0].get<float>(), t[1].get<float>(), t[2].get<float>());
+                }
+                return v;
+            };
+            anim->vrmaHipsRest_.copy(localT(hipsNode));
+            float y = 0.f;
+            int idx = hipsNode;
+            while (idx >= 0) {
+                y += localT(idx).y;
+                auto pit = childToParent.find(idx);
+                idx = (pit != childToParent.end()) ? pit->second : -1;
+            }
+            anim->vrmaHipsRestY_ = y;
+        }
+
         std::cerr << "[VRMA] loaded: boneTracks=" << anim->boneTrackCount()
+                  << " exprTracks=" << anim->expressionTrackCount()
+                  << " hips=" << (anim->hasHips_ ? 1 : 0)
+                  << " vrmaHipsY=" << anim->vrmaHipsRestY_
                   << " duration=" << anim->duration() << "\n";
         return anim;
     }
@@ -1245,6 +1332,61 @@ void main() {
                 if (len > 1e-8f) { qx /= len; qy /= len; qz /= len; qw /= len; }
             }
             node->quaternion.set(qx, qy, qz, qw);
+        }
+
+        // --- hips ルートモーション ---
+        if (anim.hasHips_ && humanoid.hasHips()) {
+            if (auto hipsNorm = humanoid.getNormalizedBoneNode("hips")) {
+                const auto& T = anim.hipsTranslation_.times;
+                const auto& V = anim.hipsTranslation_.values;// xyz per key
+                if (!T.empty()) {
+                    const std::size_t n = T.size();
+                    float sx, sy, sz;
+                    if (time <= T.front()) {
+                        sx = V[0]; sy = V[1]; sz = V[2];
+                    } else if (time >= T.back()) {
+                        const std::size_t k = n - 1;
+                        sx = V[k * 3]; sy = V[k * 3 + 1]; sz = V[k * 3 + 2];
+                    } else {
+                        std::size_t i1 = 1;
+                        while (i1 < n && T[i1] < time) ++i1;
+                        const std::size_t i0 = i1 - 1;
+                        const float span = T[i1] - T[i0];
+                        const float a = span > 1e-8f ? (time - T[i0]) / span : 0.f;
+                        sx = V[i0 * 3] + (V[i1 * 3] - V[i0 * 3]) * a;
+                        sy = V[i0 * 3 + 1] + (V[i1 * 3 + 1] - V[i0 * 3 + 1]) * a;
+                        sz = V[i0 * 3 + 2] + (V[i1 * 3 + 2] - V[i0 * 3 + 2]) * a;
+                    }
+                    // 高さスケール補正した上で VRMA hips rest からの offset を model rest へ加算
+                    const float scale = anim.vrmaHipsRestY_ > 1e-4f
+                            ? humanoid.hipsRestWorldY() / anim.vrmaHipsRestY_ : 1.f;
+                    threepp::Vector3 rest = humanoid.hipsRestNormPos();
+                    hipsNorm->position.set(
+                            rest.x + (sx - anim.vrmaHipsRest_.x) * scale,
+                            rest.y + (sy - anim.vrmaHipsRest_.y) * scale,
+                            rest.z + (sz - anim.vrmaHipsRest_.z) * scale);
+                }
+            }
+        }
+
+        // --- 表情トラック (VRMA に含まれる場合のみ。anim.vrma には無し) ---
+        for (const auto& [name, track] : anim.expressionTracks_) {
+            if (track.times.empty()) continue;
+            const auto& T = track.times;
+            const auto& V = track.values;
+            const std::size_t n = T.size();
+            float w;
+            if (time <= T.front()) w = V.front();
+            else if (time >= T.back()) w = V.back();
+            else {
+                std::size_t i1 = 1;
+                while (i1 < n && T[i1] < time) ++i1;
+                const std::size_t i0 = i1 - 1;
+                const float span = T[i1] - T[i0];
+                const float a = span > 1e-8f ? (time - T[i0]) / span : 0.f;
+                w = V[i0] + (V[i1] - V[i0]) * a;
+            }
+            expressionManager.setValue(name, w);
         }
     }
 
