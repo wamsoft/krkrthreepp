@@ -523,13 +523,19 @@ void main() {
                     inf[b.index] = 0.f;
             }
         }
+        // グループ抑制係数を返す。isBinary の被 override は effect>0(mult<1) で完全抑制
+        // (VRMC_vrm spec: isBinary と override の相互作用)。それ以外は線形。
+        auto applyGroupMul = [&](const std::string& name, const Expression& e, float v) {
+            float mult = 1.f;
+            if (isBlinkName(name)) mult = mBlink;
+            else if (isMouthName(name)) mult = mMouth;
+            else if (isLookAtName(name)) mult = mLookAt;
+            if (mult >= 1.f) return v;
+            return e.isBinary ? 0.f : v * mult;
+        };
         // 3) 各表情ウェイト(グループ抑制込み) x bind ウェイトを加算
         for (auto& [name, expr] : expressions_) {
-            float v = effWeight(name, expr);
-            if (v <= 0.f) continue;
-            if (isBlinkName(name)) v *= mBlink;
-            else if (isMouthName(name)) v *= mMouth;
-            else if (isLookAtName(name)) v *= mLookAt;
+            float v = applyGroupMul(name, expr, effWeight(name, expr));
             if (v <= 0.f) continue;
             for (auto& b : expr.morphBinds) {
                 if (!b.mesh) continue;
@@ -548,10 +554,7 @@ void main() {
                     if (tb.material) acc[tb.material.get()].mat = tb.material;// 0 で登録(リセット)
             for (auto& [name, expr] : expressions_) {
                 if (expr.texBinds.empty()) continue;
-                float v = effWeight(name, expr);
-                if (isBlinkName(name)) v *= mBlink;
-                else if (isMouthName(name)) v *= mMouth;
-                else if (isLookAtName(name)) v *= mLookAt;
+                float v = applyGroupMul(name, expr, effWeight(name, expr));
                 if (v <= 0.f) continue;
                 for (auto& tb : expr.texBinds) {
                     if (!tb.material) continue;
