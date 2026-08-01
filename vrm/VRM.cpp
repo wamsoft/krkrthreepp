@@ -635,13 +635,19 @@ void main() {
 
             threepp::Vector3 worldTail;
             worldTail.copy(j.initialLocalChildPosition).applyMatrix4(*j.bone->matrixWorld);
-            j.currentTail.copy(worldTail);
-            j.prevTail.copy(worldTail);
             threepp::Vector3 head;
             head.setFromMatrixPosition(*j.bone->matrixWorld);
             threepp::Vector3 diff;
             diff.subVectors(worldTail, head);
             j.worldSpaceBoneLength = diff.length();
+            // tail は center 空間で保持 (center==null なら identity=world と同じ)
+            if (j.center) {
+                threepp::Matrix4 w2c;
+                w2c.copy(*j.center->matrixWorld).invert();
+                worldTail.applyMatrix4(w2c);
+            }
+            j.currentTail.copy(worldTail);
+            j.prevTail.copy(worldTail);
         }
     }
 
@@ -710,12 +716,20 @@ void main() {
         threepp::Vector3 e;
         e.copy(j.boneAxis).transformDirection(j.initialLocalMatrix).transformDirection(parentWorld);
 
-        // nextTail = currentTail + 慣性 + 剛性 + 重力
+        // center 空間の変換行列 (center==null なら identity)
+        threepp::Matrix4 c2w, w2c;
+        if (j.center) {
+            c2w.copy(*j.center->matrixWorld);
+            w2c.copy(c2w).invert();
+        }
+        // nextTail = center空間で (currentTail + 慣性) → world 変換 → 剛性 + 重力
+        // (currentTail/prevTail は center 空間で保持。center の並進で慣性が発生しない)
         threepp::Vector3 nextTail;
         nextTail.copy(j.currentTail);
         threepp::Vector3 inertia;
         inertia.subVectors(j.currentTail, j.prevTail).multiplyScalar(1.f - j.dragForce);
         nextTail.add(inertia);
+        nextTail.applyMatrix4(c2w);// center → world
         nextTail.addScaledVector(e, j.stiffness * dt);
         nextTail.addScaledVector(j.gravityDir, j.gravityPower * dt);
 
@@ -728,8 +742,11 @@ void main() {
         // 衝突
         collide(j, nextTail, head);
 
+        // currentTail/prevTail は center 空間で保持する (nextTail は world)
         j.prevTail.copy(j.currentTail);
-        j.currentTail.copy(nextTail);
+        threepp::Vector3 nc;
+        nc.copy(nextTail).applyMatrix4(w2c);// world → center
+        j.currentTail.copy(nc);
 
         // 回転: bone.quaternion = initialLocalRotation * fromTo(boneAxis, localTail)
         threepp::Matrix4 m;
@@ -1140,6 +1157,11 @@ void main() {
                     std::vector<int> groupIdx;
                     if (sp.contains("colliderGroups"))
                         for (const auto& g : sp["colliderGroups"]) groupIdx.push_back(g.get<int>());
+                    std::shared_ptr<threepp::Object3D> centerNode;
+                    if (sp.contains("center")) {
+                        auto cit = result->nodes.find(sp["center"].get<int>());
+                        if (cit != result->nodes.end()) centerNode = cit->second;
+                    }
                     if (!sp.contains("joints")) continue;
                     const auto& js = sp["joints"];
                     const int n = static_cast<int>(js.size());
@@ -1149,6 +1171,7 @@ void main() {
                         if (bit == result->nodes.end()) continue;
                         VRMSpringJoint joint;
                         joint.bone = bit->second;
+                        joint.center = centerNode;
                         if (i + 1 < n) {
                             auto cit = result->nodes.find(js[i + 1].value("node", -1));
                             if (cit != result->nodes.end()) joint.child = cit->second;
@@ -1220,6 +1243,12 @@ void main() {
                     std::vector<int> groupIdx;
                     if (bg.contains("colliderGroups"))
                         for (const auto& g : bg["colliderGroups"]) groupIdx.push_back(g.get<int>());
+                    std::shared_ptr<threepp::Object3D> centerNode;
+                    if (bg.contains("center") && bg["center"].is_number_integer() &&
+                        bg["center"].get<int>() >= 0) {
+                        auto cit = result->nodes.find(bg["center"].get<int>());
+                        if (cit != result->nodes.end()) centerNode = cit->second;
+                    }
 
                     // glTF ノードインデックスで階層を辿り、pre-order (親→子) で joint 化。
                     // tail = 第1子ノード。result->nodes から shared_ptr を得る。
@@ -1229,6 +1258,7 @@ void main() {
                         if (bit == result->nodes.end()) return;
                         VRMSpringJoint joint;
                         joint.bone = bit->second;
+                        joint.center = centerNode;
                         const nlohmann::json* children = nullptr;
                         if (hasNodes && idx >= 0 && idx < static_cast<int>(gltf["nodes"].size()) &&
                             gltf["nodes"][idx].contains("children"))

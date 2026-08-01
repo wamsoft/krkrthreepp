@@ -150,6 +150,7 @@ namespace krkrvrm {
     struct VRMSpringJoint {
         std::shared_ptr<threepp::Object3D> bone;
         std::shared_ptr<threepp::Object3D> child;///< 無ければ nullptr (仮想 tail=7cm)
+        std::shared_ptr<threepp::Object3D> center;///< center 空間の基準ノード (nullptr=world)
         float hitRadius = 0.f, stiffness = 1.f, gravityPower = 0.f, dragForce = 0.4f;
         threepp::Vector3 gravityDir{0.f, -1.f, 0.f};
         std::vector<int> colliderGroupIndices;///< この joint が衝突判定するグループ
