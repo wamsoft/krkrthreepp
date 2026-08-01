@@ -11,6 +11,7 @@
 #include <VRMC/VRM.h>
 
 #include <threepp/math/Euler.hpp>
+#include <threepp/math/Matrix4.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -337,18 +338,157 @@ namespace krkrvrm {
     }
 
     // -----------------------------------------------------------------------
+    // VRMC_springBone (揺れもの物理)。式は three-vrm 準拠。center 空間は未対応(world)。
+    // -----------------------------------------------------------------------
+    void VRMSpringBoneManager::setInitState() {
+        for (auto& j : joints) {
+            if (!j.bone) continue;
+            j.bone->updateMatrix();
+            j.initialLocalMatrix.copy(*j.bone->matrix);
+            j.initialLocalRotation.copy(j.bone->quaternion);
+            if (j.child) {
+                j.initialLocalChildPosition.copy(j.child->position);
+            } else {
+                // 末端 (子なし): bone の local 位置方向へ 7cm の仮想 tail
+                j.initialLocalChildPosition.copy(j.bone->position).normalize().multiplyScalar(0.07f);
+            }
+            j.boneAxis.copy(j.initialLocalChildPosition).normalize();
+
+            threepp::Vector3 worldTail;
+            worldTail.copy(j.initialLocalChildPosition).applyMatrix4(*j.bone->matrixWorld);
+            j.currentTail.copy(worldTail);
+            j.prevTail.copy(worldTail);
+            threepp::Vector3 head;
+            head.setFromMatrixPosition(*j.bone->matrixWorld);
+            threepp::Vector3 diff;
+            diff.subVectors(worldTail, head);
+            j.worldSpaceBoneLength = diff.length();
+        }
+    }
+
+    void VRMSpringBoneManager::collide(const VRMSpringJoint& j, threepp::Vector3& tail, const threepp::Vector3& head) {
+        for (int gi : j.colliderGroupIndices) {
+            if (gi < 0 || gi >= static_cast<int>(colliderGroups.size())) continue;
+            for (int ci : colliderGroups[gi]) {
+                if (ci < 0 || ci >= static_cast<int>(colliders.size())) continue;
+                const auto& col = colliders[ci];
+                if (!col.node) continue;
+
+                threepp::Vector3 c0;
+                c0.copy(col.offset).applyMatrix4(*col.node->matrixWorld);
+                threepp::Vector3 nearest;
+                if (col.capsule) {
+                    threepp::Vector3 c1;
+                    c1.copy(col.tail).applyMatrix4(*col.node->matrixWorld);
+                    threepp::Vector3 ab;
+                    ab.subVectors(c1, c0);
+                    const float abLen2 = ab.lengthSq();
+                    float t = 0.f;
+                    if (abLen2 > 1e-10f) {
+                        threepp::Vector3 at;
+                        at.subVectors(tail, c0);
+                        t = at.dot(ab) / abLen2;
+                        t = t < 0.f ? 0.f : (t > 1.f ? 1.f : t);
+                    }
+                    nearest.copy(ab).multiplyScalar(t).add(c0);
+                } else {
+                    nearest.copy(c0);
+                }
+                threepp::Vector3 delta;
+                delta.subVectors(tail, nearest);
+                const float dist = delta.length();
+                const float minDist = col.radius + j.hitRadius;
+                if (dist < minDist && dist > 1e-8f) {
+                    threepp::Vector3 dir;
+                    dir.copy(delta).multiplyScalar(1.f / dist);
+                    tail.copy(nearest).addScaledVector(dir, minDist);
+                    // ボーン長で再拘束
+                    threepp::Vector3 d;
+                    d.subVectors(tail, head).normalize().multiplyScalar(j.worldSpaceBoneLength);
+                    tail.copy(head).add(d);
+                }
+            }
+        }
+    }
+
+    void VRMSpringBoneManager::updateJoint(VRMSpringJoint& j, float dt) {
+        if (!j.bone) return;
+        auto& bone = *j.bone;
+
+        threepp::Matrix4 parentWorld;// 既定は identity
+        if (bone.parent) parentWorld.copy(*bone.parent->matrixWorld);
+
+        threepp::Vector3 head;
+        head.setFromMatrixPosition(*bone.matrixWorld);
+        threepp::Vector3 worldTail;
+        if (j.child) worldTail.setFromMatrixPosition(*j.child->matrixWorld);
+        else worldTail.copy(j.initialLocalChildPosition).applyMatrix4(*bone.matrixWorld);
+        threepp::Vector3 diff;
+        diff.subVectors(worldTail, head);
+        j.worldSpaceBoneLength = diff.length();
+
+        // rest のボーン方向 (world)
+        threepp::Vector3 e;
+        e.copy(j.boneAxis).transformDirection(j.initialLocalMatrix).transformDirection(parentWorld);
+
+        // nextTail = currentTail + 慣性 + 剛性 + 重力
+        threepp::Vector3 nextTail;
+        nextTail.copy(j.currentTail);
+        threepp::Vector3 inertia;
+        inertia.subVectors(j.currentTail, j.prevTail).multiplyScalar(1.f - j.dragForce);
+        nextTail.add(inertia);
+        nextTail.addScaledVector(e, j.stiffness * dt);
+        nextTail.addScaledVector(j.gravityDir, j.gravityPower * dt);
+
+        // 長さ拘束
+        {
+            threepp::Vector3 d;
+            d.subVectors(nextTail, head).normalize().multiplyScalar(j.worldSpaceBoneLength);
+            nextTail.copy(head).add(d);
+        }
+        // 衝突
+        collide(j, nextTail, head);
+
+        j.prevTail.copy(j.currentTail);
+        j.currentTail.copy(nextTail);
+
+        // 回転: bone.quaternion = initialLocalRotation * fromTo(boneAxis, localTail)
+        threepp::Matrix4 m;
+        m.multiplyMatrices(parentWorld, j.initialLocalMatrix).invert();
+        threepp::Vector3 localTail;
+        localTail.copy(nextTail).applyMatrix4(m).normalize();
+        threepp::Quaternion fromTo;
+        fromTo.setFromUnitVectors(j.boneAxis, localTail);
+        bone.quaternion.copy(j.initialLocalRotation).multiply(fromTo);
+
+        // 子 joint が最新を読めるよう world 行列を更新
+        bone.updateMatrix();
+        bone.matrixWorld->multiplyMatrices(parentWorld, *bone.matrix);
+    }
+
+    void VRMSpringBoneManager::update(float dt) {
+        if (dt <= 0.f) dt = 1.f / 60.f;// 0 のとき止まらないよう既定
+        if (dt > 0.1f) dt = 0.1f;      // 発散防止に上限
+        for (auto& j : joints) updateJoint(j, dt);
+    }
+
+    // -----------------------------------------------------------------------
     // VRM
     // -----------------------------------------------------------------------
     void VRM::updateConstraints() {
         for (auto& c : constraints) c.update();
     }
 
-    void VRM::update(float /*deltaSec*/) {
-        // Phase1: ポーズ(正規化rig転写) → 制約 → 表情 → 視線。Phase2 で springBone を追加。
+    void VRM::update(float deltaSec) {
+        // ポーズ(正規化rig転写) → 制約 → 表情 → 視線 → springBone。
         humanoid.updateRig();
         updateConstraints();// VRMC_node_constraint (roll/aim/rotation)
         expressionManager.applyToScene();
         lookAt.update();
+        if (!springBone.empty()) {
+            if (scene) scene->updateMatrixWorld(true);// 揺れ物理は最新 world 行列が要る
+            springBone.update(deltaSec);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -664,6 +804,84 @@ namespace krkrvrm {
             }
             if (!vrm->constraints.empty())
                 std::cerr << "[VRM] node constraints: " << vrm->constraints.size() << "\n";
+        }
+
+        // VRMC_springBone (揺れもの): colliders / colliderGroups / springs(joints)
+        if (gltf.contains("extensions") && gltf["extensions"].contains("VRMC_springBone")) {
+            const auto& sb = gltf["extensions"]["VRMC_springBone"];
+            auto& mgr = vrm->springBone;
+
+            auto readVec3 = [](const nlohmann::json& a, threepp::Vector3& v) {
+                if (a.is_array() && a.size() == 3)
+                    v.set(a[0].get<float>(), a[1].get<float>(), a[2].get<float>());
+            };
+
+            // colliders (index を colliderGroups と揃えるため node 不明でも placeholder を積む)
+            if (sb.contains("colliders")) {
+                for (const auto& cd : sb["colliders"]) {
+                    VRMSpringCollider col;
+                    auto nit = result->nodes.find(cd.value("node", -1));
+                    if (nit != result->nodes.end()) {
+                        col.node = nit->second;
+                        if (cd.contains("shape")) {
+                            const auto& sh = cd["shape"];
+                            const nlohmann::json* s = nullptr;
+                            if (sh.contains("sphere")) { col.capsule = false; s = &sh["sphere"]; }
+                            else if (sh.contains("capsule")) { col.capsule = true; s = &sh["capsule"]; }
+                            if (s) {
+                                if (s->contains("offset")) readVec3((*s)["offset"], col.offset);
+                                col.radius = s->value("radius", 0.f);
+                                if (col.capsule && s->contains("tail")) readVec3((*s)["tail"], col.tail);
+                            }
+                        }
+                    }
+                    mgr.colliders.push_back(std::move(col));
+                }
+            }
+            // colliderGroups
+            if (sb.contains("colliderGroups")) {
+                for (const auto& cg : sb["colliderGroups"]) {
+                    std::vector<int> group;
+                    if (cg.contains("colliders"))
+                        for (const auto& ci : cg["colliders"]) group.push_back(ci.get<int>());
+                    mgr.colliderGroups.push_back(std::move(group));
+                }
+            }
+            // springs (各 joint は次の joint を child とするチェーン)
+            if (sb.contains("springs")) {
+                for (const auto& sp : sb["springs"]) {
+                    std::vector<int> groupIdx;
+                    if (sp.contains("colliderGroups"))
+                        for (const auto& g : sp["colliderGroups"]) groupIdx.push_back(g.get<int>());
+                    if (!sp.contains("joints")) continue;
+                    const auto& js = sp["joints"];
+                    const int n = static_cast<int>(js.size());
+                    for (int i = 0; i < n; ++i) {
+                        const auto& jd = js[i];
+                        auto bit = result->nodes.find(jd.value("node", -1));
+                        if (bit == result->nodes.end()) continue;
+                        VRMSpringJoint joint;
+                        joint.bone = bit->second;
+                        if (i + 1 < n) {
+                            auto cit = result->nodes.find(js[i + 1].value("node", -1));
+                            if (cit != result->nodes.end()) joint.child = cit->second;
+                        }
+                        joint.hitRadius = jd.value("hitRadius", 0.f);
+                        joint.stiffness = jd.value("stiffness", 1.f);
+                        joint.gravityPower = jd.value("gravityPower", 0.f);
+                        joint.dragForce = jd.value("dragForce", 0.4f);
+                        if (jd.contains("gravityDir")) readVec3(jd["gravityDir"], joint.gravityDir);
+                        joint.colliderGroupIndices = groupIdx;
+                        mgr.joints.push_back(std::move(joint));
+                    }
+                }
+            }
+            if (!mgr.joints.empty()) {
+                if (vrm->scene) vrm->scene->updateMatrixWorld(true);
+                mgr.setInitState();
+                std::cerr << "[VRM] springBone: joints=" << mgr.joints.size()
+                          << " colliders=" << mgr.colliders.size() << "\n";
+            }
         }
 
         std::cerr << "[VRM] loaded (" << (isVrm1 ? "1.0" : "0.x") << "): bones="

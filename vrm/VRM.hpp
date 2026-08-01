@@ -117,6 +117,46 @@ namespace krkrvrm {
 
     class VRMAnimation;// 前方宣言 (定義は下方)
 
+    // === VRMC_springBone (揺れもの物理: 髪/服/しっぽ等) ==========================
+    /// コライダー (球 or カプセル)。node のワールド行列 + offset に配置される。
+    struct VRMSpringCollider {
+        std::shared_ptr<threepp::Object3D> node;
+        threepp::Vector3 offset{0.f, 0.f, 0.f};
+        float radius = 0.f;
+        bool capsule = false;
+        threepp::Vector3 tail{0.f, 0.f, 0.f};///< capsule の他端 offset
+    };
+
+    /// spring joint (揺れボーン1個)。three-vrm の物理に準拠。
+    struct VRMSpringJoint {
+        std::shared_ptr<threepp::Object3D> bone;
+        std::shared_ptr<threepp::Object3D> child;///< 無ければ nullptr (仮想 tail=7cm)
+        float hitRadius = 0.f, stiffness = 1.f, gravityPower = 0.f, dragForce = 0.4f;
+        threepp::Vector3 gravityDir{0.f, -1.f, 0.f};
+        std::vector<int> colliderGroupIndices;///< この joint が衝突判定するグループ
+
+        // 状態 (setInitState で初期化)
+        threepp::Vector3 currentTail, prevTail, boneAxis, initialLocalChildPosition;
+        threepp::Quaternion initialLocalRotation;
+        threepp::Matrix4 initialLocalMatrix;
+        float worldSpaceBoneLength = 0.f;
+    };
+
+    /// spring bone マネージャ。joints はチェーン順(親→子)に格納する。
+    class VRMSpringBoneManager {
+    public:
+        std::vector<VRMSpringCollider> colliders;
+        std::vector<std::vector<int>> colliderGroups;///< group -> collider index list
+        std::vector<VRMSpringJoint> joints;
+
+        [[nodiscard]] bool empty() const { return joints.empty(); }
+        void setInitState();///< rest ポーズ(world 行列更新後)で捕捉
+        void update(float dt);
+    private:
+        void updateJoint(VRMSpringJoint& j, float dt);
+        void collide(const VRMSpringJoint& j, threepp::Vector3& tail, const threepp::Vector3& head);
+    };
+
     /// VRMC_node_constraint (roll / aim / rotation)。あるノードが別ノード(source)の
     /// 回転や向きを追従する。ツイスト/ロールボーン等に使われる。humanoid rig 転写後・
     /// 描画前に update() で適用する。式は three-vrm 実装に準拠。
@@ -148,8 +188,10 @@ namespace krkrvrm {
         VRMLookAt lookAt;
         VRMMeta meta;
         std::vector<VRMNodeConstraint> constraints;///< VRMC_node_constraint (dependency 順)
+        VRMSpringBoneManager springBone;           ///< VRMC_springBone (揺れもの)
 
-        /// 毎フレーム更新 (Phase1: ポーズ + 表情 + 視線。Phase2 で springBone を追加)。
+        /// 毎フレーム更新 (ポーズ + 制約 + 表情 + 視線 + springBone)。
+        /// deltaSec は springBone 物理積分に使う (0 だと揺れは止まる)。
         void update(float deltaSec = 0.0f);
 
         /// VRMC_node_constraint を全て適用 (humanoid rig 転写後・描画前)。

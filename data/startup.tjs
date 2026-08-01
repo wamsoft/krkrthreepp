@@ -221,7 +221,7 @@ class VRMViewer extends Window
             if (animTime > animDur) animTime -= animDur;
             vrm.applyAnimation(anim, animTime);
         }
-        if (vrm !== void && System.getArgument("-noupdate") === void) vrm.update();   // rig/表情/視線を反映
+        if (vrm !== void && System.getArgument("-noupdate") === void) vrm.update(tick / 1000.0);   // rig/表情/視線/揺れを反映(dt秒)
 
         // --- 描画 ----------------------------------------------------
         // capture のコールバックは GLESAdaptor のコンテキストで実行されるため、

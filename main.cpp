@@ -2585,7 +2585,7 @@ static int         VRM_getBoneCount(ThreeWrapper<VRM> *self)      { return (self
 static void  VRM_setExpression(ThreeWrapper<VRM> *self, std::string name, float weight) { if (self && self->getObject()) self->getObject()->expressionManager.setValue(name, weight); }
 static float VRM_getExpression(ThreeWrapper<VRM> *self, std::string name)               { return (self && self->getObject()) ? self->getObject()->expressionManager.getValue(name) : 0.f; }
 static int   VRM_getExpressionCount(ThreeWrapper<VRM> *self)                             { return (self && self->getObject()) ? (int)self->getObject()->expressionManager.size() : 0; }
-static void  VRM_update(ThreeWrapper<VRM> *self)                                         { if (self && self->getObject()) self->getObject()->update(0.0f); }
+static void  VRM_update(ThreeWrapper<VRM> *self, float dt)                                { if (self && self->getObject()) self->getObject()->update(dt); }
 
 // 視線 (Phase1, bone 方式)。setLookAtTarget(ワールド座標) 後 update() で eye ボーンに反映。
 static void VRM_setLookAtTarget(ThreeWrapper<VRM> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->lookAt.setTarget(x, y, z); }
