@@ -34,20 +34,26 @@ namespace krkrvrm {
         // 描いてモデル背後にはみ出させ輪郭線にする。スキニング対応(SkinnedMesh でも変形追従)。
         std::shared_ptr<threepp::ShaderMaterial> makeOutlineMaterial(const threepp::Color& color, float width) {
             auto mat = threepp::ShaderMaterial::create();
+            // three-vrm 準拠: オブジェクト空間で objectNormal に沿ってオフセットし、
+            // z を僅かに奥へ押して z-fight を防ぐ。view 空間 push は鋭いエッジで
+            // 反転ハルが裏返り大きなフラップとして飛び出すため使わない。
             mat->vertexShader = R"(
 #include <common>
+#include <morphtarget_pars_vertex>
 #include <skinning_pars_vertex>
 uniform float outlineWidth;
 void main() {
-    #include <skinbase_vertex>
     #include <beginnormal_vertex>
+    #include <morphnormal_vertex>
+    #include <skinbase_vertex>
     #include <skinnormal_vertex>
     #include <begin_vertex>
+    #include <morphtarget_vertex>
     #include <skinning_vertex>
-    vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );
-    vec3 mvNormal = normalize( normalMatrix * objectNormal );
-    mvPosition.xyz += mvNormal * outlineWidth;
-    gl_Position = projectionMatrix * mvPosition;
+    vec3 tNormal = normalMatrix * objectNormal;
+    vec3 outlineOffset = outlineWidth * length( tNormal ) * objectNormal;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4( outlineOffset + transformed, 1.0 );
+    gl_Position.z += 1e-6 * gl_Position.w;
 }
 )";
             mat->fragmentShader = R"(
@@ -225,19 +231,21 @@ void main() {
             return mat;
         }
 
-        // 同一 geometry+skeleton のオーバーレイ(反転ハル outline 等)を src の子として重ねる。
-        void addMToonOverlay(const std::shared_ptr<threepp::Mesh>& src,
-                             const std::shared_ptr<threepp::Material>& m, const std::string& suffix) {
-            std::shared_ptr<threepp::Object3D> obj;
-            if (auto* skinned = src->as<threepp::SkinnedMesh>()) {
-                auto sm = threepp::SkinnedMesh::create(src->geometry(), m);
-                sm->bind(skinned->skeleton, skinned->bindMatrix);
-                obj = sm;
-            } else {
-                obj = threepp::Mesh::create(src->geometry(), m);
-            }
-            obj->name = src->name + suffix;
-            src->add(obj);
+        // three-vrm 方式の outline: 別メッシュではなく、同一メッシュに 2 つ目のマテリアル
+        // (outline, BackSide) を持たせ、geometry group を 2 つ張って同一頂点を2回描く。
+        // 別 child SkinnedMesh 方式は deform 時にスキンがわずかにずれ反転ハルが flap として
+        // 飛び出すため使わない (実機で確認)。
+        void addMToonOutline(const std::shared_ptr<threepp::Mesh>& src,
+                             const std::shared_ptr<threepp::Material>& outlineMat) {
+            auto geo = src->geometry();
+            if (!geo || !geo->groups.empty()) return;// 既存 group あり(多プリミティブ)は非対応
+            auto surface = src->material();
+            if (!surface) return;
+            src->setMaterials({surface, outlineMat});
+            const int count = geo->hasIndex() ? geo->getIndex()->count()
+                                              : geo->getAttribute("position")->count();
+            geo->addGroup(0, count, 0);// surface
+            geo->addGroup(0, count, 1);// outline (同一頂点)
         }
     }// namespace
 
@@ -1354,7 +1362,6 @@ void main() {
             if (!mtoon.empty()) {
                 const auto& meshes = gltf["meshes"];
                 int swapped = 0, outlined = 0, rimmed = 0;
-                auto addOverlay = &addMToonOverlay;
                 for (int meshI = 0; meshI < static_cast<int>(meshes.size()); ++meshI) {
                     if (!meshes[meshI].contains("primitives")) continue;
                     const auto& prims = meshes[meshI]["primitives"];
@@ -1419,7 +1426,7 @@ void main() {
 
                         // outline (反転ハル) を重ねる。rim は MToon シェーダに統合済み。
                         if (pit->second.hasOutline) {
-                            addOverlay(mesh, makeOutlineMaterial(pit->second.outlineColor, pit->second.outlineWidth), "_outline");
+                            addMToonOutline(mesh, makeOutlineMaterial(pit->second.outlineColor, pit->second.outlineWidth));
                             ++outlined;
                         }
                         if (pit->second.hasRim) ++rimmed;
@@ -1523,7 +1530,7 @@ void main() {
                         if (ow > 0.f) {
                             threepp::Color oc{0.f, 0.f, 0.f};
                             getVec(mp, "_OutlineColor", oc);
-                            addMToonOverlay(mesh, makeOutlineMaterial(oc, ow * 0.01f), "_outline");
+                            addMToonOutline(mesh, makeOutlineMaterial(oc, ow * 0.01f));
                             ++outlined;
                         }
                     }
