@@ -11,8 +11,10 @@
 #include <threepp/core/Object3D.hpp>
 #include <threepp/math/Euler.hpp>
 
+#include <fstream>
 #include <iostream>
 #include <string>
+#include <vector>
 
 static int countNodes(const std::shared_ptr<threepp::Object3D>& root) {
     if (!root) return 0;
@@ -34,6 +36,24 @@ int main(int argc, char** argv) {
     if (!vrm) {
         std::cout << "[smoke] FAILED: loader returned null\n";
         return 1;
+    }
+
+    // メモリロード経路 (ホストのストリーム/アーカイブ用) も同じ結果になるか検証。
+    {
+        std::ifstream f(path, std::ios::binary);
+        std::vector<unsigned char> bytes(std::istreambuf_iterator<char>(f), {});
+        krkrvrm::VRMLoader memLoader;
+        auto vrmMem = memLoader.loadFromMemory(bytes.data(), bytes.size());
+        if (!vrmMem) {
+            std::cout << "[smoke] FAILED: loadFromMemory returned null\n";
+            return 1;
+        }
+        if (vrmMem->humanoid.size() != vrm->humanoid.size()) {
+            std::cout << "[smoke] FAILED: memory bones=" << vrmMem->humanoid.size()
+                      << " != file bones=" << vrm->humanoid.size() << "\n";
+            return 1;
+        }
+        std::cout << "[smoke] loadFromMemory OK (bones match: " << vrmMem->humanoid.size() << ")\n";
     }
 
     std::cout << "[smoke] OK\n";

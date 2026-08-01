@@ -871,23 +871,80 @@ NCB_REGISTER_SUBCLASS(Cylindrical) {
 // threepp shared_ptr ラッピング用テンプレートクラス
 // ======================================================================
 
+// ----------------------------------------------------------------------
+// is-a 単一継承マップ (threepp のクラス階層を ThreeWrapper へ写す)
+//
+// ncbind の NCB_REGISTER_SUBCLASS_OF (単一継承) は C++ の実継承
+// static_cast<Base*>(derived) に立脚するため、ThreeWrapper<Derived> を
+// ThreeWrapper<Base> の C++ 派生にする必要がある。ThreeBaseOf<T> で threepp の
+// 直近基底を宣言し、ThreeWrapper<T> はその基底ラッパを継承する。
+// 各レベルは自分の型の shared_ptr を持ち、setObject で基底へ upcast 伝播する
+// ので、基底 classid の BridgeFunctor が正しい raw ポインタを返す。
+// ----------------------------------------------------------------------
+
+// T の直近基底 threepp クラス。ルート (Object3D/Material/BufferGeometry/Texture 等)
+// は void。ここに追記したチェーンだけが is-a 化される (未記載はフラット据え置き)。
+template <class T> struct ThreeBaseOf { typedef void Type; };
+
+template <class T> class ThreeWrapper;          //< 前方宣言
+class ThreeWrapperRoot;                         //< ルートラッパの空基底
+
+// C++ 継承用の基底ラッパ型 (基底が void ならルート空基底)
+template <class B> struct ThreeCppBaseWrapper       { typedef ThreeWrapper<B> Type; };
+template <>        struct ThreeCppBaseWrapper<void>  { typedef ThreeWrapperRoot Type; };
+template <class T> struct ThreeWrapperBase { typedef typename ThreeCppBaseWrapper<typename ThreeBaseOf<T>::Type>::Type Type; };
+
+// ncbind へ渡す is-a 基底型 (基底が void なら「継承なし」を表す void のまま)
+template <class B> struct ThreeSubClassBase       { typedef ThreeWrapper<B> Type; };
+template <>        struct ThreeSubClassBase<void>  { typedef void Type; };
+template <class X> struct ThreeIsVoid       { enum { value = 0 }; };
+template <>        struct ThreeIsVoid<void> { enum { value = 1 }; };
+
+// --- is-a 継承マップ本体 (PoC: Object3D → Camera チェーン) ---
+// Object3D はルート (void)。ここを増やすとチェーンが伸びる。
+template <> struct ThreeBaseOf<Scene>              { typedef Object3D Type; };
+template <> struct ThreeBaseOf<Group>              { typedef Object3D Type; };
+template <> struct ThreeBaseOf<Camera>             { typedef Object3D Type; };
+template <> struct ThreeBaseOf<PerspectiveCamera>  { typedef Camera   Type; };
+template <> struct ThreeBaseOf<OrthographicCamera> { typedef Camera   Type; };
+
+// ルートラッパの空基底 (実体の所有/非所有は adaptor 側が管理する)
+class ThreeWrapperRoot {
+public:
+	ThreeWrapperRoot() {}
+	virtual ~ThreeWrapperRoot() {}
+};
+
+// setObject 時に、基底ラッパ部分へ同一実体を upcast 伝播する (基底へ再帰)
+template <class T, class B = typename ThreeBaseOf<T>::Type>
+struct ThreeWrapperAssignBase {
+	static void assign(ThreeWrapper<T> *self, const std::shared_ptr<T> &src);
+};
 template <class T>
-class ThreeWrapper {
+struct ThreeWrapperAssignBase<T, void> {
+	static void assign(ThreeWrapper<T> *, const std::shared_ptr<T> &) {}
+};
+
+template <class T>
+class ThreeWrapper : public ThreeWrapperBase<T>::Type {
 	typedef T ThreeClassT;
 	typedef ThreeWrapper<ThreeClassT> WrapperT;
+	typedef typename ThreeWrapperBase<T>::Type BaseWrapperT;
 protected:
 	std::shared_ptr<ThreeClassT> obj;
 public:
 	ThreeWrapper() : obj(nullptr) {}
-	ThreeWrapper(std::shared_ptr<ThreeClassT> obj) : obj(obj) {}
-	ThreeWrapper(const WrapperT &orig) : obj(orig.obj) {}
+	ThreeWrapper(std::shared_ptr<ThreeClassT> src) : obj(nullptr) { setObject(src); }
+	ThreeWrapper(const WrapperT &orig) : obj(nullptr) { setObject(orig.obj); }
 	~ThreeWrapper() {}
-	
+
 	std::shared_ptr<ThreeClassT> getObject() { return obj; }
 	ThreeClassT* getRawPtr() { return obj.get(); }
 
 	void setObject(std::shared_ptr<ThreeClassT> src) {
 		obj = src;
+		// 基底ラッパ部分にも upcast した同一実体を持たせる (基底 classid 用)
+		ThreeWrapperAssignBase<ThreeClassT>::assign(this, src);
 	}
 
 	struct BridgeFunctor {
@@ -895,6 +952,20 @@ public:
 			return p->getRawPtr();
 		}
 	};
+};
+
+// 非ルート: 基底ラッパへ static_pointer_cast した実体を setObject (さらに上へ再帰)
+template <class T, class B>
+void ThreeWrapperAssignBase<T, B>::assign(ThreeWrapper<T> *self, const std::shared_ptr<T> &src) {
+	static_cast<ThreeWrapper<B>*>(self)->setObject(std::static_pointer_cast<B>(src));
+}
+
+// ThreeWrapper<T> の is-a 基底を ncbind に伝える (ThreeBaseOf に基づき自動導出)。
+// フラットなクラス (ThreeBaseOf=void) は BaseT=void で従来どおり非継承扱い。
+template <class T>
+struct ncbSubClassOf<ThreeWrapper<T> > {
+	typedef typename ThreeSubClassBase<typename ThreeBaseOf<T>::Type>::Type BaseT;
+	enum { HasBase = !ThreeIsVoid<BaseT>::value };
 };
 
 // コンバータ登録用マクロ
@@ -929,7 +1000,7 @@ public:
 			iTJSDispatch2 *adpobj = AdaptorT::CreateAdaptor(new WrapperT(src));
 			if (adpobj) {
 				dst = tTJSVariant(adpobj, adpobj);
-				adpobj->Release();			
+				adpobj->Release();
 			} else {
 				dst.Clear();
 			}
@@ -967,7 +1038,14 @@ public:
 };
 
 // ラッピング処理用マクロ
-#define NCB_REGISTER_THREE_SUBCLASS(Class) NCB_THREE_CONVERTOR(Class);NCB_REGISTER_SUBCLASS(ThreeWrapper<Class>) { typedef Class ThreeClass;
+// is-a 継承時 (ThreeBaseOf<Class> が非 void) は、全クラス登録後 (PostRegist) に
+// 基底クラスオブジェクトのメンバを派生へコピーする。フラットなクラスでは
+// ncbSubClassMemberCopy<...,void>::Copy() が no-op なので無条件に emit してよい。
+#define NCB_REGISTER_THREE_SUBCLASS(Class) \
+	NCB_THREE_CONVERTOR(Class); \
+	static void ncbThreeMemberCopy_ ## Class () { ncbSubClassMemberCopy<ThreeWrapper<Class> >::Copy(); } \
+	NCB_POST_REGIST_CALLBACK(ncbThreeMemberCopy_ ## Class); \
+	NCB_REGISTER_SUBCLASS(ThreeWrapper<Class>) { typedef Class ThreeClass;
 #define NCB_THREE_METHOD(name)  Method(TJS_W(# name), &ThreeClass::name, Bridge<ThreeWrapper<ThreeClass>::BridgeFunctor>())
 #define NCB_THREE_MCAST(ret, method, args) static_cast<ret (ThreeClass::*) args>(&ThreeClass::method)
 #define NCB_THREE_METHOD2(name, ret, method, args) Method(TJS_W(# name), NCB_THREE_MCAST(ret, method, args), Bridge<ThreeWrapper<ThreeClass>::BridgeFunctor>())
@@ -1190,37 +1268,13 @@ Factory(Object3DFactory);
 NCB_METHOD_PROXY(type, Object3DGetType);
 NCB_METHOD_PROXY(id, Object3DGetId);
 NCB_PROPERTY_PROXY(name, Object3DGetName, Object3DSetName);
-NCB_THREE_MEMBER_PROPERTY(visible, bool, visible);
-NCB_THREE_MEMBER_PROPERTY(castShadow, bool, castShadow);
-NCB_THREE_MEMBER_PROPERTY(receiveShadow, bool, receiveShadow);
-NCB_THREE_MEMBER_PROPERTY(frustumCulled, bool, frustumCulled);
-NCB_THREE_MEMBER_PROPERTY(renderOrder, unsigned int, renderOrder);
-struct AutoProp_position { static Vector3 ProxyGet(ThreeClass *inst) { return inst->position; } };
-Property(TJS_W("position"), &AutoProp_position::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
-struct AutoProp_rotation { static Euler ProxyGet(ThreeClass *inst) { return inst->rotation; } };
-Property(TJS_W("rotation"), &AutoProp_rotation::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
-struct AutoProp_quaternion { static Quaternion ProxyGet(ThreeClass *inst) { return inst->quaternion; } };
-Property(TJS_W("quaternion"), &AutoProp_quaternion::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
-struct AutoProp_scale { static Vector3 ProxyGet(ThreeClass *inst) { return inst->scale; } };
-Property(TJS_W("scale"), &AutoProp_scale::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
-struct AutoProp_up { static Vector3 ProxyGet(ThreeClass *inst) { return inst->up; } };
-Property(TJS_W("up"), &AutoProp_up::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
-NCB_METHOD_PROXY(add, Object3DAdd);
-NCB_METHOD_PROXY(remove, Object3DRemove);
-NCB_THREE_METHOD(removeFromParent);
-NCB_THREE_METHOD(clear);
-NCB_METHOD_PROXY(lookAt, Object3DLookAt);
-NCB_METHOD_PROXY(rotateX, Object3D_rotateX);
-NCB_METHOD_PROXY(rotateY, Object3D_rotateY);
-NCB_METHOD_PROXY(rotateZ, Object3D_rotateZ);
+// position/rotation/scale/up/visible/add/remove/lookAt/rotate*/translate* 等の
+// Object3D 共通メンバ。is-a 派生 (Scene/Group/Camera…) はこれを継承コピーで得る。
+THREE_OBJECT3D_MEMBERS();
+// マクロに含まれない Object3D 固有の追加メンバ (Vector3 軸指定版)
 NCB_METHOD_PROXY(rotateOnAxis, Object3D_rotateOnAxis);
 NCB_METHOD_PROXY(rotateOnWorldAxis, Object3D_rotateOnWorldAxis);
-NCB_METHOD_PROXY(translateX, Object3D_translateX);
-NCB_METHOD_PROXY(translateY, Object3D_translateY);
-NCB_METHOD_PROXY(translateZ, Object3D_translateZ);
 NCB_METHOD_PROXY(translateOnAxis, Object3D_translateOnAxis);
-NCB_THREE_METHOD2(updateMatrix, void, updateMatrix, ());
-NCB_THREE_METHOD2(updateMatrixWorld, void, updateMatrixWorld, (bool));
 };
 
 // ======================================================================
@@ -1238,7 +1292,7 @@ GroupFactory(ThreeWrapper<Group> **result, tjs_int numparams, tTJSVariant **para
 NCB_REGISTER_THREE_SUBCLASS(Group)
 Factory(GroupFactory);
 NCB_THREE_PROPERTY_RO(type, type);
-THREE_OBJECT3D_MEMBERS();
+// Object3D 共通メンバは is-a 継承 (ThreeBaseOf<Group>=Object3D) で自動取得
 };
 
 // ======================================================================
@@ -1257,7 +1311,7 @@ NCB_REGISTER_THREE_SUBCLASS(Scene)
 Factory(SceneFactory);
 NCB_THREE_PROPERTY_RO(type, type);
 NCB_THREE_MEMBER_PROPERTY(autoUpdate, bool, autoUpdate);
-THREE_OBJECT3D_MEMBERS();
+// Object3D 共通メンバは is-a 継承 (ThreeBaseOf<Scene>=Object3D) で自動取得
 };
 
 // ======================================================================
@@ -1270,7 +1324,7 @@ NCB_THREE_MEMBER_PROPERTY(zoom, float, zoom);
 NCB_THREE_MEMBER_PROPERTY(nearPlane, float, nearPlane);
 NCB_THREE_MEMBER_PROPERTY(farPlane, float, farPlane);
 NCB_THREE_METHOD(updateProjectionMatrix);
-THREE_OBJECT3D_MEMBERS();
+// Object3D 共通メンバは is-a 継承 (ThreeBaseOf<Camera>=Object3D) で自動取得
 };
 
 // ======================================================================
@@ -1311,7 +1365,7 @@ NCB_THREE_METHOD(getFilmHeight);
 NCB_THREE_METHOD(setViewOffset);
 NCB_THREE_METHOD(clearViewOffset);
 NCB_THREE_METHOD(updateProjectionMatrix);
-THREE_OBJECT3D_MEMBERS();
+// Object3D 共通メンバは is-a 継承 (Camera 経由で Object3D) で自動取得
 };
 
 // ======================================================================
@@ -2451,6 +2505,35 @@ static std::shared_ptr<VRM> VRMLoader_load(ThreeWrapper<VRMLoader> *self, std::s
 	return nullptr;
 }
 
+// 吉里吉里ストレージ(アーカイブ/暗号化/カスタムストレージ対応)からバイト列を読む。
+// 失敗時は空 vector。OS パス依存を避け、ホストのストリーム経由でロードするための土台。
+static std::vector<unsigned char> ThreeReadStorageBytes(const ttstr &storageName)
+{
+	std::vector<unsigned char> buf;
+	iTJSBinaryStream *st = TVPCreateStream(storageName, TJS_BS_READ);
+	if (!st) {
+		TVPAddImportantLog(ttstr(TJS_W("[threepp] storage open failed: ")) + storageName);
+		return buf;
+	}
+	tjs_uint64 sz = st->GetSize();
+	if (sz > 0) {
+		buf.resize((size_t)sz);
+		tjs_uint got = st->Read(buf.data(), (tjs_uint)sz);
+		if (got != sz) buf.resize(got);
+	}
+	st->Destruct();  // iTJSBinaryStream は自身を delete する
+	return buf;
+}
+
+// 吉里吉里ストレージ名(例 "model.vrm")から VRM を読む。アーカイブ内でも可。
+static std::shared_ptr<VRM> VRMLoader_loadStorage(ThreeWrapper<VRMLoader> *self, ttstr storageName)
+{
+	if (!self || !self->getObject()) return nullptr;
+	auto bytes = ThreeReadStorageBytes(storageName);
+	if (bytes.empty()) return nullptr;
+	return self->getObject()->loadFromMemory(bytes.data(), bytes.size());
+}
+
 // VRM.scene -> Threepp.Group（Scene に add して render する）
 static std::shared_ptr<Group> VRM_getScene(ThreeWrapper<VRM> *self)
 {
@@ -2498,18 +2581,44 @@ static std::shared_ptr<VRMAnimation> VRMAnimationLoader_load(ThreeWrapper<VRMAni
 {
 	return (self && self->getObject()) ? self->getObject()->load(path) : nullptr;
 }
+// 吉里吉里ストレージ名から .vrma を読む。アーカイブ内でも可。
+static std::shared_ptr<VRMAnimation> VRMAnimationLoader_loadStorage(ThreeWrapper<VRMAnimationLoader> *self, ttstr storageName)
+{
+	if (!self || !self->getObject()) return nullptr;
+	auto bytes = ThreeReadStorageBytes(storageName);
+	if (bytes.empty()) return nullptr;
+	return self->getObject()->loadFromMemory(bytes.data(), bytes.size());
+}
 static float VRMAnimation_getDuration(ThreeWrapper<VRMAnimation> *self)       { return (self && self->getObject()) ? self->getObject()->duration() : 0.f; }
 static int   VRMAnimation_getBoneTrackCount(ThreeWrapper<VRMAnimation> *self) { return (self && self->getObject()) ? (int)self->getObject()->boneTrackCount() : 0; }
 static std::string VRM_getMetaName(ThreeWrapper<VRM> *self)       { return (self && self->getObject()) ? self->getObject()->meta.name : std::string(); }
 static std::string VRM_getMetaVersion(ThreeWrapper<VRM> *self)    { return (self && self->getObject()) ? self->getObject()->meta.version : std::string(); }
 static std::string VRM_getMetaLicenseUrl(ThreeWrapper<VRM> *self) { return (self && self->getObject()) ? self->getObject()->meta.licenseUrl : std::string(); }
 
+// VRM / VRMAnimation は VRMLoader/VRMAnimationLoader の戻り値としてコンバータ復路
+// (CreateAdaptor) で TJS 化される。エンジンの CreateNew は「未実装コンストラクタ =
+// MEMBERNOTFOUND のみ」欠落を許容し、ncbind のダミー(NotImpl)コンストラクタは通らない。
+// そこで空の実体を作る Factory を登録する (ncbind の Factory NCM が void センチネルを
+// 処理して CreateAdaptor 生成を成功させる。直接 new は空オブジェクトになる)。
+static tjs_error VRMFactory(ThreeWrapper<VRM> **result, tjs_int, tTJSVariant **, iTJSDispatch2 *)
+{
+	*result = new ThreeWrapper<VRM>(std::make_shared<VRM>());
+	return TJS_S_OK;
+}
+static tjs_error VRMAnimationFactory(ThreeWrapper<VRMAnimation> **result, tjs_int, tTJSVariant **, iTJSDispatch2 *)
+{
+	*result = new ThreeWrapper<VRMAnimation>(std::make_shared<VRMAnimation>());
+	return TJS_S_OK;
+}
+
 NCB_REGISTER_THREE_SUBCLASS(VRMLoader)
 Factory(VRMLoaderFactory);
-NCB_METHOD_PROXY(load, VRMLoader_load);
+NCB_METHOD_PROXY(load, VRMLoader_load);              // (OSパス) デバッグ/スタンドアロン用
+NCB_METHOD_PROXY(loadStorage, VRMLoader_loadStorage);// (吉里吉里ストレージ名) 本番用
 };
 
 NCB_REGISTER_THREE_SUBCLASS(VRM)
+Factory(VRMFactory);                                 // コンバータ復路(CreateAdaptor)用
 NCB_METHOD_PROXY(getScene, VRM_getScene);            // -> Threepp.Group
 NCB_METHOD_PROXY(getBoneNode, VRM_getBoneNode);      // (name) -> Threepp.Bone
 NCB_METHOD_PROXY(getBoneCount, VRM_getBoneCount);    // -> int
@@ -2529,13 +2638,15 @@ NCB_METHOD_PROXY(getMetaLicenseUrl, VRM_getMetaLicenseUrl);
 };
 
 NCB_REGISTER_THREE_SUBCLASS(VRMAnimation)
+Factory(VRMAnimationFactory);                                   // コンバータ復路(CreateAdaptor)用
 NCB_METHOD_PROXY(getDuration, VRMAnimation_getDuration);        // -> float(sec)
 NCB_METHOD_PROXY(getBoneTrackCount, VRMAnimation_getBoneTrackCount);
 };
 
 NCB_REGISTER_THREE_SUBCLASS(VRMAnimationLoader)
 Factory(VRMAnimationLoaderFactory);
-NCB_METHOD_PROXY(load, VRMAnimationLoader_load);                // (path) -> VRMAnimation
+NCB_METHOD_PROXY(load, VRMAnimationLoader_load);                // (OSパス) デバッグ用
+NCB_METHOD_PROXY(loadStorage, VRMAnimationLoader_loadStorage);  // (吉里吉里ストレージ名) 本番用
 };
 
 // ======================================================================

@@ -291,8 +291,21 @@ namespace krkrvrm {
     std::shared_ptr<VRM> VRMLoader::load(const std::filesystem::path& path) {
         threepp::GLTFLoader loader;
         auto result = loader.load(path);
+        if (!result) std::cerr << "[VRM] GLTF load failed: " << path << "\n";
+        return buildVRM(result, path.string());
+    }
+
+    std::shared_ptr<VRM> VRMLoader::loadFromMemory(const unsigned char* data, std::size_t size) {
+        threepp::GLTFLoader loader;
+        auto result = loader.load(data, size);
+        if (!result) std::cerr << "[VRM] GLTF load failed (memory)\n";
+        return buildVRM(result, "<memory>");
+    }
+
+    // GLTFResult(=生 glTF)を VRM として解釈する共通処理。load / loadFromMemory 兼用。
+    std::shared_ptr<VRM> VRMLoader::buildVRM(std::optional<threepp::GLTFResult>& result,
+                                             const std::string& srcLabel) {
         if (!result) {
-            std::cerr << "[VRM] GLTF load failed: " << path << "\n";
             return nullptr;
         }
         if (result->json.empty()) {
@@ -312,7 +325,7 @@ namespace krkrvrm {
         const bool isVrm1 = hasExts && gltf["extensions"].contains("VRMC_vrm");
         const bool isVrm0 = hasExts && gltf["extensions"].contains("VRM");
         if (!isVrm1 && !isVrm0) {
-            std::cerr << "[VRM] no VRM/VRMC_vrm extension (not a VRM file): " << path << "\n";
+            std::cerr << "[VRM] no VRM/VRMC_vrm extension (not a VRM file): " << srcLabel << "\n";
             return nullptr;
         }
 
@@ -517,10 +530,20 @@ namespace krkrvrm {
     std::shared_ptr<VRMAnimation> VRMAnimationLoader::load(const std::filesystem::path& path) {
         threepp::GLTFLoader loader;
         auto result = loader.load(path);
-        if (!result) {
-            std::cerr << "[VRMA] GLTF load failed: " << path << "\n";
-            return nullptr;
-        }
+        if (!result) std::cerr << "[VRMA] GLTF load failed: " << path << "\n";
+        return buildVRMA(result, path.string());
+    }
+
+    std::shared_ptr<VRMAnimation> VRMAnimationLoader::loadFromMemory(const unsigned char* data, std::size_t size) {
+        threepp::GLTFLoader loader;
+        auto result = loader.load(data, size);
+        if (!result) std::cerr << "[VRMA] GLTF load failed (memory)\n";
+        return buildVRMA(result, "<memory>");
+    }
+
+    std::shared_ptr<VRMAnimation> VRMAnimationLoader::buildVRMA(std::optional<threepp::GLTFResult>& result,
+                                                               const std::string& srcLabel) {
+        if (!result) return nullptr;
         if (result->json.empty()) return nullptr;
 
         nlohmann::json gltf;
@@ -531,7 +554,7 @@ namespace krkrvrm {
             return nullptr;
         }
         if (!gltf.contains("extensions") || !gltf["extensions"].contains("VRMC_vrm_animation")) {
-            std::cerr << "[VRMA] no VRMC_vrm_animation extension: " << path << "\n";
+            std::cerr << "[VRMA] no VRMC_vrm_animation extension: " << srcLabel << "\n";
             return nullptr;
         }
         const auto& va = gltf["extensions"]["VRMC_vrm_animation"];

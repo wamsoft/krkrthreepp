@@ -9,9 +9,12 @@
 #include <threepp/objects/Mesh.hpp>
 #include <threepp/math/Quaternion.hpp>
 #include <threepp/math/Vector3.hpp>
+#include <threepp/loaders/GLTFLoader.hpp>
 
+#include <cstddef>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -137,6 +140,13 @@ namespace krkrvrm {
     public:
         /// 失敗時、または VRMC_vrm 拡張が無い場合は nullptr を返す (VRM 0.x は Phase3)。
         std::shared_ptr<VRM> load(const std::filesystem::path& path);
+        /// メモリ上の VRM(GLB) バイト列から読む。吉里吉里ストリーム/アーカイブ経由用。
+        std::shared_ptr<VRM> loadFromMemory(const unsigned char* data, std::size_t size);
+
+    private:
+        /// GLTFResult を VRM として解釈する共通処理 (load / loadFromMemory 兼用)。
+        std::shared_ptr<VRM> buildVRM(std::optional<threepp::GLTFResult>& result,
+                                      const std::string& srcLabel);
     };
 
     /// VRM アニメーション (.vrma / VRMC_vrm_animation)。モデル非依存のボーン回転トラック集合。
@@ -162,6 +172,12 @@ namespace krkrvrm {
     public:
         /// .vrma を読み込む。VRMC_vrm_animation が無ければ nullptr。
         std::shared_ptr<VRMAnimation> load(const std::filesystem::path& path);
+        /// メモリ上の .vrma(GLB) バイト列から読む。吉里吉里ストリーム/アーカイブ経由用。
+        std::shared_ptr<VRMAnimation> loadFromMemory(const unsigned char* data, std::size_t size);
+
+    private:
+        std::shared_ptr<VRMAnimation> buildVRMA(std::optional<threepp::GLTFResult>& result,
+                                                const std::string& srcLabel);
     };
 
 }// namespace krkrvrm

@@ -22,3 +22,6 @@ libEGL.dll
 libGLESv2.dll
 savedata/
 
+# 64bit 実行時ランタイム (krkrz64 本体 + プラグイン一式。テスト起動用。追跡しない)
+plugin64/
+

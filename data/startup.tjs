@@ -24,8 +24,8 @@
 
 // --- プラグイン ------------------------------------------------------------
 // OpenGL ES コンテキストの提供元 (旧 gles.dll)
-Plugins.link("../../gles/build/x86-windows/Release/krkrgles.dll");
-Plugins.link("../build/x86-windows/Release/krkr_threepp.dll");
+Plugins.link("krkrgles.dll");
+Plugins.link("../build/x64-windows/Release/krkr_threepp.dll");
 
 var SCREEN_W = 800;
 var SCREEN_H = 800;
@@ -129,15 +129,16 @@ class VRMViewer extends Window
 
         var vrmName = System.getArgument("-vrm");
         if (vrmName === void) vrmName = "model";
-        // threepp の GLTFLoader は OS のファイルパスで直接開くため、吉里吉里の
-        // ストレージ名を実ファイルパス(getLocalName)へ解決してから渡す。
-        var vrmPath = localPath(vrmName + ".vrm");
+        // 吉里吉里のストレージ(アーカイブ/暗号化対応)から読む。プラグイン側で
+        // TVPCreateStream で開き、バイト列を threepp のメモリロードへ渡す。
+        // getPlacedPath で確実に解決してからストレージ名を渡す。
+        var vrmStorage = Storages.getPlacedPath(vrmName + ".vrm");
         // 注: TJS では `new X().method()` の連鎖で例外になることがあるため
         // ローダは一旦変数に受けてから load を呼ぶ。
         var vrmLoader = new Threepp.VRMLoader();
-        vrm = vrmLoader.load(vrmPath);
+        vrm = vrmLoader.loadStorage(vrmStorage);
         if (vrm === void) {
-            Debug.message("VRM load failed: " + vrmPath);
+            Debug.message("VRM load failed: " + vrmStorage);
             System.exit(1);
         }
         if (System.getArgument("-noadd") === void) scene.add(vrm.getScene());
@@ -151,7 +152,7 @@ class VRMViewer extends Window
         if (vrmaName === void) vrmaName = "anim";
         if (vrmaName != "none") {
             var vaLoader = new Threepp.VRMAnimationLoader();
-            anim = vaLoader.load(localPath(vrmaName + ".vrma"));
+            anim = vaLoader.loadStorage(Storages.getPlacedPath(vrmaName + ".vrma"));
             if (anim !== void) {
                 animDur = anim.getDuration();
                 Debug.message("VRMA loaded: " + vrmaName + ".vrma  duration="
