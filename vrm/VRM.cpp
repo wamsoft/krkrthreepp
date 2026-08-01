@@ -30,9 +30,13 @@
 namespace krkrvrm {
 
     namespace {
+        std::shared_ptr<threepp::Texture> whiteDummyTexture();// 前方宣言
+
         // MToon outline (反転ハル法)。法線方向に outlineWidth 押し出した back-face のみを
         // 描いてモデル背後にはみ出させ輪郭線にする。スキニング対応(SkinnedMesh でも変形追従)。
-        std::shared_ptr<threepp::ShaderMaterial> makeOutlineMaterial(const threepp::Color& color, float width) {
+        std::shared_ptr<threepp::ShaderMaterial> makeOutlineMaterial(const threepp::Color& color, float width,
+                                                                    threepp::Texture* baseMap = nullptr,
+                                                                    float alphaCutoff = 0.f) {
             auto mat = threepp::ShaderMaterial::create();
             // three-vrm 準拠: オブジェクト空間で objectNormal に沿ってオフセットし、
             // z を僅かに奥へ押して z-fight を防ぐ。view 空間 push は鋭いエッジで
@@ -42,7 +46,9 @@ namespace krkrvrm {
 #include <morphtarget_pars_vertex>
 #include <skinning_pars_vertex>
 uniform float outlineWidth;
+varying vec2 vUvO;
 void main() {
+    vUvO = uv;
     #include <beginnormal_vertex>
     #include <morphnormal_vertex>
     #include <skinbase_vertex>
@@ -56,15 +62,27 @@ void main() {
     gl_Position.z += 1e-6 * gl_Position.w;
 }
 )";
+            // surface と同じアルファ discard を行う。これをしないとフリル(レース)等の
+            // 透明部分まで outline が単色で塗られ、透明三角が△として飛び出す。
             mat->fragmentShader = R"(
 uniform vec3 outlineColor;
+uniform sampler2D baseMap;
+uniform int hasBaseMap;
+uniform float alphaCutoff;
+varying vec2 vUvO;
 void main() {
+    if ( hasBaseMap != 0 && alphaCutoff > 0.0 ) {
+        if ( texture2D( baseMap, vUvO ).a < alphaCutoff ) discard;
+    }
     gl_FragColor = vec4( outlineColor, 1.0 );
 }
 )";
             mat->uniforms = threepp::UniformMap{
                     {"outlineWidth", threepp::Uniform(width)},
-                    {"outlineColor", threepp::Uniform(threepp::Vector3(color.r, color.g, color.b))}};
+                    {"outlineColor", threepp::Uniform(threepp::Vector3(color.r, color.g, color.b))},
+                    {"baseMap", threepp::Uniform(baseMap ? baseMap : whiteDummyTexture().get())},
+                    {"hasBaseMap", threepp::Uniform(baseMap ? 1 : 0)},
+                    {"alphaCutoff", threepp::Uniform(alphaCutoff)}};
             mat->side = threepp::Side::Back;// 反転ハル(front cull)
             mat->lights = false;
             return mat;
@@ -1425,8 +1443,10 @@ void main() {
                         ++swapped;
 
                         // outline (反転ハル) を重ねる。rim は MToon シェーダに統合済み。
+                        // surface と同じアルファ discard のため base map + alphaTest を渡す。
                         if (pit->second.hasOutline) {
-                            addMToonOutline(mesh, makeOutlineMaterial(pit->second.outlineColor, pit->second.outlineWidth));
+                            addMToonOutline(mesh, makeOutlineMaterial(pit->second.outlineColor, pit->second.outlineWidth,
+                                                                     map.get(), mat0 ? mat0->alphaTest : 0.f));
                             ++outlined;
                         }
                         if (pit->second.hasRim) ++rimmed;
@@ -1530,7 +1550,7 @@ void main() {
                         if (ow > 0.f) {
                             threepp::Color oc{0.f, 0.f, 0.f};
                             getVec(mp, "_OutlineColor", oc);
-                            addMToonOutline(mesh, makeOutlineMaterial(oc, ow * 0.01f));
+                            addMToonOutline(mesh, makeOutlineMaterial(oc, ow * 0.01f, sp.baseMap, sp.alphaTest));
                             ++outlined;
                         }
                     }
