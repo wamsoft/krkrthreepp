@@ -1078,6 +1078,96 @@ void main() {
             }
         }
 
+        // VRM 0.x secondaryAnimation (揺れもの): 1.0 の VRMSpringBoneManager へ流し込む。
+        // boneGroups[].bones の各 root から子ボーンを再帰して joint チェーンを作り、group の
+        // stiffiness/gravityPower/gravityDir/dragForce/hitRadius を全 joint に適用。collider は球のみ。
+        if (gltf.contains("extensions") && gltf["extensions"].contains("VRM") &&
+            gltf["extensions"]["VRM"].contains("secondaryAnimation")) {
+            const auto& sa = gltf["extensions"]["VRM"]["secondaryAnimation"];
+            auto& mgr = vrm->springBone;
+
+            auto readVec3Obj = [](const nlohmann::json& o, threepp::Vector3& v) {
+                if (o.is_object())
+                    v.set(o.value("x", 0.f), o.value("y", 0.f), o.value("z", 0.f));
+            };
+
+            // colliderGroups(0.x): 各 group = { node, colliders:[{offset{x,y,z}, radius}] }。
+            // 1.0 の (top-level colliders + colliderGroups=index list) 形へ展開する。
+            if (sa.contains("colliderGroups")) {
+                for (const auto& cg : sa["colliderGroups"]) {
+                    std::vector<int> group;
+                    std::shared_ptr<threepp::Object3D> node;
+                    auto nit = result->nodes.find(cg.value("node", -1));
+                    if (nit != result->nodes.end()) node = nit->second;
+                    if (cg.contains("colliders")) {
+                        for (const auto& c : cg["colliders"]) {
+                            VRMSpringCollider col;
+                            col.node = node;
+                            col.capsule = false;
+                            if (c.contains("offset")) readVec3Obj(c["offset"], col.offset);
+                            col.radius = c.value("radius", 0.f);
+                            group.push_back(static_cast<int>(mgr.colliders.size()));
+                            mgr.colliders.push_back(std::move(col));
+                        }
+                    }
+                    mgr.colliderGroups.push_back(std::move(group));
+                }
+            }
+
+            // boneGroups(0.x): root bone のサブツリーを再帰して joint 化 (UniVRM 準拠、
+            // 各ノードの tail=第1子、末端は仮想 tail)。同一 group の全 joint が同じパラメータを持つ。
+            if (sa.contains("boneGroups")) {
+                for (const auto& bg : sa["boneGroups"]) {
+                    const float stiffness = bg.value("stiffiness", 1.f);
+                    const float gravityPower = bg.value("gravityPower", 0.f);
+                    const float dragForce = bg.value("dragForce", 0.4f);
+                    const float hitRadius = bg.value("hitRadius", 0.02f);
+                    threepp::Vector3 gravityDir{0.f, -1.f, 0.f};
+                    if (bg.contains("gravityDir")) readVec3Obj(bg["gravityDir"], gravityDir);
+                    std::vector<int> groupIdx;
+                    if (bg.contains("colliderGroups"))
+                        for (const auto& g : bg["colliderGroups"]) groupIdx.push_back(g.get<int>());
+
+                    // glTF ノードインデックスで階層を辿り、pre-order (親→子) で joint 化。
+                    // tail = 第1子ノード。result->nodes から shared_ptr を得る。
+                    const bool hasNodes = gltf.contains("nodes");
+                    std::function<void(int)> addChain = [&](int idx) {
+                        auto bit = result->nodes.find(idx);
+                        if (bit == result->nodes.end()) return;
+                        VRMSpringJoint joint;
+                        joint.bone = bit->second;
+                        const nlohmann::json* children = nullptr;
+                        if (hasNodes && idx >= 0 && idx < static_cast<int>(gltf["nodes"].size()) &&
+                            gltf["nodes"][idx].contains("children"))
+                            children = &gltf["nodes"][idx]["children"];
+                        if (children && !children->empty()) {
+                            auto cit = result->nodes.find((*children)[0].get<int>());
+                            if (cit != result->nodes.end()) joint.child = cit->second;
+                        }
+                        joint.hitRadius = hitRadius;
+                        joint.stiffness = stiffness;
+                        joint.gravityPower = gravityPower;
+                        joint.dragForce = dragForce;
+                        joint.gravityDir.copy(gravityDir);
+                        joint.colliderGroupIndices = groupIdx;
+                        mgr.joints.push_back(std::move(joint));
+                        if (children)
+                            for (const auto& c : *children) addChain(c.get<int>());
+                    };
+
+                    if (bg.contains("bones"))
+                        for (const auto& bn : bg["bones"]) addChain(bn.get<int>());
+                }
+            }
+
+            if (!mgr.joints.empty()) {
+                if (vrm->scene) vrm->scene->updateMatrixWorld(true);
+                mgr.setInitState();
+                std::cerr << "[VRM] springBone(0.x): joints=" << mgr.joints.size()
+                          << " colliders=" << mgr.colliders.size() << "\n";
+            }
+        }
+
         // VRMC_materials_mtoon: pbr フォールバック材(MeshStandardMaterial)を
         // MeshToonMaterial(トゥーン)へ差し替える。lit=baseColorFactor、shade=shadeColorFactor を
         // gradientMap の色ランプで表現。テクスチャ/emissive/透明度は元材から引き継ぐ。
