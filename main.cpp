@@ -54,6 +54,9 @@
 #include <threepp/loaders/TextureLoader.hpp>
 #include <threepp/loaders/GLTFLoader.hpp>
 
+// Animation
+#include <threepp/animation/AnimationMixer.hpp>
+
 // Materials (additional)
 #include <threepp/materials/ShaderMaterial.hpp>
 #include <threepp/materials/RawShaderMaterial.hpp>
@@ -2775,6 +2778,125 @@ NCB_METHOD_PROXY(getAnimationDuration, GLTFModel_getAnimationDuration); // (i) -
 };
 
 // ======================================================================
+// AnimationMixer / AnimationAction (glTF 内蔵アニメ再生)
+//
+// three.js の AnimationMixer 相当。ただし threepp の AnimationMixer は
+// Object3D& を参照で持つため、root を生かし続けるホルダ ModelAnimator 経由で
+// 公開する (TJS: Threepp.ModelAnimator)。AnimationAction は mixer 内部所有なので
+// ホルダへのエイリアシング shared_ptr で「非所有・ホルダ延命」ラップして返す。
+// ======================================================================
+
+namespace {
+	struct ModelAnimator {
+		std::shared_ptr<Object3D>       root;    // アニメ対象 root (寿命保持)
+		std::shared_ptr<AnimationMixer> mixer;
+	};
+}
+
+// new Threepp.ModelAnimator(rootObject3D)。root は通常 model.getScene()。
+static tjs_error
+ModelAnimatorFactory(ThreeWrapper<ModelAnimator> **result, tjs_int numparams, tTJSVariant **params, iTJSDispatch2 *)
+{
+	auto h = std::make_shared<ModelAnimator>();
+	if (numparams >= 1) {
+		auto root = ThreeExtractObject3D(*params[0]);
+		if (root) {
+			h->root = root;
+			h->mixer = std::make_shared<AnimationMixer>(*root);
+		}
+	}
+	*result = new ThreeWrapper<ModelAnimator>(h);
+	return TJS_S_OK;
+}
+
+// AnimationAction は clipAction の戻り値としてコンバータ復路で TJS 化される。
+// AnimationAction はデフォルト構築不可なので、Factory は空ラッパ (obj=null) を作る。
+// (実体は復路の new WrapperT(src) 側で設定される。VRMFactory と同じ空実体の役割)
+static tjs_error
+AnimationActionFactory(ThreeWrapper<AnimationAction> **result, tjs_int, tTJSVariant **, iTJSDispatch2 *)
+{
+	*result = new ThreeWrapper<AnimationAction>();
+	return TJS_S_OK;
+}
+
+// AnimationAction* (mixer 内部所有) をホルダへエイリアスして非所有ラップ。
+// 返した wrapper が生きている間ホルダ (mixer+root) も生き、action は delete されない。
+static std::shared_ptr<AnimationAction> makeActionPtr(const std::shared_ptr<ModelAnimator> &h, AnimationAction *raw)
+{
+	if (!raw || !h) return nullptr;
+	return std::shared_ptr<AnimationAction>(h, raw);
+}
+
+// clipAction(model, index) -> AnimationAction (未再生。play() で開始)
+static std::shared_ptr<AnimationAction>
+ModelAnimator_clipAction(ThreeWrapper<ModelAnimator> *self, ThreeWrapper<GLTFModel> *model, int index)
+{
+	if (!self || !self->getObject() || !self->getObject()->mixer) return nullptr;
+	if (!model || !model->getObject()) return nullptr;
+	auto &anims = model->getObject()->result.animations;
+	if (index < 0 || index >= (int)anims.size() || !anims[index]) return nullptr;
+	AnimationAction *raw = self->getObject()->mixer->clipAction(anims[index]);
+	return makeActionPtr(self->getObject(), raw);
+}
+
+// play(model, index) -> AnimationAction。ループ設定 + reset + play まで一括 (定番用途)
+static std::shared_ptr<AnimationAction>
+ModelAnimator_play(ThreeWrapper<ModelAnimator> *self, ThreeWrapper<GLTFModel> *model, int index)
+{
+	auto a = ModelAnimator_clipAction(self, model, index);
+	if (a) { a->setLoop(Loop::Repeat, -1); a->reset(); a->play(); }
+	return a;
+}
+
+static void ModelAnimator_update(ThreeWrapper<ModelAnimator> *self, float dt)
+{ if (self && self->getObject() && self->getObject()->mixer) self->getObject()->mixer->update(dt); }
+static void ModelAnimator_stopAll(ThreeWrapper<ModelAnimator> *self)
+{ if (self && self->getObject() && self->getObject()->mixer) self->getObject()->mixer->stopAllAction(); }
+static void ModelAnimator_setTimeScale(ThreeWrapper<ModelAnimator> *self, float s)
+{ if (self && self->getObject() && self->getObject()->mixer) self->getObject()->mixer->timeScale = s; }
+static float ModelAnimator_getTimeScale(ThreeWrapper<ModelAnimator> *self)
+{ return (self && self->getObject() && self->getObject()->mixer) ? self->getObject()->mixer->timeScale : 1.f; }
+
+// ---- AnimationAction のチェーンメソッド (T& 戻り) は void proxy で公開 ----
+static void AnimationAction_play(ThreeWrapper<AnimationAction> *s)  { if (s && s->getObject()) s->getObject()->play(); }
+static void AnimationAction_stop(ThreeWrapper<AnimationAction> *s)  { if (s && s->getObject()) s->getObject()->stop(); }
+static void AnimationAction_reset(ThreeWrapper<AnimationAction> *s) { if (s && s->getObject()) s->getObject()->reset(); }
+static bool AnimationAction_isRunning(ThreeWrapper<AnimationAction> *s) { return (s && s->getObject()) ? s->getObject()->isRunning() : false; }
+static void AnimationAction_setLoop(ThreeWrapper<AnimationAction> *s, int mode, int reps) { if (s && s->getObject()) s->getObject()->setLoop((Loop)mode, reps); }
+static void AnimationAction_setEffectiveWeight(ThreeWrapper<AnimationAction> *s, float w) { if (s && s->getObject()) s->getObject()->setEffectiveWeight(w); }
+static void AnimationAction_setEffectiveTimeScale(ThreeWrapper<AnimationAction> *s, float t) { if (s && s->getObject()) s->getObject()->setEffectiveTimeScale(t); }
+static void AnimationAction_fadeIn(ThreeWrapper<AnimationAction> *s, float d)  { if (s && s->getObject()) s->getObject()->fadeIn(d); }
+static void AnimationAction_fadeOut(ThreeWrapper<AnimationAction> *s, float d) { if (s && s->getObject()) s->getObject()->fadeOut(d); }
+static void AnimationAction_setDuration(ThreeWrapper<AnimationAction> *s, float d) { if (s && s->getObject()) s->getObject()->setDuration(d); }
+static void AnimationAction_crossFadeTo(ThreeWrapper<AnimationAction> *s, ThreeWrapper<AnimationAction> *other, float dur, bool warp)
+{ if (s && s->getObject() && other && other->getObject()) s->getObject()->crossFadeTo(other->getObject().get(), dur, warp); }
+
+NCB_REGISTER_THREE_SUBCLASS(ModelAnimator)
+Factory(ModelAnimatorFactory);
+NCB_METHOD_PROXY(clipAction, ModelAnimator_clipAction);   // (model, index) -> AnimationAction
+NCB_METHOD_PROXY(play, ModelAnimator_play);               // (model, index) -> AnimationAction (loop+play)
+NCB_METHOD_PROXY(update, ModelAnimator_update);           // (dt秒) 毎フレーム呼ぶ
+NCB_METHOD_PROXY(stopAll, ModelAnimator_stopAll);
+NCB_METHOD_PROXY(setTimeScale, ModelAnimator_setTimeScale);
+NCB_METHOD_PROXY(getTimeScale, ModelAnimator_getTimeScale);
+};
+
+NCB_REGISTER_THREE_SUBCLASS(AnimationAction)
+Factory(AnimationActionFactory);                          // コンバータ復路(CreateAdaptor)用の空実体
+NCB_METHOD_PROXY(play, AnimationAction_play);
+NCB_METHOD_PROXY(stop, AnimationAction_stop);
+NCB_METHOD_PROXY(reset, AnimationAction_reset);
+NCB_METHOD_PROXY(isRunning, AnimationAction_isRunning);   // -> bool
+NCB_METHOD_PROXY(setLoop, AnimationAction_setLoop);       // (mode:Loop_*, reps) reps=-1で無限
+NCB_METHOD_PROXY(setEffectiveWeight, AnimationAction_setEffectiveWeight);
+NCB_METHOD_PROXY(setEffectiveTimeScale, AnimationAction_setEffectiveTimeScale);
+NCB_METHOD_PROXY(fadeIn, AnimationAction_fadeIn);         // (秒)
+NCB_METHOD_PROXY(fadeOut, AnimationAction_fadeOut);       // (秒)
+NCB_METHOD_PROXY(crossFadeTo, AnimationAction_crossFadeTo);// (other, dur, warp) でクロスフェード
+NCB_METHOD_PROXY(setDuration, AnimationAction_setDuration);
+};
+
+// ======================================================================
 // Texture
 // ======================================================================
 
@@ -5228,6 +5350,13 @@ NCB_REGISTER_CLASS(Threepp)
 	// ====== 汎用 glTF/GLB ======
 	THREE_SUBCLASS(GLTFLoader);
 	THREE_SUBCLASS(GLTFModel);
+
+	// ====== アニメーション (glTF 内蔵アニメ再生) ======
+	THREE_SUBCLASS(ModelAnimator);
+	THREE_SUBCLASS(AnimationAction);
+	Variant("Loop_Once",     (int)Loop::Once);      // 1回で停止
+	Variant("Loop_Repeat",   (int)Loop::Repeat);    // ループ (既定)
+	Variant("Loop_PingPong", (int)Loop::PingPong);  // 往復
 
 	// ====== Curves ======
 	THREE_SUBCLASS(LineCurve);

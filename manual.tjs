@@ -2633,6 +2633,68 @@ class Threepp {
 		 */
 	}
 
+	// ============================================================
+	// アニメーション再生 (glTF/GLB 内蔵アニメ)
+	//
+	// three.js の AnimationMixer 相当。GLTFModel が保持するアニメクリップを
+	// ModelAnimator で再生する。root には通常 model.getScene() を渡す。
+	// 毎フレーム update(dt秒) を呼ぶこと。
+	//
+	// ※ VRM のアニメ(.vrma)は別系統。VRM は VRMLoader/VRMAnimation を使う。
+	//   ModelAnimator は「VRM 以外の glTF/GLB モデル自身のアニメ」用。
+	// ============================================================
+
+	/**
+	 * モデルアニメーション再生機 (three.js の AnimationMixer 相当)
+	 * @description 対象 root (通常 model.getScene()) を内部で生かし続けるので、
+	 *   ModelAnimator を保持している間はモデルも解放されない。
+	 */
+	class ModelAnimator {
+		/**
+		 * @param root アニメ対象の Object3D (通常 model.getScene())
+		 */
+		function ModelAnimator(root);
+
+		function clipAction(model, index); // (GLTFModel, クリップindex) -> AnimationAction (未再生)
+		function play(model, index);       // (GLTFModel, index) -> AnimationAction (ループ設定+reset+play 一括。定番)
+		function update(dt);               // (経過秒) 毎フレーム呼んでアニメを進める
+		function stopAll();                // 全アクション停止
+		function setTimeScale(s);          // 全体の再生速度 (1.0=等速)
+		function getTimeScale();           // -> float
+		/* 使用例:
+		 *   var model = new Threepp.GLTFLoader().loadStorage("robot.glb");
+		 *   scene.add(model.getScene());
+		 *   var animator = new Threepp.ModelAnimator(model.getScene());
+		 *   animator.play(model, 0);           // 0 番目のクリップをループ再生
+		 *   // 毎フレーム:
+		 *   animator.update(dtSeconds);
+		 */
+	}
+
+	/**
+	 * 再生中の1アニメーション (ModelAnimator.clipAction/play が返す)
+	 * @description mixer が内部所有する。ModelAnimator が生きている間有効。
+	 *   チェーンメソッドは戻り値なし(void)として公開。
+	 */
+	class AnimationAction {
+		function play();                   // 再生開始
+		function stop();                   // 停止
+		function reset();                  // 先頭へ巻き戻し
+		function isRunning();              // -> bool
+		function setLoop(mode, reps);      // mode: Loop_* 定数, reps: 繰り返し回数(-1で無限)
+		function setEffectiveWeight(w);    // ブレンド重み (0..1)。複数アニメ合成時に使用
+		function setEffectiveTimeScale(t); // このアクションの再生速度
+		function fadeIn(sec);              // sec 秒でフェードイン
+		function fadeOut(sec);             // sec 秒でフェードアウト
+		function crossFadeTo(other, dur, warp); // 別 AnimationAction へ dur 秒でクロスフェード
+		function setDuration(sec);         // クリップの実効長を上書き
+	}
+
+	// Loop モード定数 (AnimationAction.setLoop に渡す)
+	const Loop_Once = 2200;     // 1回で停止
+	const Loop_Repeat = 2201;   // ループ (ModelAnimator.play の既定)
+	const Loop_PingPong = 2202; // 往復
+
 	// CurveType 定数
 	const CatmullRomCurve3_CurveType_centripetal = 0;
 	const CatmullRomCurve3_CurveType_chordal = 1;
