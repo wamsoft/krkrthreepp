@@ -2845,11 +2845,109 @@ NCB_REGISTER_SUBCLASS(FogExp2) {
 // Raycaster
 // ======================================================================
 
+// setFromCameraNDC(ndcX, ndcY, camera)
+//   ndcX/ndcY は正規化デバイス座標 [-1,1]（three.js の setFromCamera 相当）。
+static tjs_error TJS_INTF_METHOD
+Raycaster_setFromCameraNDC(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, Raycaster *self)
+{
+	if (!self) return TJS_E_NATIVECLASSCRASH;
+	if (numparams < 3) return TJS_E_BADPARAMCOUNT;
+	auto cam = ThreeExtractCamera(*param[2]);
+	if (!cam) return TJS_E_INVALIDPARAM;
+	float x = (float)(tjs_real)*param[0];
+	float y = (float)(tjs_real)*param[1];
+	self->setFromCamera(Vector2(x, y), *cam);
+	return TJS_S_OK;
+}
+
+// setFromCameraPixel(px, py, viewW, viewH, camera)
+//   ピクセル座標（左上原点、吉里吉里レイヤ座標）+ ビューポートサイズを NDC に変換して設定。
+//   マウス座標をそのまま渡せる利便版。
+static tjs_error TJS_INTF_METHOD
+Raycaster_setFromCameraPixel(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, Raycaster *self)
+{
+	if (!self) return TJS_E_NATIVECLASSCRASH;
+	if (numparams < 5) return TJS_E_BADPARAMCOUNT;
+	auto cam = ThreeExtractCamera(*param[4]);
+	if (!cam) return TJS_E_INVALIDPARAM;
+	float px = (float)(tjs_real)*param[0];
+	float py = (float)(tjs_real)*param[1];
+	float vw = (float)(tjs_real)*param[2];
+	float vh = (float)(tjs_real)*param[3];
+	if (vw <= 0.f || vh <= 0.f) return TJS_E_INVALIDPARAM;
+	float ndcX =  (px / vw) * 2.f - 1.f;
+	float ndcY = -(py / vh) * 2.f + 1.f;   // Y は上下反転
+	self->setFromCamera(Vector2(ndcX, ndcY), *cam);
+	return TJS_S_OK;
+}
+
+// intersectObjects(objectsArray[, recursive=true]) -> Array
+//   結果は距離昇順（[0] が最も手前）。各要素は Dictionary:
+//     object   … 引数配列で渡した「ヒットしたルートオブジェクト」（同一 TJS インスタンス）
+//     distance … レイ原点からの距離
+//     x, y, z  … ワールド座標のヒット点
+//   recursive=true のときヒットが子孫でも、引数配列内の祖先ルートに対応付けて返す。
+static tjs_error TJS_INTF_METHOD
+Raycaster_intersectObjects(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, Raycaster *self)
+{
+	if (!self) return TJS_E_NATIVECLASSCRASH;
+	if (numparams < 1) return TJS_E_BADPARAMCOUNT;
+	bool recursive = (numparams >= 2) ? ((tjs_int)*param[1] != 0) : true;
+
+	if (param[0]->Type() != tvtObject) return TJS_E_INVALIDPARAM;
+	ncbPropAccessor src(*param[0]);
+	tjs_int n = src.GetArrayCount();
+
+	// 引数配列から Object3D* を取り出す（shared_ptr で寿命保持）。
+	// 元の TJS variant も保持し、ヒット時にそのまま返す（同一インスタンス識別）。
+	std::vector<std::shared_ptr<Object3D>> roots;
+	std::vector<tTJSVariant>               rootVars;
+	std::vector<Object3D*>                 rawList;
+	roots.reserve(n); rootVars.reserve(n); rawList.reserve(n);
+	for (tjs_int i = 0; i < n; ++i) {
+		tTJSVariant v;
+		if (!src.checkVariant(i, v)) continue;
+		auto sp = ThreeExtractObject3D(v);
+		if (!sp) continue;
+		roots.push_back(sp);
+		rootVars.push_back(v);
+		rawList.push_back(sp.get());
+	}
+
+	ncbArrayAccessor out;
+	if (!rawList.empty()) {
+		auto hits = self->intersectObjects(rawList, recursive);
+		tjs_int idx = 0;
+		for (const auto &h : hits) {
+			// ヒットオブジェクト（子孫かもしれない）を祖先方向に辿り、
+			// 引数配列内のルートに対応付ける。
+			int ri = -1;
+			for (Object3D *o = h.object; o; o = o->parent) {
+				for (size_t k = 0; k < rawList.size(); ++k)
+					if (rawList[k] == o) { ri = (int)k; break; }
+				if (ri >= 0) break;
+			}
+			ncbDictionaryAccessor d;
+			if (ri >= 0) d.SetValue(TJS_W("object"), rootVars[ri]);
+			d.SetValue(TJS_W("distance"), (tjs_real)h.distance);
+			d.SetValue(TJS_W("x"), (tjs_real)h.point.x);
+			d.SetValue(TJS_W("y"), (tjs_real)h.point.y);
+			d.SetValue(TJS_W("z"), (tjs_real)h.point.z);
+			out.SetValue(idx++, (iTJSDispatch2*)d.GetDispatch());
+		}
+	}
+	if (result) *result = tTJSVariant((iTJSDispatch2*)out.GetDispatch(), (iTJSDispatch2*)out.GetDispatch());
+	return TJS_S_OK;
+}
+
 NCB_REGISTER_SUBCLASS(Raycaster) {
 	NCB_CONSTRUCTOR((const Vector3&, const Vector3&, float, float));
 	NCB_MEMBER_PROPERTY(nearPlane, float, nearPlane);
 	NCB_MEMBER_PROPERTY(farPlane, float, farPlane);
 	NCB_METHOD(set);
+	NCB_METHOD_RAW_CALLBACK(setFromCameraNDC,   Raycaster_setFromCameraNDC,   0);
+	NCB_METHOD_RAW_CALLBACK(setFromCameraPixel, Raycaster_setFromCameraPixel, 0);
+	NCB_METHOD_RAW_CALLBACK(intersectObjects,   Raycaster_intersectObjects,   0);
 };
 
 // ======================================================================

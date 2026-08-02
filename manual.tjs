@@ -1614,8 +1614,53 @@ class Threepp {
 		
 		property nearPlane; // ニアクリップ
 		property farPlane;  // ファークリップ
-		
-		function set(origin, direction); // 原点と方向を設定
+
+		function set(origin, direction); // 原点と方向を設定 (direction は正規化前提)
+
+		/**
+		 * カメラと正規化デバイス座標からレイを設定する (three.js の setFromCamera 相当)
+		 * @param ndcX 正規化デバイス座標 X [-1,1] (画面左端 -1, 右端 +1)
+		 * @param ndcY 正規化デバイス座標 Y [-1,1] (画面下端 -1, 上端 +1)
+		 * @param camera PerspectiveCamera または OrthographicCamera
+		 */
+		function setFromCameraNDC(ndcX, ndcY, camera);
+
+		/**
+		 * ピクセル座標(左上原点)+ビューポートサイズからレイを設定する利便版
+		 * @description マウス座標をそのまま渡せる。内部で NDC に変換する。
+		 * @param px ピクセル X (左上原点。吉里吉里レイヤ座標)
+		 * @param py ピクセル Y (左上原点。下方向が +)
+		 * @param viewW ビューポート幅 (描画レイヤの幅)
+		 * @param viewH ビューポート高さ (描画レイヤの高さ)
+		 * @param camera カメラ
+		 */
+		function setFromCameraPixel(px, py, viewW, viewH, camera);
+
+		/**
+		 * オブジェクト群との交差判定を行い、ヒットを距離の近い順の配列で返す
+		 * @param objects 判定対象の Object3D 配列 (例: [vrm.getScene(), boxMesh])
+		 * @param recursive 子孫まで再帰的に判定するか (省略時 true)
+		 * @return ヒット配列。各要素は辞書:
+		 *   object   … 引数配列で渡した「ヒットしたルートオブジェクト」(同一インスタンス)。
+		 *              recursive で子孫にヒットしても、対応する引数配列内の祖先を返す。
+		 *   distance … レイ原点からの距離
+		 *   x, y, z  … ワールド座標のヒット点
+		 *   配列は距離の昇順 (result[0] が最も手前)。ヒット無しは count=0。
+		 * @example
+		 *   // クリック位置(mx,my)でシーン内のオブジェクトを選ぶ
+		 *   var rc = new Threepp.Raycaster(new Threepp.Vector3(0,0,0),
+		 *                                  new Threepp.Vector3(0,0,1), 0, 100000);
+		 *   rc.setFromCameraPixel(mx, my, layerW, layerH, camera);
+		 *   var hits = rc.intersectObjects([vrm.getScene(), floorMesh], true);
+		 *   if (hits.count > 0) {
+		 *       var top = hits[0];
+		 *       if (top.object === vrm.getScene()) Debug.message("VRM をクリック");
+		 *       Debug.message("交点 = " + top.x + "," + top.y + "," + top.z);
+		 *   }
+		 * @note VRM 等のスキンメッシュは三角形単位で判定できるが、判定はバインド/
+		 *   現在のボーン姿勢に基づく近似。「どのキャラをクリックしたか」目的なら十分。
+		 */
+		function intersectObjects(objects, recursive=true);
 	}
 
 	// ============================================================
