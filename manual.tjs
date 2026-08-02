@@ -2591,6 +2591,48 @@ class Threepp {
 		function loadStorage(storageName); // 吉里吉里ストレージ名から (本番用) -> VRMAnimation
 	}
 
+	// ============================================================
+	// 汎用 glTF / GLB ローダ (VRM 以外のモデル用)
+	//
+	// VRM ではない一般の 3D モデル(小物/地形/建物/アニメ付きモデル)を読む。
+	// GLTFLoader.loadStorage() が返す GLTFModel の getScene() (Group) を
+	// Scene に add し、setPosition/setScale/setRotation で自然に配置する。
+	// ============================================================
+
+	/**
+	 * 汎用 glTF/GLB ローダ
+	 * @description VRM 拡張は解釈しない素の glTF として読む。GLB(自己完結) が確実。
+	 *   スキンメッシュはバインドポーズ(T ポーズ)で読まれる。ボーンアニメの再生には
+	 *   別途アニメ機構が要る(現状はモデル自身のアニメ再生は未対応。姿勢固定の小物/
+	 *   地形/建物や、TJS 側でトランスフォームを動かす用途向け)。
+	 */
+	class GLTFLoader {
+		function GLTFLoader();
+		function load(osPath);             // OS パスから (.gltf+外部リソースも解決可) -> GLTFModel
+		function loadStorage(storageName); // 吉里吉里ストレージ名から (GLB 推奨) -> GLTFModel
+	}
+
+	/**
+	 * ロード済み glTF モデル (GLTFLoader の戻り値)
+	 * @description モデルのシーングラフとアニメ情報を保持する。
+	 */
+	class GLTFModel {
+		function getScene();               // -> Threepp.Group (Scene に add して描画)
+		function getAnimationCount();      // -> int (内蔵アニメクリップ数)
+		function getAnimationName(i);      // (i) -> string (クリップ名)
+		function getAnimationDuration(i);  // (i) -> float (秒)
+		/* 使用例:
+		 *   var ld = new Threepp.GLTFLoader();
+		 *   var model = ld.loadStorage("prop.glb");
+		 *   if (model !== void) {
+		 *       var node = model.getScene();
+		 *       scene.add(node);
+		 *       node.setPosition(2, 0, -1);   // 3D 空間へ自然配置
+		 *       node.setScale(0.5, 0.5, 0.5);
+		 *   }
+		 */
+	}
+
 	// CurveType 定数
 	const CatmullRomCurve3_CurveType_centripetal = 0;
 	const CatmullRomCurve3_CurveType_chordal = 1;

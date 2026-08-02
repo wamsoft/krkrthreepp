@@ -52,6 +52,7 @@
 
 // Loaders
 #include <threepp/loaders/TextureLoader.hpp>
+#include <threepp/loaders/GLTFLoader.hpp>
 
 // Materials (additional)
 #include <threepp/materials/ShaderMaterial.hpp>
@@ -2687,6 +2688,93 @@ NCB_METHOD_PROXY(loadStorage, VRMAnimationLoader_loadStorage);  // (吉里吉里
 };
 
 // ======================================================================
+// 汎用 glTF / GLB ローダ (VRM 以外のモデル: 小物/地形/建物/アニメ付きモデル)
+// ======================================================================
+
+// GLTFResult を丸ごと保持するホルダ。getScene() で root Group を取り出して
+// シーンに add する。animations は将来 AnimationMixer 用に保持しておく。
+namespace { struct GLTFModel { threepp::GLTFResult result; }; }
+
+static tjs_error
+GLTFLoaderFactory(ThreeWrapper<GLTFLoader> **result, tjs_int, tTJSVariant **, iTJSDispatch2 *)
+{
+	*result = new ThreeWrapper<GLTFLoader>(std::make_shared<GLTFLoader>());
+	return TJS_S_OK;
+}
+
+// コンバータ復路(CreateAdaptor)用の空 Factory (VRMFactory と同じ理由)
+static tjs_error
+GLTFModelFactory(ThreeWrapper<GLTFModel> **result, tjs_int, tTJSVariant **, iTJSDispatch2 *)
+{
+	*result = new ThreeWrapper<GLTFModel>(std::make_shared<GLTFModel>());
+	return TJS_S_OK;
+}
+
+// 吉里吉里ストレージ名から glTF/GLB を読む (アーカイブ/暗号化ストレージ内でも可)。
+// GLB(自己完結) が確実。外部バッファ/画像を参照する .gltf は basePath 解決なしのため不可。
+static std::shared_ptr<GLTFModel> GLTFLoader_loadStorage(ThreeWrapper<GLTFLoader> *self, ttstr storageName)
+{
+	if (!self || !self->getObject()) return nullptr;
+	auto bytes = ThreeReadStorageBytes(storageName);
+	if (bytes.empty()) return nullptr;
+	auto res = self->getObject()->load(bytes.data(), bytes.size());
+	if (!res) return nullptr;
+	auto m = std::make_shared<GLTFModel>();
+	m->result = std::move(*res);
+	return m;
+}
+
+// OS パス版 (デバッグ/スタンドアロン用。.gltf + 外部リソースもこちらなら解決可能)
+static std::shared_ptr<GLTFModel> GLTFLoader_load(ThreeWrapper<GLTFLoader> *self, std::string path)
+{
+	if (!self || !self->getObject()) return nullptr;
+	auto res = self->getObject()->load(std::filesystem::path(path));
+	if (!res) return nullptr;
+	auto m = std::make_shared<GLTFModel>();
+	m->result = std::move(*res);
+	return m;
+}
+
+static std::shared_ptr<Group> GLTFModel_getScene(ThreeWrapper<GLTFModel> *self)
+{
+	return (self && self->getObject()) ? self->getObject()->result.scene : nullptr;
+}
+static int GLTFModel_getAnimationCount(ThreeWrapper<GLTFModel> *self)
+{
+	return (self && self->getObject()) ? (int)self->getObject()->result.animations.size() : 0;
+}
+static std::string GLTFModel_getAnimationName(ThreeWrapper<GLTFModel> *self, int i)
+{
+	if (self && self->getObject()) {
+		auto &anims = self->getObject()->result.animations;
+		if (i >= 0 && i < (int)anims.size() && anims[i]) return anims[i]->name();
+	}
+	return std::string();
+}
+static float GLTFModel_getAnimationDuration(ThreeWrapper<GLTFModel> *self, int i)
+{
+	if (self && self->getObject()) {
+		auto &anims = self->getObject()->result.animations;
+		if (i >= 0 && i < (int)anims.size() && anims[i]) return anims[i]->getDuration();
+	}
+	return 0.f;
+}
+
+NCB_REGISTER_THREE_SUBCLASS(GLTFLoader)
+Factory(GLTFLoaderFactory);
+NCB_METHOD_PROXY(load, GLTFLoader_load);              // (OSパス) デバッグ/スタンドアロン用
+NCB_METHOD_PROXY(loadStorage, GLTFLoader_loadStorage);// (吉里吉里ストレージ名) 本番用 -> GLTFModel
+};
+
+NCB_REGISTER_THREE_SUBCLASS(GLTFModel)
+Factory(GLTFModelFactory);                            // コンバータ復路(CreateAdaptor)用
+NCB_METHOD_PROXY(getScene, GLTFModel_getScene);       // -> Threepp.Group (シーンへ add)
+NCB_METHOD_PROXY(getAnimationCount, GLTFModel_getAnimationCount);
+NCB_METHOD_PROXY(getAnimationName, GLTFModel_getAnimationName);         // (i) -> string
+NCB_METHOD_PROXY(getAnimationDuration, GLTFModel_getAnimationDuration); // (i) -> float(sec)
+};
+
+// ======================================================================
 // Texture
 // ======================================================================
 
@@ -5136,6 +5224,10 @@ NCB_REGISTER_CLASS(Threepp)
 	THREE_SUBCLASS(VRM);
 	THREE_SUBCLASS(VRMAnimationLoader);
 	THREE_SUBCLASS(VRMAnimation);
+
+	// ====== 汎用 glTF/GLB ======
+	THREE_SUBCLASS(GLTFLoader);
+	THREE_SUBCLASS(GLTFModel);
 
 	// ====== Curves ======
 	THREE_SUBCLASS(LineCurve);
