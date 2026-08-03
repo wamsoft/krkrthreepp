@@ -572,6 +572,14 @@ class Threepp {
 		function translateOnAxis(axis, distance); // 任意軸移動
 		function updateMatrix();      // ローカル行列を更新
 		function updateMatrixWorld(force); // ワールド行列を更新
+
+		// --- ワールド変換の取得 (matrixWorld から算出) ---
+		// 返り値が最新であるには、直前に render するか updateMatrixWorld(true) を
+		// 呼んでおくこと(親をたどって world 行列を確定させる必要がある)。
+		// 立ち絵フレーミングで骨(head/hips 等)の world 座標を得るのに使う。
+		function getWorldPosition();   // -> Vector3 (ワールド座標)
+		function getWorldQuaternion(); // -> Quaternion (ワールド回転)
+		function getWorldScale();      // -> Vector3 (ワールドスケール)
 	}
 
 	/**

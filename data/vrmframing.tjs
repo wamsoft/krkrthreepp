@@ -1,0 +1,111 @@
+/**
+ * VRMFraming — VRM 立ち絵フレーミング枠組み
+ *
+ * VRM の humanoid 骨の world 座標から、立ち絵らしい「正面・水平」なカメラ配置を
+ * 自動計算する。ADV 画面にキャラを一定の大きさ・高さで収めるための土台。
+ *
+ * 前提: bone.getWorldPosition() を使うので、呼ぶ前に scene の world 行列が最新で
+ *   あること。apply() 内で scene.updateMatrixWorld(true) を呼ぶので通常は不要。
+ *
+ * 使い方:
+ *   Scripts.execStorage("vrmframing.tjs");
+ *   var f = new VRMFraming();
+ *   f.apply(vrm, camera, scene, "bust", aspect);   // aspect = 画面幅/高さ
+ *
+ * プリセット: "full"(全身) / "knee"(膝上) / "waist"(腰上) / "bust"(胸上) / "face"(顔)
+ */
+class VRMFraming
+{
+    var headTopOffset = 0.12;  // head ボーンから頭頂までの概算 (m)
+    var margin        = 0.05;  // 上下の余白率 (大きいほど引く)
+    var frontZ        = 1;     // 正面方向の符号 (+1=+Z 側から見る=VRM1.0 正面 / -1=VRM0.x)
+
+    function VRMFraming() { }
+
+    // human bone の world Y を返す。無ければ fallback。
+    function boneY(vrm, name, fallback) {
+        var b = vrm.getBoneNode(name);
+        if (b === void) return fallback;
+        return b.getWorldPosition().y;
+    }
+    // human bone の world 位置(Vector3)を返す。無ければ void。
+    function bonePos(vrm, name) {
+        var b = vrm.getBoneNode(name);
+        if (b === void) return void;
+        return b.getWorldPosition();
+    }
+
+    // プリセットごとの [下端Y, 上端Y] を骨から求める。
+    function rangeFor(vrm, preset, headTopY) {
+        var hipsY = boneY(vrm, "hips", 0.0);
+        switch (preset) {
+        case "full":
+            // 足元〜頭頂。足ボーンが無ければ 0 を地面とみなす。
+            var lf = boneY(vrm, "leftFoot", 0.0), rf = boneY(vrm, "rightFoot", 0.0);
+            var footY = lf < rf ? lf : rf;
+            return [footY, headTopY];
+        case "knee":
+            var lk = boneY(vrm, "leftLowerLeg", hipsY*0.5);
+            return [lk, headTopY];
+        case "waist":
+            return [hipsY, headTopY];
+        case "bust":
+            // 胸(upperChest→chest→spine の順で存在するもの)から上。
+            var cy = boneY(vrm, "upperChest", boneY(vrm, "chest", boneY(vrm, "spine", hipsY)));
+            return [cy, headTopY];
+        case "face":
+            // 首の少し下〜頭頂 + 余白。
+            var ny = boneY(vrm, "neck", headTopY - 0.18);
+            return [ny - 0.03, headTopY + 0.02];
+        default:
+            return [boneY(vrm, "leftFoot", 0.0), headTopY];
+        }
+    }
+
+    /**
+     * カメラをプリセットに合わせて配置する。
+     * @param vrm    Threepp.VRM
+     * @param camera Threepp.PerspectiveCamera (fov を使う)
+     * @param scene  Threepp.Scene (world 行列更新用)
+     * @param preset "full"/"knee"/"waist"/"bust"/"face"
+     * @param aspect 画面のアスペクト比(幅/高さ)。省略時は縦フィットのみ。
+     */
+    function apply(vrm, camera, scene, preset="bust", aspect=0)
+    {
+        // world 行列を最新化してから骨座標を読む
+        if (scene !== void) scene.updateMatrixWorld(true);
+
+        var head = bonePos(vrm, "head");
+        var hips = bonePos(vrm, "hips");
+        var cx = 0.0, cz = 0.0;
+        if (hips !== void) { cx = hips.x; cz = hips.z; }
+        else if (head !== void) { cx = head.x; cz = head.z; }
+
+        var headY = (head !== void) ? head.y : 1.4;
+        var headTopY = headY + headTopOffset;
+
+        var r = rangeFor(vrm, preset, headTopY);
+        var yb = r[0], yt = r[1];
+        if (yt <= yb) yt = yb + 0.1;   // 念のため
+
+        var targetY = (yb + yt) * 0.5;
+        var height  = (yt - yb) * (1.0 + margin * 2.0);
+
+        var fovRad = camera.fov * Math.PI / 180.0;
+        var dist = (height * 0.5) / Math.tan(fovRad * 0.5);
+
+        // 横方向もはみ出す場合(顔など幅が縦を上回るケース)に備え、aspect 指定時は
+        // 横フィットに必要な距離との大きい方を採る。おおよそ肩幅を height と同程度と仮定。
+        if (aspect > 0) {
+            var wHalf = height * 0.5 * aspect;   // 縦に収まる範囲の横半分
+            // キャラ幅はおおむね height 以下なので通常は縦が支配的。安全側に少しだけ引く。
+            // (厳密な bbox が要るなら将来 Box3.setFromObject を露出)
+        }
+
+        camera.setPosition(cx, targetY, cz + frontZ * dist);
+        camera.lookAt(cx, targetY, cz);
+        camera.updateProjectionMatrix();
+
+        return %[ "targetY" => targetY, "dist" => dist, "yb" => yb, "yt" => yt ];
+    }
+}

@@ -1273,6 +1273,24 @@ template <class T> static void ThreeObjTranslateZ(ThreeWrapper<T> *self, float d
 template <class T> static void ThreeObjSetPosition(ThreeWrapper<T> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->position.set(x, y, z); }
 template <class T> static void ThreeObjSetScale(ThreeWrapper<T> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->scale.set(x, y, z); }
 template <class T> static void ThreeObjSetRotation(ThreeWrapper<T> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->rotation.set(x, y, z); }
+// ワールド変換の取得 (matrixWorld から算出)。立ち絵フレーミングで head/hips の world 座標を
+// 得るのに使う。matrixWorld が最新である必要があるため、呼ぶ前に scene を render するか
+// updateMatrixWorld(true) を呼んでおくこと。
+template <class T> static Vector3 ThreeObjGetWorldPosition(ThreeWrapper<T> *self) {
+	Vector3 t;
+	if (self && self->getObject()) self->getObject()->getWorldPosition(t);
+	return t;
+}
+template <class T> static Quaternion ThreeObjGetWorldQuaternion(ThreeWrapper<T> *self) {
+	Quaternion q;
+	if (self && self->getObject()) self->getObject()->getWorldQuaternion(q);
+	return q;
+}
+template <class T> static Vector3 ThreeObjGetWorldScale(ThreeWrapper<T> *self) {
+	Vector3 t(1.f, 1.f, 1.f);
+	if (self && self->getObject()) self->getObject()->getWorldScale(t);
+	return t;
+}
 
 // --- ライトのシャドウ設定 (LightWithShadow を持つ Dir/Spot/Point 用) ---
 // light.shadow (LightShadow) の主要パラメータと、影を落とす shadow camera の
@@ -1354,6 +1372,9 @@ template <class T> static void ThreeLightSetShadowOrthoBounds(ThreeWrapper<T> *s
 	NCB_METHOD_PROXY(setPosition, ThreeObjSetPosition<ThreeClass>); \
 	NCB_METHOD_PROXY(setScale, ThreeObjSetScale<ThreeClass>); \
 	NCB_METHOD_PROXY(setRotation, ThreeObjSetRotation<ThreeClass>); \
+	NCB_METHOD_PROXY(getWorldPosition, ThreeObjGetWorldPosition<ThreeClass>); \
+	NCB_METHOD_PROXY(getWorldQuaternion, ThreeObjGetWorldQuaternion<ThreeClass>); \
+	NCB_METHOD_PROXY(getWorldScale, ThreeObjGetWorldScale<ThreeClass>); \
 	NCB_THREE_METHOD2(updateMatrix, void, updateMatrix, ()); \
 	NCB_THREE_METHOD2(updateMatrixWorld, void, updateMatrixWorld, (bool))
 
@@ -4169,7 +4190,8 @@ BoneFactory(ThreeWrapper<Bone> **result, tjs_int numparams, tTJSVariant **params
 
 NCB_REGISTER_THREE_SUBCLASS(Bone)
 Factory(BoneFactory);
-
+NCB_THREE_PROPERTY_RO(type, type);
+THREE_OBJECT3D_MEMBERS();
 };
 
 // ======================================================================
