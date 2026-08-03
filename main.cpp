@@ -916,8 +916,25 @@ template <> struct ThreeBaseOf<Mesh>               { typedef Object3D Type; };
 // Material 系 (threepp の Material は仮想基底。伝播は暗黙アップキャストで対応)
 template <> struct ThreeBaseOf<MeshBasicMaterial>    { typedef Material Type; };
 template <> struct ThreeBaseOf<MeshStandardMaterial> { typedef Material Type; };
-// BufferGeometry 系
-template <> struct ThreeBaseOf<BoxGeometry>        { typedef BufferGeometry Type; };
+// BufferGeometry 系 (全ジオメトリを is-a 化しないと Mesh() の geometry 抽出で
+// GetNativeInstance<ThreeWrapper<BufferGeometry>> が null になり空メッシュになる)
+template <> struct ThreeBaseOf<BoxGeometry>         { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<SphereGeometry>      { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<PlaneGeometry>       { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<CylinderGeometry>    { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<ConeGeometry>        { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<TorusGeometry>       { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<TorusKnotGeometry>   { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<CircleGeometry>      { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<RingGeometry>        { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<IcosahedronGeometry> { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<OctahedronGeometry>  { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<CapsuleGeometry>     { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<LatheGeometry>       { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<EdgesGeometry>       { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<WireframeGeometry>   { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<ShapeGeometry>       { typedef BufferGeometry Type; };
+template <> struct ThreeBaseOf<ExtrudeGeometry>     { typedef BufferGeometry Type; };
 // Texture 系 (Texture がルート)
 template <> struct ThreeBaseOf<DataTexture>        { typedef Texture Type; };
 
@@ -1257,6 +1274,59 @@ template <class T> static void ThreeObjSetPosition(ThreeWrapper<T> *self, float 
 template <class T> static void ThreeObjSetScale(ThreeWrapper<T> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->scale.set(x, y, z); }
 template <class T> static void ThreeObjSetRotation(ThreeWrapper<T> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->rotation.set(x, y, z); }
 
+// --- ライトのシャドウ設定 (LightWithShadow を持つ Dir/Spot/Point 用) ---
+// light.shadow (LightShadow) の主要パラメータと、影を落とす shadow camera の
+// 範囲を proxy で公開する。ライト自身の castShadow は THREE_OBJECT3D_MEMBERS の
+// castShadow プロパティで別途 true にする。
+template <class T> static threepp::LightShadow *ThreeLightShadow(ThreeWrapper<T> *self)
+{
+	if (!self || !self->getObject()) return nullptr;
+	auto *lws = static_cast<threepp::LightWithShadow *>(self->getObject().get());
+	return lws ? lws->shadow.get() : nullptr;
+}
+template <class T> static void ThreeLightSetShadowMapSize(ThreeWrapper<T> *self, int w, int h)
+{
+	if (auto *s = ThreeLightShadow(self)) s->mapSize.set((float)w, (float)h);
+}
+template <class T> static void ThreeLightSetShadowBias(ThreeWrapper<T> *self, float b)
+{
+	if (auto *s = ThreeLightShadow(self)) s->bias = b;
+}
+template <class T> static void ThreeLightSetShadowNormalBias(ThreeWrapper<T> *self, float b)
+{
+	if (auto *s = ThreeLightShadow(self)) s->normalBias = b;
+}
+template <class T> static void ThreeLightSetShadowRadius(ThreeWrapper<T> *self, float r)
+{
+	if (auto *s = ThreeLightShadow(self)) s->radius = r;
+}
+// 影用カメラの near/far (Dir=正投影, Spot/Point=透視 共通)。
+template <class T> static void ThreeLightSetShadowNearFar(ThreeWrapper<T> *self, float n, float f)
+{
+	if (auto *s = ThreeLightShadow(self)) {
+		if (s->camera) { s->camera->nearPlane = n; s->camera->farPlane = f; s->camera->updateProjectionMatrix(); }
+	}
+}
+// 平行光源 (DirectionalLight) の影を落とす正投影カメラの範囲。
+template <class T> static void ThreeLightSetShadowOrthoBounds(ThreeWrapper<T> *self, float left, float right, float top, float bottom)
+{
+	if (auto *s = ThreeLightShadow(self)) {
+		if (auto *oc = dynamic_cast<threepp::OrthographicCamera *>(s->camera.get())) {
+			oc->left = left; oc->right = right; oc->top = top; oc->bottom = bottom;
+			oc->updateProjectionMatrix();
+		}
+	}
+}
+
+// LightWithShadow を持つライト (Dir/Spot/Point) の登録ブロックに書くシャドウ設定群。
+#define THREE_LIGHT_SHADOW_MEMBERS() \
+	NCB_METHOD_PROXY(setShadowMapSize,     ThreeLightSetShadowMapSize<ThreeClass>); \
+	NCB_METHOD_PROXY(setShadowBias,        ThreeLightSetShadowBias<ThreeClass>); \
+	NCB_METHOD_PROXY(setShadowNormalBias,  ThreeLightSetShadowNormalBias<ThreeClass>); \
+	NCB_METHOD_PROXY(setShadowRadius,      ThreeLightSetShadowRadius<ThreeClass>); \
+	NCB_METHOD_PROXY(setShadowNearFar,     ThreeLightSetShadowNearFar<ThreeClass>); \
+	NCB_METHOD_PROXY(setShadowOrthoBounds, ThreeLightSetShadowOrthoBounds<ThreeClass>)
+
 // 各 Object3D 派生クラスの登録ブロックに書く共通メンバ群。
 // type は各クラスが独自の RO プロパティを持つため含めない (衝突回避)。
 #define THREE_OBJECT3D_MEMBERS() \
@@ -1497,6 +1567,7 @@ Factory(DirectionalLightFactory);
 NCB_THREE_PROPERTY_RO(type, type);
 NCB_THREE_METHOD(dispose);
 THREE_OBJECT3D_MEMBERS();
+THREE_LIGHT_SHADOW_MEMBERS();
 };
 
 // ======================================================================
@@ -1533,6 +1604,8 @@ NCB_THREE_MEMBER_PROPERTY(decay, float, decay);
 NCB_THREE_METHOD(getPower);
 NCB_THREE_METHOD(setPower);
 NCB_THREE_METHOD(dispose);
+THREE_OBJECT3D_MEMBERS();
+THREE_LIGHT_SHADOW_MEMBERS();
 };
 
 // ======================================================================
@@ -1575,6 +1648,8 @@ NCB_THREE_MEMBER_PROPERTY(decay, float, decay);
 NCB_THREE_METHOD(getPower);
 NCB_THREE_METHOD(setPower);
 NCB_THREE_METHOD(dispose);
+THREE_OBJECT3D_MEMBERS();
+THREE_LIGHT_SHADOW_MEMBERS();
 };
 
 // ======================================================================
@@ -2464,6 +2539,26 @@ static void GLRendererSetClearColor(ThreeWrapper<GLRenderer> *self, unsigned int
 
 static void GLRenderer_setSize(ThreeWrapper<GLRenderer> *self, int w, int h) { if (self && self->getObject()) self->getObject()->setSize({w, h}); }
 
+// --- シャドウマップ設定 (renderer.shadowMap は GLShadowMap : ShadowMapConfig) ---
+// GLES/捕捉FBO 経路でも動作: シャドウパスは自前 RenderTarget(FBO)へ深度をパッキング描画し、
+// 終了時に render target を元(=capture の _defaultFramebuffer)へ復帰する。
+static void GLRenderer_setShadowMapEnabled(ThreeWrapper<GLRenderer> *self, bool v)
+{
+	if (self && self->getObject()) self->getObject()->shadowMap().enabled = v;
+}
+static void GLRenderer_setShadowMapType(ThreeWrapper<GLRenderer> *self, int type)
+{
+	if (self && self->getObject()) self->getObject()->shadowMap().type = (ShadowMap)type;
+}
+static void GLRenderer_setShadowMapAutoUpdate(ThreeWrapper<GLRenderer> *self, bool v)
+{
+	if (self && self->getObject()) self->getObject()->shadowMap().autoUpdate = v;
+}
+static void GLRenderer_setShadowMapNeedsUpdate(ThreeWrapper<GLRenderer> *self, bool v)
+{
+	if (self && self->getObject()) self->getObject()->shadowMap().needsUpdate = v;
+}
+
 // --- ホスト GL コンテキストでのフレーム処理 (siblings の onBeginScene/onEndScene 相当) ---
 // adaptor.capture() のコールバック内 (GL コンテキストが current な状態) で呼ぶ想定。
 //   device.onBeginScene(w, h);
@@ -2517,6 +2612,10 @@ NCB_METHOD_PROXY(render, GLRendererRender);
 NCB_METHOD_PROXY(setClearColor, GLRendererSetClearColor);
 NCB_METHOD_PROXY(onBeginScene, GLRendererOnBeginScene);
 NCB_METHOD_PROXY(onEndScene, GLRendererOnEndScene);
+NCB_METHOD_PROXY(setShadowMapEnabled,    GLRenderer_setShadowMapEnabled);
+NCB_METHOD_PROXY(setShadowMapType,       GLRenderer_setShadowMapType);
+NCB_METHOD_PROXY(setShadowMapAutoUpdate, GLRenderer_setShadowMapAutoUpdate);
+NCB_METHOD_PROXY(setShadowMapNeedsUpdate,GLRenderer_setShadowMapNeedsUpdate);
 };
 
 // ======================================================================

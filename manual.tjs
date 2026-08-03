@@ -771,9 +771,20 @@ class Threepp {
 		 * @param intensity 光の強度
 		 */
 		function DirectionalLight(color=0xffffff, intensity=void);
-		
+
 		property type;  // "DirectionalLight"（読み取り専用）
-		
+
+		// --- 影(ShadowMap) ---
+		// このライトで影を落とすには castShadow=true にし、
+		// renderer.setShadowMapEnabled(true) と、影を受ける側の receiveShadow=true が必要。
+		// 平行光源の影は正投影カメラで焼くので、シーンを覆う範囲を setShadowOrthoBounds で指定する。
+		function setShadowMapSize(w, h);        // シャドウマップ解像度 (既定 2048x2048)
+		function setShadowBias(bias);           // 影のアクネ対策バイアス (例 -0.0005)
+		function setShadowNormalBias(bias);     // 法線方向バイアス
+		function setShadowRadius(radius);       // ソフトシャドウ半径 (PCF)
+		function setShadowNearFar(near, far);   // 影用カメラの near/far
+		function setShadowOrthoBounds(left, right, top, bottom); // 平行光源の影範囲(正投影)
+
 		function dispose(); // リソースを解放
 	}
 
@@ -797,6 +808,14 @@ class Threepp {
 		
 		function getPower(); // 光のパワーを取得
 		function setPower(power); // 光のパワーを設定
+
+		// --- 影(ShadowMap) --- ※ setShadowOrthoBounds は平行光源専用(点光源では無効)
+		function setShadowMapSize(w, h);
+		function setShadowBias(bias);
+		function setShadowNormalBias(bias);
+		function setShadowRadius(radius);
+		function setShadowNearFar(near, far);
+
 		function dispose(); // リソースを解放
 	}
 
@@ -821,9 +840,17 @@ class Threepp {
 		property angle;    // 照射角度
 		property penumbra; // ペナンブラ
 		property decay;    // 減衰率
-		
+
 		function getPower(); // 光のパワーを取得
 		function setPower(power); // 光のパワーを設定
+
+		// --- 影(ShadowMap) --- スポットライトの影は透視カメラで焼く(角度は angle 依存)
+		function setShadowMapSize(w, h);
+		function setShadowBias(bias);
+		function setShadowNormalBias(bias);
+		function setShadowRadius(radius);
+		function setShadowNearFar(near, far);
+
 		function dispose(); // リソースを解放
 	}
 
@@ -1748,6 +1775,26 @@ class Threepp {
 		 */
 		function setSampleCount(count);
 		function setScissorTest(enabled); // シザーテストの有効/無効
+
+		/**
+		 * 影(ShadowMap)の有効/無効
+		 * @description true でシャドウマップ描画を有効化する。別途、影を落とすライトの
+		 *   castShadow=true・影を受けるメッシュの receiveShadow=true・影を落とすメッシュの
+		 *   castShadow=true が必要。GLES/捕捉FBO 経路でも動作する(影用 FBO へ深度を焼き、
+		 *   本描画時に元の描画先へ復帰する)。
+		 *   使用例:
+		 *     renderer.setShadowMapEnabled(true);
+		 *     var dir = new Threepp.DirectionalLight(0xffffff, 2.0);
+		 *     dir.setPosition(3, 5, 2); dir.castShadow = true;
+		 *     dir.setShadowOrthoBounds(-6, 6, 6, -6); dir.setShadowNearFar(0.5, 30);
+		 *     scene.add(dir);
+		 *     floor.receiveShadow = true; box.castShadow = true;
+		 */
+		function setShadowMapEnabled(enabled);
+		function setShadowMapType(type);        // 0=Basic,1=PCF(既定),2=PCFSoft,3=VSM 相当
+		function setShadowMapAutoUpdate(enabled);   // 毎フレーム影を更新(既定 true)
+		function setShadowMapNeedsUpdate(enabled);  // autoUpdate=false 時に1回だけ更新
+
 		function clear(color=true, depth=true, stencil=true); // バッファをクリア
 		function clearColor();     // カラーバッファをクリア
 		function clearDepth();     // 深度バッファをクリア
