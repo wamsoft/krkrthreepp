@@ -108,6 +108,16 @@ class ControlPanel extends Dialog
         kids.add(btn("m_stop", "停止"));
         return kids;
     }
+    // シーンボタン(id=sc_*)。末尾に 保存/復元。
+    function sceneBtns()
+    {
+        var kids = [];
+        var sc = app.stageDef.scenes;
+        if (sc !== void) for (var i = 0; i < sc.count; i++) kids.add(btn("sc_" + sc[i].id, sc[i].name));
+        kids.add(btn("state_save", "保存"));
+        kids.add(btn("state_load", "復元"));
+        return kids;
+    }
     function camBtns()
     {
         return [ btn("cam_left","◀"), btn("cam_right","▶"), btn("cam_up","▲"),
@@ -144,6 +154,7 @@ class ControlPanel extends Dialog
                               btn("f_bust","胸上"), btn("f_face","顔") ]),
             wrow("表情:",    exprBtns()),
             wrow("モーション:", motionBtns()),
+            wrow("シーン:",   sceneBtns()),
             wrow("カメラ:",  camBtns()),
             wrow("切替:",    togglesRow()),
             wrow("モード:",  modeRadios())
@@ -157,6 +168,7 @@ class ControlPanel extends Dialog
             wrow("対象:",   targetRadios()),
             wrow("表情:",   exprBtns()),
             wrow("モーション:", motionBtns()),
+            wrow("シーン:",   sceneBtns()),
             wrow("位置:",   [ btn("pos_left","← 左"), btn("pos_right","右 →"), btn("pos_fwd","前(近)"),
                             btn("pos_back","後(遠)"), btn("pos_reset","並べ直す") ]),
             wrow("カメラ:", camBtns()),
@@ -174,7 +186,7 @@ class ControlPanel extends Dialog
     {
         var rows = (app.mode == "space") ? spaceRows() : tachieRows();
         return %[
-            "size"       => [1260, 560],
+            "size"       => [1260, 640],
             "align"      => "bottom",
             "margin"     => 12,
             "background" => [18, 20, 30, 235],
@@ -251,10 +263,13 @@ class ADVSample extends Window
     var gazeActive = false;
     var gazeX = SCREEN_W / 2, gazeY = SCREEN_H / 2;
 
-    // --- 舞台メタ定義 / VRMA モーション ---
+    // --- 舞台メタ定義 / VRMA モーション / シーン ---
     var stageDef;      // stage.tjs の global.stageDef
     var motionCache;   // file -> Threepp.VRMAnimation
     var motionBtnMap;  // パネル id("m_*") -> motion 定義
+    var motionById;    // motion id -> 定義
+    var sceneBtnMap;   // パネル id("sc_*") -> scene 定義
+    var savedState;    // セーブした状態(復元用)
 
     function ADVSample()
     {
@@ -538,8 +553,12 @@ class ADVSample extends Window
     function buildMotionMap()
     {
         motionBtnMap = %[];
+        motionById = %[];
         var ms = stageDef.motions;
-        for (var i = 0; i < ms.count; i++) motionBtnMap["m_" + ms[i].id] = ms[i];
+        for (var i = 0; i < ms.count; i++) { motionBtnMap["m_" + ms[i].id] = ms[i]; motionById[ms[i].id] = ms[i]; }
+        sceneBtnMap = %[];
+        var sc = stageDef.scenes;
+        if (sc !== void) for (var i = 0; i < sc.count; i++) sceneBtnMap["sc_" + sc[i].id] = sc[i];
     }
     // VRMA を読み込んでキャッシュ(初回のみ)
     function loadMotion(file)
@@ -556,13 +575,58 @@ class ADVSample extends Window
         var anim = loadMotion(def.file);
         if (anim === void) return;
         var list = targetList();
-        for (var i = 0; i < list.count; i++) list[i].playMotion(anim, def.loop);
+        for (var i = 0; i < list.count; i++) list[i].playMotion(anim, def.loop, def.id);
     }
     function stopMotionOnTargets()
     {
         var list = targetList();
         for (var i = 0; i < list.count; i++) list[i].stopMotion();
     }
+    // モーション id を指定キャラへ再生("none"/"" は停止)
+    function playMotionForChar(t, mid)
+    {
+        if (mid == "none" || mid == "") { t.stopMotion(); return; }
+        var def = motionById[mid];
+        if (def === void) return;
+        var anim = loadMotion(def.file);
+        if (anim !== void) t.playMotion(anim, def.loop, def.id);
+    }
+
+    // --- シーン(宣言的な複数キャラ状態) -----------------------------------
+    // 1キャラ分の状態を適用(省略項目は変更しない)
+    function applyCharState(t, st)
+    {
+        if (st.expr   !== void) t.setEmotion(st.expr);
+        if (st.motion !== void) playMotionForChar(t, st.motion);
+        if (st.gaze   !== void) t.setLookAtCamera(st.gaze == "camera");
+    }
+    // シーン定義(chars: id->state)を全キャラへ適用
+    function applyScene(def)
+    {
+        var cs = def.chars;
+        if (cs === void) return;
+        var chars = stageDef.characters;
+        for (var i = 0; i < chars.count && i < tachies.count; i++) {
+            var st = cs[chars[i].id];
+            if (st !== void) applyCharState(tachies[i], st);
+        }
+    }
+    // 現在状態を dict へ(セーブ用)
+    function captureState()
+    {
+        var chars = stageDef.characters;
+        var cs = %[];
+        for (var i = 0; i < chars.count && i < tachies.count; i++) {
+            var t = tachies[i];
+            cs[chars[i].id] = %[ "expr"   => (t.emotion  == "" ? "neutral" : t.emotion),
+                                 "motion" => (t.motionId == "" ? "none"    : t.motionId),
+                                 "gaze"   => (t.lookAtCamera ? "camera" : "off") ];
+        }
+        return %[ "chars" => cs ];
+    }
+    function applyState(st) { if (st !== void) applyScene(st); }
+    function saveSlot() { savedState = captureState(); }
+    function loadSlot() { applyState(savedState); }
 
     // --- 視線ターゲット ---------------------------------------------------
     function buildGazeLayer()
@@ -756,6 +820,10 @@ class ADVSample extends Window
         // モーションボタン(id=m_*)
         if (motionBtnMap !== void && motionBtnMap[id] !== void) { playMotionOnTargets(motionBtnMap[id]); return; }
         if (id == "m_stop") { stopMotionOnTargets(); return; }
+        // シーンボタン(id=sc_*) / 状態のセーブ・復元
+        if (sceneBtnMap !== void && sceneBtnMap[id] !== void) { applyScene(sceneBtnMap[id]); return; }
+        if (id == "state_save") { saveSlot(); return; }
+        if (id == "state_load") { loadSlot(); return; }
 
         switch (id) {
         case "t_left":  target = 0; break;

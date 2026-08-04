@@ -20,5 +20,20 @@ global.stageDef = %[
         %[ "id" => "idle",   "name" => "待機",   "file" => "anim.vrma",       "loop" => 1 ],
         %[ "id" => "behind", "name" => "後ろ手", "file" => "pose_behind.vrma", "loop" => 0 ],
         %[ "id" => "left",   "name" => "左向き", "file" => "pose_left.vrma",   "loop" => 0 ]
+    ],
+
+    // 名前付きシーン(宣言的に各キャラの表情/モーション/視線を一括指定)。
+    // chars のキーは characters の id。各値: expr(表情名/"neutral") / motion(モーションid/"none") /
+    // gaze("camera"=カメラ目線ON / "off")。省略した項目は変更しない。
+    "scenes" => [
+        %[ "id" => "reset", "name" => "標準",
+           "chars" => %[ "left"  => %[ "expr"=>"neutral", "motion"=>"none", "gaze"=>"off" ],
+                         "right" => %[ "expr"=>"neutral", "motion"=>"none", "gaze"=>"off" ] ] ],
+        %[ "id" => "talk", "name" => "会話",
+           "chars" => %[ "left"  => %[ "expr"=>"happy",   "motion"=>"idle", "gaze"=>"camera" ],
+                         "right" => %[ "expr"=>"relaxed", "motion"=>"left" ] ] ],
+        %[ "id" => "surprise", "name" => "驚き",
+           "chars" => %[ "left"  => %[ "expr"=>"surprised", "motion"=>"behind" ],
+                         "right" => %[ "expr"=>"surprised", "motion"=>"none" ] ] ]
     ]
 ];
