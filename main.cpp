@@ -2742,6 +2742,30 @@ static std::shared_ptr<Object3D> VRM_getNormalizedBoneNode(ThreeWrapper<VRM> *se
 static void VRM_resetNormalizedPose(ThreeWrapper<VRM> *self) { if (self && self->getObject()) self->getObject()->humanoid.resetNormalizedPose(); }
 
 // VRMA (Phase1)。applyAnimation で時刻 time の姿勢を正規化ボーンへ書き込み、update() で raw へ。
+// ポーズ(正規化ボーン回転集合)を適用する。pose = [name,qx,qy,qz,qw, …] のフラット配列。
+// blend<1 で現在姿勢から slerp(クロスフェード)。ポーズ列→モーション合成の基盤。
+static void VRM_applyPose(ThreeWrapper<VRM> *self, tTJSVariant poseV, float blend)
+{
+	if (!self || !self->getObject() || poseV.Type() != tvtObject) return;
+	iTJSDispatch2 *arr = poseV.AsObjectNoAddRef();
+	if (!arr) return;
+	ncbPropAccessor a(arr);
+	tjs_int count = a.GetCount();
+	auto &vrm = *self->getObject();
+	for (tjs_int i = 0; i + 4 < count; i += 5) {
+		ttstr nmw = a.getStrValue(i);
+		std::string nm;
+		for (const tjs_char *ws = nmw.c_str(); ws && *ws; ++ws) nm += (*ws < 128) ? (char)*ws : '?';
+		auto node = vrm.humanoid.getNormalizedBoneNode(nm);
+		if (!node) continue;
+		float qx = (float)a.getRealValue(i + 1), qy = (float)a.getRealValue(i + 2);
+		float qz = (float)a.getRealValue(i + 3), qw = (float)a.getRealValue(i + 4);
+		threepp::Quaternion tgt; tgt.set(qx, qy, qz, qw);
+		if (blend >= 1.f) node->quaternion.copy(tgt);
+		else node->quaternion.slerp(tgt, blend);
+	}
+}
+
 // クロスフェード版: blend<1 で現在姿勢から time の姿勢へ補間。
 static void VRM_applyAnimationBlend(ThreeWrapper<VRM> *self, ThreeWrapper<VRMAnimation> *anim, float time, float blend)
 {
@@ -2822,6 +2846,7 @@ NCB_METHOD_PROXY(getNormalizedBoneNode, VRM_getNormalizedBoneNode);// (name) -> 
 NCB_METHOD_PROXY(resetNormalizedPose, VRM_resetNormalizedPose);
 NCB_METHOD_PROXY(applyAnimation, VRM_applyAnimation);// (vrmAnimation, time)
 NCB_METHOD_PROXY(applyAnimationBlend, VRM_applyAnimationBlend);// (vrmAnimation, time, blend) クロスフェード
+NCB_METHOD_PROXY(applyPose, VRM_applyPose);          // ([name,qx,qy,qz,qw,…], blend) ポーズ適用
 NCB_METHOD_PROXY(getMetaName, VRM_getMetaName);      // -> string
 NCB_METHOD_PROXY(getMetaVersion, VRM_getMetaVersion);
 NCB_METHOD_PROXY(getMetaLicenseUrl, VRM_getMetaLicenseUrl);

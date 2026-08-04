@@ -161,6 +161,8 @@ class ControlPanel extends Dialog
                               btn("f_bust","胸上"), btn("f_face","顔") ]),
             wrow("表情:",    exprBtns()),
             wrow("モーション:", motionBtns()),
+            wrow("ポーズ:",   [ btn("pose_cap","採取"), btn("pose_apply","適用"), btn("pose_clear","素立ち"),
+                              btn("pose_save","保存"), btn("pose_load","読込") ]),
             wrow("シーン:",   sceneBtns()),
             wrow("演出:",     [ btn("fx_fadein","フェードイン"), btn("fx_fadeout","フェードアウト"),
                               btn("fx_slidein","スライド登場") ]),
@@ -177,6 +179,8 @@ class ControlPanel extends Dialog
             wrow("対象:",   targetRadios()),
             wrow("表情:",   exprBtns()),
             wrow("モーション:", motionBtns()),
+            wrow("ポーズ:",   [ btn("pose_cap","採取"), btn("pose_apply","適用"), btn("pose_clear","素立ち"),
+                              btn("pose_save","保存"), btn("pose_load","読込") ]),
             wrow("シーン:",   sceneBtns()),
             wrow("位置:",   [ btn("pos_left","← 左"), btn("pos_right","右 →"), btn("pos_fwd","前(近)"),
                             btn("pos_back","後(遠)"), btn("pos_reset","並べ直す") ]),
@@ -279,6 +283,7 @@ class ADVSample extends Window
     var motionById;    // motion id -> 定義
     var sceneBtnMap;   // パネル id("sc_*") -> scene 定義
     var savedState;    // セーブした状態(復元用)
+    var poseSlots;     // ポーズ名 -> [name,qx,qy,qz,qw,…]。"cap"=採取スロット
 
     function ADVSample()
     {
@@ -587,6 +592,43 @@ class ADVSample extends Window
         exprCompositeById = %[];
         var ex = stageDef.expressions;
         if (ex !== void) for (var i = 0; i < ex.count; i++) exprCompositeById[ex[i].id] = ex[i];
+        poseSlots = %[];
+        var ps = stageDef.poses;   // メタ定義のポーズ(あれば)
+        if (ps !== void) for (var i = 0; i < ps.count; i++) poseSlots[ps[i].id] = ps[i].data;
+    }
+
+    // --- ポーズ(採取/適用/保存/読込) -------------------------------------
+    function capturePoseAction()
+    {
+        var list = targetList();
+        if (list.count == 0) return;
+        poseSlots["cap"] = list[0].capturePose();   // 先頭対象の現在姿勢を採取
+        Debug.message("pose captured");
+    }
+    function applyPoseSlot(name)
+    {
+        var arr = poseSlots[name];
+        if (arr === void) return;
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].applyPoseData(arr);
+    }
+    function clearPoseAction()
+    {
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].clearPose();
+    }
+    var poseFile = "pose_cap.txt";
+    function savePoseAction()
+    {
+        var arr = poseSlots["cap"];
+        if (arr === void) return;
+        try { (Array.saveStruct incontextof arr)(poseFile); Debug.message("pose saved: " + poseFile); }
+        catch (e) { Debug.message("pose save failed: " + e.message); }
+    }
+    function loadPoseAction()
+    {
+        try { if (Storages.isExistentStorage(poseFile)) poseSlots["cap"] = Scripts.evalStorage(poseFile); } catch (e) { }
+        applyPoseSlot("cap");
     }
     // VRMA を読み込んでキャッシュ(初回のみ)
     function loadMotion(file)
@@ -900,6 +942,12 @@ class ADVSample extends Window
         if (id == "fx_fadein")  { fxFadeIn();  return; }
         if (id == "fx_fadeout") { fxFadeOut(); return; }
         if (id == "fx_slidein") { fxSlideIn(); return; }
+        // ポーズ
+        if (id == "pose_cap")   { capturePoseAction(); return; }
+        if (id == "pose_apply") { applyPoseSlot("cap"); return; }
+        if (id == "pose_clear") { clearPoseAction(); return; }
+        if (id == "pose_save")  { savePoseAction(); return; }
+        if (id == "pose_load")  { loadPoseAction(); return; }
 
         switch (id) {
         case "t_left":  target = 0; break;

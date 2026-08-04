@@ -12,6 +12,15 @@
  *
  * 前提: Threepp / GLESAdaptor プラグインは link 済み、VRMFraming は execStorage 済み。
  */
+// ポーズ採取対象のヒューマンボーン(指/目は除外)
+var g_humanBones = [
+    "hips", "spine", "chest", "upperChest", "neck", "head",
+    "leftShoulder", "leftUpperArm", "leftLowerArm", "leftHand",
+    "rightShoulder", "rightUpperArm", "rightLowerArm", "rightHand",
+    "leftUpperLeg", "leftLowerLeg", "leftFoot", "leftToes",
+    "rightUpperLeg", "rightLowerLeg", "rightFoot", "rightToes"
+];
+
 class Tachie
 {
     var owner;      // Window
@@ -70,6 +79,7 @@ class Tachie
     var motionId = "";            // 再生中モーションの id(状態の保存/復元用)
     var xfading = false, xfadeT = 0.0, xfadeDur = 0.3, xfadeTau = 0.09;   // 開始/切替時のクロスフェード
     var restReturning = false, restXfadeT = 0.0;   // 停止→素立ちのクロスフェード
+    var poseData;                 // 適用中のポーズ([name,qx,qy,qz,qw,…]) or void
 
     // --- カメラ姿勢(フレーミング基準 + 旋回/ズーム) ---
     var camTX = 0.0, camTY = 1.0, camTZ = 0.0;  // 注視点(world)
@@ -271,17 +281,44 @@ class Tachie
         motionLoop = loop;
         motionPlaying = true;
         motionId = (id === void) ? "" : id;
+        poseData = void; restReturning = false;
         xfading = true; xfadeT = 0.0;   // 現在姿勢からこのモーションへクロスフェード
     }
-    // モーションを止めて素立ちへ戻す(現在ポーズから rest へクロスフェード)
+    // モーション/ポーズを止めて素立ちへ戻す(現在ポーズから rest へクロスフェード)
     function stopMotion()
     {
-        if (motionAnim === void && !restReturning) return;   // 既に素立ち
+        if (motionAnim === void && poseData === void && !restReturning) return;
         motionAnim = void;
         motionPlaying = false;
         motionId = "";
+        poseData = void;
         restReturning = true; restXfadeT = 0.0;   // 現在姿勢を保ったまま rest へ寄せる
     }
+
+    // --- ポーズ(正規化ボーン回転の静止状態) ---
+    // 現在の正規化ポーズを [name,qx,qy,qz,qw,…] のフラット配列で採取する。
+    function capturePose()
+    {
+        var arr = [];
+        for (var i = 0; i < g_humanBones.count; i++) {
+            var n = vrm.getNormalizedBoneNode(g_humanBones[i]);
+            if (n === void) continue;
+            var q = n.quaternion;
+            arr.add(g_humanBones[i]); arr.add(q.x); arr.add(q.y); arr.add(q.z); arr.add(q.w);
+        }
+        return arr;
+    }
+    // ポーズデータを適用(現在姿勢からクロスフェードして保持)。
+    function applyPoseData(arr)
+    {
+        if (arr === void) return;
+        poseData = arr;
+        motionAnim = void; motionPlaying = false; motionId = "";
+        restReturning = false;
+        xfading = true; xfadeT = 0.0;
+    }
+    // ポーズを解除して素立ちへ
+    function clearPose() { stopMotion(); }
 
     // 立ち絵演出トゥイーン(dest レイヤ)。op=不透明度, dx=baseX 相対の x。
     function playTween(op0, op1, dx0, dx1, dur)
@@ -366,6 +403,16 @@ class Tachie
                 if (xfadeT >= xfadeDur) xfading = false;
             } else {
                 vrm.applyAnimation(motionAnim, motionTime);   // 停止後も最終ポーズを保持
+            }
+        } else if (poseData !== void) {
+            // ポーズ保持(切替直後はクロスフェード)
+            if (xfading) {
+                xfadeT += dt;
+                var pb = dt / xfadeTau; if (pb > 1.0) pb = 1.0;
+                vrm.applyPose(poseData, pb);
+                if (xfadeT >= xfadeDur) xfading = false;
+            } else {
+                vrm.applyPose(poseData, 1.0);
             }
         } else if (restReturning) {
             // 停止直後: 現在姿勢から素立ちへ寄せ、完了で確定して idle へ

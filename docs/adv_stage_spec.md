@@ -8,7 +8,7 @@
 | 層 | 定義 | 実体 |
 |---|---|---|
 | **Expression（表情）** | 顔。名前付き or 合成 | VRM表情名 / `{表情名:weight,…}` の束 |
-| **Pose（ポーズ）** | 全身の**静止姿勢** | 正規化ボーンの回転集合（データ/採取/VRMA1フレーム）※実装予定 |
+| **Pose（ポーズ）** | 全身の**静止姿勢** | 正規化ボーンの回転集合（データ/採取/VRMA1フレーム） |
 | **Motion（モーション）** | **時間つき**の全身動き | VRMA(取込) / **Poseの列＋時間**(合成)※poseseq は実装予定 |
 | **Scene（シーン）** | 宣言的な複数キャラ状態 | expr + pose/motion + gaze + 位置 |
 
@@ -57,6 +57,19 @@ global.stageDef = %[
 - 再生: 対象キャラへ `playMotion`。開始/切替/停止でクロスフェード。「停止」で素立ちへ。
 - ※ VRMA によっては hips 回転等で崩れる素材があるので動作確認済みのみ登録。
 
+### poses（ポーズ）✅実装済
+全身の静止姿勢＝正規化ヒューマノイドボーンの回転集合。データは
+`[boneName, qx, qy, qz, qw, boneName, …]` のフラット配列（quaternion）。
+```tjs
+%[ "id"=>"peace", "name"=>"ピース", "data"=>[ "rightUpperArm", 0.04,-0.09,0.74,0.66, … ] ]
+```
+- **採取**: `Tachie.capturePose()` が現在の正規化姿勢を上記配列で返す（22ボーン）。
+  → 現在姿勢/VRMA の1フレーム(playMotion 後)から採取できる。
+- **適用**: `Tachie.applyPoseData(arr)`。現在姿勢からクロスフェードして保持（idle と競合しない）。
+  「素立ち」で rest へクロスフェード。
+- **保存/読込**: `(Array.saveStruct incontextof arr)(file)` / `Scripts.evalStorage(file)`。
+- パネル「ポーズ」行: 採取 / 適用 / 素立ち / 保存 / 読込。メタ定義 `poses` があれば読込。
+
 ### scenes（名前付きシーン）✅実装済
 宣言的に各キャラの状態を一括指定する（TyranoScript タグ相当）。
 ```tjs
@@ -78,7 +91,7 @@ global.stageDef = %[
 ## 実装状況
 
 - ✅ characters / expressions（合成）/ motions（VRMA・クロスフェード）/ scenes（適用・保存/復元）
-- 🔜 **Pose**（正規化ボーン回転集合の一次データ。データ定義／現在姿勢の採取・保存）
+- ✅ **Pose**（採取／適用（クロスフェード）／保存・読込。データ = ボーン quaternion のフラット配列）
 - 🔜 **poseseq モーション**（Pose 列＋時間 → 補間再生でモーション合成）
 
 ## 関連 API（advsample / tachie）
@@ -87,5 +100,6 @@ global.stageDef = %[
 - 配置: `Tachie.spaceSet(x, z)`（空間モード, rig ごと）
 - 演出: `Tachie.fadeIn/fadeOut/slideIn`（dest レイヤのトゥイーン, 立ち絵モード）
 - シーン: `ADVSample.applyScene` / `captureState` / `saveSlot` / `loadSlot`
+- ポーズ: `Tachie.capturePose()` / `applyPoseData(arr)` / `clearPose()`
 - C++ 追加: `VRM.getExpressionName(i)` / `setOffset` / `applyAnimation(anim,time,blend)` /
-  `captureRestPose` / `blendToRest`
+  `captureRestPose` / `blendToRest` / `applyPose([name,qx,qy,qz,qw,…], blend)`
