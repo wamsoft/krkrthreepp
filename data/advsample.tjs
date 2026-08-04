@@ -46,14 +46,21 @@ class ControlPanel extends Dialog
 
     function onAction(id, payload)
     {
-        app.onPanel(id);
+        app.onPanel(id, payload);   // payload: toggle=bool / radio=true / button=void
     }
 
     // --- レイアウト部品 -----------------------------------------------
-    function btn(id, text)
+    function btn(id, text)    // 単発ボタン(押すたびに動作)
     {
-        return %[ "type" => "button", "id" => id, "text" => text,
-                  "close_on_click" => 0 ];
+        return %[ "type" => "button", "id" => id, "text" => text, "close_on_click" => 0 ];
+    }
+    function toggle(id, text, on)   // ON/OFF トグル(押下状態が見える)
+    {
+        return %[ "type" => "toggle_button", "id" => id, "text" => text, "value" => (on ? 1 : 0) ];
+    }
+    function radio(id, text, sel)   // 排他選択(同 htile 内で自動排他・選択がハイライト)
+    {
+        return %[ "type" => "radio_button", "id" => id, "text" => text, "selected" => (sel ? 1 : 0) ];
     }
     function labelCell(text, w)
     {
@@ -61,62 +68,89 @@ class ControlPanel extends Dialog
                   "child" => %[ "type" => "align_left",
                                 "child" => %[ "type" => "label", "text" => text ] ] ];
     }
-    // defs = [id, text, id, text, ...]
-    function row(labelText, defs)
+    // ラベル + ウィジェット群を横並び(1 行 = 1 htile = ラジオの排他スコープ)
+    function wrow(labelText, widgets)
     {
         var kids = [];
         kids.add(labelCell(labelText, 96));
-        for (var i = 0; i < defs.count; i += 2) {
-            kids.add(btn(defs[i], defs[i + 1]));
+        for (var i = 0; i < widgets.count; i++) {
+            kids.add(widgets[i]);
             kids.add(%[ "type" => "hspacer", "width" => 8 ]);
         }
         return %[ "type" => "htile", "children" => kids ];
     }
-
-    // rowspecs = [ [label, defs], ... ] を vspacer 挟んで縦積み
-    function stack(rowspecs)
+    // 行配列を vspacer 挟んで縦積み
+    function rowsJoin(arr)
     {
-        var rows = [];
-        for (var i = 0; i < rowspecs.count; i++) {
-            if (i > 0) rows.add(%[ "type" => "vspacer", "height" => 8 ]);
-            rows.add(row(rowspecs[i][0], rowspecs[i][1]));
+        var out = [];
+        for (var i = 0; i < arr.count; i++) {
+            if (i > 0) out.add(%[ "type" => "vspacer", "height" => 8 ]);
+            out.add(arr[i]);
         }
-        return rows;
+        return out;
+    }
+
+    function exprBtns()
+    {
+        return [ btn("e_neutral","標準"), btn("e_happy","喜"), btn("e_angry","怒"),
+                 btn("e_sad","哀"), btn("e_relaxed","楽"), btn("e_surprised","驚") ];
+    }
+    function camBtns()
+    {
+        return [ btn("cam_left","◀"), btn("cam_right","▶"), btn("cam_up","▲"),
+                 btn("cam_down","▼"), btn("cam_in","寄る"), btn("cam_out","引く"),
+                 btn("cam_reset","正面") ];
+    }
+    function targetRadios()
+    {
+        return [ radio("t_left","左", app.target==0), radio("t_right","右", app.target==1),
+                 radio("t_both","両方", app.target==2) ];
+    }
+    function modeRadios()
+    {
+        return [ radio("mode_tachie","立ち絵", app.mode=="tachie"),
+                 radio("mode_space","空間", app.mode=="space") ];
+    }
+    // ON/OFF トグルは全キャラ共通(tachies[0] の状態を代表表示)。末尾に隠すボタン。
+    function togglesRow()
+    {
+        var t0 = app.tachies[0];
+        return [ toggle("blink_set","まばたき", t0.blinkEnabled),
+                 toggle("look_set","カメラ目線", t0.lookAtCamera),
+                 toggle("idle_set","idle", t0.idleEnabled),
+                 btn("hide","隠す(Tab)") ];
     }
 
     // 立ち絵モードのパネル
     function tachieRows()
     {
-        return stack([
-            ["対象:",    ["t_left","左", "t_right","右", "t_both","両方"]],
-            ["フレーム:", ["f_full","全身", "f_knee","膝上", "f_waist","腰上",
-                          "f_bust","胸上", "f_face","顔"]],
-            ["表情:",    ["e_neutral","標準", "e_happy","喜", "e_angry","怒",
-                          "e_sad","哀", "e_relaxed","楽", "e_surprised","驚"]],
-            ["カメラ:",  ["cam_left","◀", "cam_right","▶", "cam_up","▲", "cam_down","▼",
-                          "cam_in","寄る", "cam_out","引く", "cam_reset","正面"]],
-            ["切替:",    ["blink_toggle","まばたき", "look_toggle","カメラ目線",
-                          "idle_toggle","idle", "hide","隠す(Tab)"]],
-            ["モード:",  ["mode_tachie","立ち絵", "mode_space","空間"]]
+        return rowsJoin([
+            wrow("対象:",    targetRadios()),
+            wrow("フレーム:", [ btn("f_full","全身"), btn("f_knee","膝上"), btn("f_waist","腰上"),
+                              btn("f_bust","胸上"), btn("f_face","顔") ]),
+            wrow("表情:",    exprBtns()),
+            wrow("カメラ:",  camBtns()),
+            wrow("切替:",    togglesRow()),
+            wrow("モード:",  modeRadios())
         ]);
     }
 
     // 空間モードのパネル (フレーム指定は無効。位置・画角・カメラ中心)
     function spaceRows()
     {
-        return stack([
-            ["対象:",   ["t_left","左", "t_right","右", "t_both","両方"]],
-            ["表情:",   ["e_neutral","標準", "e_happy","喜", "e_angry","怒",
-                         "e_sad","哀", "e_relaxed","楽", "e_surprised","驚"]],
-            ["位置:",   ["pos_left","← 左", "pos_right","右 →", "pos_fwd","前(近)",
-                         "pos_back","後(遠)", "pos_reset","並べ直す"]],
-            ["カメラ:", ["cam_left","◀", "cam_right","▶", "cam_up","▲", "cam_down","▼",
-                         "cam_in","寄る", "cam_out","引く", "cam_reset","正面"]],
-            ["操作:",   ["camm_orbit","回り込み", "camm_move","平行移動",
-                         "bg_fixed","背景=固定", "bg_follow","背景=追従"]],
-            ["画角:",   ["fov_tele","望遠(平行寄り)", "fov_wide","広角"]],
-            ["切替:",   ["blink_toggle","まばたき", "idle_toggle","idle", "hide","隠す(Tab)"]],
-            ["モード:", ["mode_tachie","立ち絵", "mode_space","空間"]]
+        return rowsJoin([
+            wrow("対象:",   targetRadios()),
+            wrow("表情:",   exprBtns()),
+            wrow("位置:",   [ btn("pos_left","← 左"), btn("pos_right","右 →"), btn("pos_fwd","前(近)"),
+                            btn("pos_back","後(遠)"), btn("pos_reset","並べ直す") ]),
+            wrow("カメラ:", camBtns()),
+            wrow("操作:",   [ radio("camm_orbit","回り込み", app.sCamMode=="orbit"),
+                            radio("camm_move","平行移動", app.sCamMode=="move") ]),
+            wrow("背景:",   [ radio("bg_fixed","舞台に固定", !app.bgFollow),
+                            radio("bg_follow","カメラ追従", app.bgFollow) ]),
+            wrow("画角:",   [ btn("fov_tele","望遠(平行寄り)"), btn("fov_wide","広角") ]),
+            wrow("切替:",   togglesRow()),
+            wrow("モード:", modeRadios())
         ]);
     }
 
@@ -457,23 +491,18 @@ class ADVSample extends Window
         var list = targetList();
         for (var i = 0; i < list.count; i++) list[i].setEmotion(name);
     }
-    function toggleBlink()
+    // ON/OFF トグルは全キャラ共通(toggle_button の値をそのまま適用)
+    function setAllBlink(on)
     {
-        var list = targetList();
-        for (var i = 0; i < list.count; i++)
-            list[i].setBlinkEnabled(!list[i].blinkEnabled);
+        for (var i = 0; i < tachies.count; i++) tachies[i].setBlinkEnabled(on);
     }
-    function toggleLook()
+    function setAllLook(on)
     {
-        var list = targetList();
-        for (var i = 0; i < list.count; i++)
-            list[i].setLookAtCamera(!list[i].lookAtCamera);
+        for (var i = 0; i < tachies.count; i++) tachies[i].setLookAtCamera(on);
     }
-    function toggleIdle()
+    function setAllIdle(on)
     {
-        var list = targetList();
-        for (var i = 0; i < list.count; i++)
-            list[i].setIdleEnabled(!list[i].idleEnabled);
+        for (var i = 0; i < tachies.count; i++) tachies[i].setIdleEnabled(on);
     }
     function cameraOrbit(dyaw, dpitch)
     {
@@ -527,8 +556,8 @@ class ADVSample extends Window
         for (var i = 0; i < list.count; i++) list[i].resetCamera();
     }
 
-    // Elements パネルからの操作
-    function onPanel(id)
+    // Elements パネルからの操作。val は toggle_button の bool 値(それ以外は void)。
+    function onPanel(id, val)
     {
         switch (id) {
         case "t_left":  target = 0; break;
@@ -570,9 +599,9 @@ class ADVSample extends Window
         case "bg_fixed":   bgFollow = false; break;      // 背景=舞台奥に固定
         case "bg_follow":  bgFollow = true;  break;      // 背景=カメラ追従
 
-        case "blink_toggle": toggleBlink(); break;
-        case "look_toggle":  toggleLook();  break;
-        case "idle_toggle":  toggleIdle();  break;
+        case "blink_set": setAllBlink(val); break;
+        case "look_set":  setAllLook(val);  break;
+        case "idle_set":  setAllIdle(val);  break;
 
         case "mode_tachie":  setMode("tachie"); break;
         case "mode_space":   setMode("space");  break;
