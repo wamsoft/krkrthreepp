@@ -118,6 +118,7 @@ class ControlPanel extends Dialog
         return [ toggle("blink_set","まばたき", t0.blinkEnabled),
                  toggle("look_set","カメラ目線", t0.lookAtCamera),
                  toggle("idle_set","idle", t0.idleEnabled),
+                 toggle("gaze_set","視線ターゲット", app.gazeActive),
                  btn("hide","隠す(Tab)") ];
     }
 
@@ -176,6 +177,33 @@ class ControlPanel extends Dialog
 }
 
 // ---------------------------------------------------------------------------
+//  視線ターゲット用のドラッグ可能レイヤ (最前面・全面ヒット)
+// ---------------------------------------------------------------------------
+class GazeLayer extends Layer
+{
+    var app;
+    var dragging = false;
+
+    function GazeLayer(win, parent, app)
+    {
+        super.Layer(win, parent);
+        this.app = app;
+    }
+    function onMouseDown(x, y, button, shift)
+    {
+        if (button == mbLeft) { dragging = true; app.setGaze(x, y); }
+    }
+    function onMouseMove(x, y, shift)
+    {
+        if (dragging) app.setGaze(x, y);
+    }
+    function onMouseUp(x, y, button, shift)
+    {
+        if (button == mbLeft) dragging = false;
+    }
+}
+
+// ---------------------------------------------------------------------------
 //  ADV サンプル本体
 // ---------------------------------------------------------------------------
 class ADVSample extends Window
@@ -202,6 +230,11 @@ class ADVSample extends Window
     var sFov = SPACE_FOV;                                  // 空間カメラ画角(望遠/広角)
     var sCamMode = "orbit";   // "orbit"(回り込み) / "move"(平行移動)
     var bgFollow = false;     // 背景板 false=舞台奥に固定 / true=カメラ追従(常に画面を埋める)
+
+    // --- 視線ターゲット(ドラッグで視線追従を確認) ---
+    var gazeLayer;
+    var gazeActive = false;
+    var gazeX = SCREEN_W / 2, gazeY = SCREEN_H / 2;
 
     function ADVSample()
     {
@@ -474,6 +507,69 @@ class ADVSample extends Window
         tachies[1].spaceSet( 0.6, 0.0);
     }
 
+    // --- 視線ターゲット ---------------------------------------------------
+    function buildGazeLayer()
+    {
+        if (gazeLayer !== void) return;
+        gazeLayer = new GazeLayer(this, back, this);
+        gazeLayer.setImageSize(SCREEN_W, SCREEN_H);
+        gazeLayer.setSize(SCREEN_W, SCREEN_H);
+        gazeLayer.setPos(0, 0);
+        gazeLayer.type = ltAlpha;
+        gazeLayer.hitThreshold = 0;      // α>0 なら全面ヒット(ドラッグ捕捉用)
+        gazeLayer.absolute = 100000;     // 最前面
+        gazeLayer.visible = false;
+        add(gazeLayer);
+        drawGazeMarker();
+    }
+    function drawGazeMarker()
+    {
+        if (gazeLayer === void) return;
+        gazeLayer.fillRect(0, 0, SCREEN_W, SCREEN_H, 0x01000000);  // α=1 全面(ヒット用・ほぼ不可視)
+        var s = 20;
+        var col = 0xFFFF3050, col2 = 0x90FF3050;
+        gazeLayer.fillRect(gazeX - s, gazeY - 1, s * 2, 3, col);   // 横線
+        gazeLayer.fillRect(gazeX - 1, gazeY - s, 3, s * 2, col);   // 縦線
+        gazeLayer.fillRect(gazeX - s, gazeY - s, s * 2, 2, col2);  // 枠
+        gazeLayer.fillRect(gazeX - s, gazeY + s, s * 2, 2, col2);
+        gazeLayer.fillRect(gazeX - s, gazeY - s, 2, s * 2, col2);
+        gazeLayer.fillRect(gazeX + s, gazeY - s, 2, s * 2, col2);
+        gazeLayer.update();
+    }
+    function setGaze(x, y)
+    {
+        gazeX = x; gazeY = y;
+        drawGazeMarker();
+        applyGazeToChars();
+    }
+    // マーカーのスクリーン位置を各キャラの world 視線ターゲットへ変換
+    function applyGazeToChars()
+    {
+        var nx = gazeX * 2.0 / SCREEN_W - 1.0;   // -1..1 (右+)
+        var ny = gazeY * 2.0 / SCREEN_H - 1.0;   // -1..1 (下+)
+        var spanX = 2.2, spanY = 1.5, depth = 2.5;
+        for (var i = 0; i < tachies.count; i++) {
+            var t = tachies[i];
+            var scn = (mode == "space") ? spaceScene : t.scene;
+            scn.updateMatrixWorld(true);
+            var hp = t.vrm.getBoneNode("head").getWorldPosition();
+            t.vrm.setLookAtTarget(hp.x + nx * spanX, hp.y - ny * spanY, hp.z + t.frontZ * depth);
+        }
+    }
+    function toggleGaze(on)
+    {
+        gazeActive = on;
+        buildGazeLayer();
+        gazeLayer.visible = on;
+        if (on) {
+            // カメラ目線と競合するので一旦 OFF にしてターゲット駆動へ
+            setAllLook(false);
+            applyGazeToChars();
+        } else {
+            for (var i = 0; i < tachies.count; i++) tachies[i].vrm.clearLookAtTarget();
+        }
+    }
+
     // --- 操作対象の解決 -----------------------------------------------
     function targetList()
     {
@@ -602,6 +698,7 @@ class ADVSample extends Window
         case "blink_set": setAllBlink(val); break;
         case "look_set":  setAllLook(val);  break;
         case "idle_set":  setAllIdle(val);  break;
+        case "gaze_set":  toggleGaze(val);  break;
 
         case "mode_tachie":  setMode("tachie"); break;
         case "mode_space":   setMode("space");  break;
