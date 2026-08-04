@@ -40,7 +40,10 @@ class Tachie
     var emotion = "";          // 現在当てている感情表情("" = なし)
 
     // --- カメラ目線(視線ADV化) ---
-    var lookAtCamera = true;   // 既定 ON。カメラ位置に視線を向ける
+    // 多くの VRM は素の目が正面向き(=前面カメラのプレイヤーを見ている)。VRM の
+    // bone lookAt を通すとむしろ下向き等のズレが出るため、前面 ADV では既定 OFF。
+    // カメラを旋回して追従させたい時だけ ON にする(トグル)。
+    var lookAtCamera = false;
 
     // --- idle 呼吸 ---
     var idleEnabled = true;
@@ -219,11 +222,12 @@ class Tachie
         if (chest === void) chest = vrm.getNormalizedBoneNode("chest");
         if (chest === void) chest = vrm.getNormalizedBoneNode("spine");
         if (chest !== void)
-            chest.setRotation(0.018 * Math.sin(idleT * 1.6), 0, 0);   // 呼吸
+            chest.setRotation(0.018 * Math.sin(idleT * 1.6), 0, 0);   // 呼吸(前後)
+        // 頭はヨー(左右)を入れると視線がぎょろついて見えるので、ごく僅かな
+        // 頷き(ピッチ)のみ。左右揺れは入れない。
         var head = vrm.getNormalizedBoneNode("head");
         if (head !== void)
-            head.setRotation(0.010 * Math.sin(idleT * 0.9 + 0.5),
-                             0.012 * Math.sin(idleT * 0.7), 0);        // 頭の微揺れ
+            head.setRotation(0.006 * Math.sin(idleT * 0.8), 0, 0);
     }
     function setIdleEnabled(on)
     {

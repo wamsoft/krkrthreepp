@@ -145,11 +145,16 @@ namespace krkrvrm {
             return expressionMode_ ? (exprMgr_ != nullptr) : (leftEye_ || rightEye_);
         }
         void update();
+        /// load 後(rest ポーズ・world 行列確定後・+Z 正面正規化後)に呼び、
+        /// head の rest world 回転を捕捉する。視線空間の基準として使う。
+        void captureRest();
 
     private:
         std::shared_ptr<threepp::Bone> head_, leftEye_, rightEye_;
-        threepp::Vector3 offset_{0.f, 0.f, 0.f};   ///< 頭ボーンからの目位置オフセット
+        threepp::Vector3 offset_{0.f, 0.f, 0.f};   ///< 頭ボーンからの目位置オフセット(両目の間=基準点)
         threepp::Quaternion leftRest_, rightRest_; ///< eye ボーンの rest 回転
+        threepp::Quaternion restHeadWorldQuat_{};  ///< rest 時 head world 回転(視線空間の基準)
+        bool restCaptured_ = false;
         float inMaxH_ = 90.f, inMaxV_ = 90.f;      ///< 入力角の最大 (deg)
         float outH_ = 10.f, outVUp_ = 10.f, outVDown_ = 10.f;///< 出力スケール (bone=deg / expr=weight)
         threepp::Vector3 target_{0.f, 0.f, 0.f};

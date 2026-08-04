@@ -604,6 +604,13 @@ void main() {
         if (rightEye_) rightEye_->quaternion.copy(rightRest_);
     }
 
+    void VRMLookAt::captureRest() {
+        if (!head_) return;
+        head_->updateWorldMatrix(true, false);
+        head_->getWorldQuaternion(restHeadWorldQuat_);
+        restCaptured_ = true;
+    }
+
     void VRMLookAt::update() {
         if (!valid() || !hasTarget_) return;
 
@@ -613,17 +620,23 @@ void main() {
         threepp::Quaternion headQuat;
         head_->getWorldQuaternion(headQuat);
 
+        // 基準点(両目の間) = head + offsetFromHeadBone(頭の現在姿勢で回す)
         threepp::Vector3 off;
         off.copy(offset_).applyQuaternion(headQuat);
         threepp::Vector3 eyePos;
         eyePos.copy(headPos).add(off);
 
-        // 注視方向を頭ローカル空間へ (VRM は +Z 正面)
+        // three-vrm 準拠: headRotDiffInv = restHeadWorldQuat * inverse(currentHeadWorldQuat)。
+        // 現在の頭回転を打ち消して rest 姿勢基準へ移すことで、head bone の rest 傾きを
+        // 除去し(model +Z が中立=正面)、idle 等で頭が動いても視線空間が揺れない。
+        // 全モデルは load 時に +Z 正面へ正規化済みなので faceFront は +Z 固定でよい。
+        // (restCaptured_ 未捕捉時は restHeadWorldQuat_=単位 → 従来の頭ローカル基準に縮退)
+        threepp::Quaternion curInv;
+        curInv.copy(headQuat).invert();
+        threepp::Quaternion headRotDiffInv;
+        headRotDiffInv.copy(restHeadWorldQuat_).multiply(curInv);
         threepp::Vector3 dir;
-        dir.subVectors(target_, eyePos);
-        threepp::Quaternion inv;
-        inv.copy(headQuat).invert();
-        dir.applyQuaternion(inv).normalize();
+        dir.subVectors(target_, eyePos).applyQuaternion(headRotDiffInv).normalize();
 
         constexpr float RAD2DEG = 57.29577951308232f;
         constexpr float DEG2RAD = 0.017453292519943295f;
@@ -1191,6 +1204,8 @@ void main() {
         if (vrm->scene) {
             vrm->scene->updateMatrixWorld(true);
             vrm->humanoid.buildRig();
+            // 視線空間の基準となる head の rest world 回転を捕捉(+Z 正面正規化後・rest ポーズ)
+            vrm->lookAt.captureRest();
         }
 
         // VRMC_node_constraint (roll/aim/rotation) を各 glTF ノードから収集する。
