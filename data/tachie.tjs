@@ -52,7 +52,8 @@ class Tachie
     var camYaw = 0.0;           // 水平旋回(0=正面)
     var camPitch = 0.0;         // 仰俯
     var camDistScale = 1.0;     // ズーム倍率
-    var camEyeY = 1.4;          // 視線を向ける高さ(目の world Y)
+    // 視線の原点近似 = head ボーン world 位置。ここから遠方を見て視線を安定させる。
+    var headWX = 0.0, headWY = 1.4, headWZ = 0.0;
 
     function Tachie(owner, adaptor, renderer, framer, parentLayer, w, h)
     {
@@ -127,13 +128,11 @@ class Tachie
         var r = framer.apply(vrm, camera, scene, p, w * 1.0 / h);
         camTX = r.tx; camTY = r.ty; camTZ = r.tz;
         camBaseDist = r.dist;
-        // 視線を向ける高さ = 目の world Y(無ければ head + 少し上)
-        var eye = vrm.getBoneNode("leftEye");
-        if (eye === void) eye = vrm.getBoneNode("rightEye");
-        if (eye !== void) camEyeY = eye.getWorldPosition().y;
-        else {
-            var hd = vrm.getBoneNode("head");
-            camEyeY = (hd !== void) ? hd.getWorldPosition().y + 0.06 : camTY;
+        // 視線の原点 = head ボーン world 位置(lookAt の原点 head+offset に近い)
+        var hd = vrm.getBoneNode("head");
+        if (hd !== void) {
+            var hp = hd.getWorldPosition();
+            headWX = hp.x; headWY = hp.y; headWZ = hp.z;
         }
         updateCameraPose();
     }
@@ -173,14 +172,15 @@ class Tachie
         updateCameraPose();
     }
 
-    // 視線をカメラ(=プレイヤー)へ向ける。カメラの水平方向を、ただし目の高さで
-    // 見る→正面からプレイヤーを見る自然な視線に(注視点が胴だと下向きになるのを回避)。
+    // 視線をカメラ(=プレイヤー)へ向ける。head の高さで、カメラのヨー方向の
+    // 「遠方」を見る。遠方にすることで下向き固定や idle での符号ちらつきを防ぎ、
+    // 旋回時は水平にプレイヤーを追従する自然な視線になる。
     function applyLookAtCamera()
     {
-        var dist = camBaseDist * camDistScale;
-        var cx = camTX + dist * Math.sin(camYaw) * Math.cos(camPitch);
-        var cz = camTZ + frontZ * dist * Math.cos(camYaw) * Math.cos(camPitch);
-        vrm.setLookAtTarget(cx, camEyeY, cz);
+        var R = 8.0;   // 遠方注視距離
+        var tx = headWX + R * Math.sin(camYaw);
+        var tz = headWZ + frontZ * R * Math.cos(camYaw);
+        vrm.setLookAtTarget(tx, headWY, tz);
     }
     function setLookAtCamera(on)
     {
