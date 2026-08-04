@@ -61,6 +61,7 @@ class Tachie
     var motionDur = 0.0, motionTime = 0.0;
     var motionLoop = true, motionPlaying = false;
     var motionId = "";            // 再生中モーションの id(状態の保存/復元用)
+    var xfading = false, xfadeT = 0.0, xfadeDur = 0.3, xfadeTau = 0.09;   // 開始/切替時のクロスフェード
 
     // --- カメラ姿勢(フレーミング基準 + 旋回/ズーム) ---
     var camTX = 0.0, camTY = 1.0, camTZ = 0.0;  // 注視点(world)
@@ -252,6 +253,7 @@ class Tachie
         motionLoop = loop;
         motionPlaying = true;
         motionId = (id === void) ? "" : id;
+        xfading = true; xfadeT = 0.0;   // 現在姿勢からこのモーションへクロスフェード
     }
     // モーションを止めて素立ち(腕下ろし)へ戻す
     function stopMotion()
@@ -315,7 +317,15 @@ class Tachie
                     else { motionTime = motionDur; motionPlaying = false; }
                 }
             }
-            vrm.applyAnimation(motionAnim, motionTime);   // 停止後も最終ポーズを保持
+            if (xfading) {
+                // 切替直後: 現在姿勢からモーションへ寄せる(時定数 ~0.09s)
+                xfadeT += dt;
+                var b = dt / xfadeTau; if (b > 1.0) b = 1.0;
+                vrm.applyAnimationBlend(motionAnim, motionTime, b);
+                if (xfadeT >= xfadeDur) xfading = false;
+            } else {
+                vrm.applyAnimation(motionAnim, motionTime);   // 停止後も最終ポーズを保持
+            }
         } else {
             if (idleEnabled) updateIdle(dt);
         }

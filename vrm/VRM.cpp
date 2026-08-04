@@ -1908,7 +1908,7 @@ void main() {
         return anim;
     }
 
-    void VRM::applyAnimation(const VRMAnimation& anim, float time) {
+    void VRM::applyAnimation(const VRMAnimation& anim, float time, float blend) {
         for (const auto& [boneName, track] : anim.boneRotations_) {
             auto node = humanoid.getNormalizedBoneNode(boneName);
             if (!node || track.times.empty()) continue;
@@ -1940,7 +1940,13 @@ void main() {
                 const float len = std::sqrt(qx * qx + qy * qy + qz * qz + qw * qw);
                 if (len > 1e-8f) { qx /= len; qy /= len; qz /= len; qw /= len; }
             }
-            node->quaternion.set(qx, qy, qz, qw);
+            if (blend >= 1.f) {
+                node->quaternion.set(qx, qy, qz, qw);
+            } else {
+                threepp::Quaternion tgt;
+                tgt.set(qx, qy, qz, qw);
+                node->quaternion.slerp(tgt, blend);   // 現在姿勢 → target へ補間
+            }
         }
 
         // --- hips ルートモーション ---

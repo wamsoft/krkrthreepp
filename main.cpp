@@ -2739,6 +2739,12 @@ static std::shared_ptr<Object3D> VRM_getNormalizedBoneNode(ThreeWrapper<VRM> *se
 static void VRM_resetNormalizedPose(ThreeWrapper<VRM> *self) { if (self && self->getObject()) self->getObject()->humanoid.resetNormalizedPose(); }
 
 // VRMA (Phase1)。applyAnimation で時刻 time の姿勢を正規化ボーンへ書き込み、update() で raw へ。
+// クロスフェード版: blend<1 で現在姿勢から time の姿勢へ補間。
+static void VRM_applyAnimationBlend(ThreeWrapper<VRM> *self, ThreeWrapper<VRMAnimation> *anim, float time, float blend)
+{
+	if (self && self->getObject() && anim && anim->getObject())
+		self->getObject()->applyAnimation(*anim->getObject(), time, blend);
+}
 static void VRM_applyAnimation(ThreeWrapper<VRM> *self, ThreeWrapper<VRMAnimation> *anim, float time)
 {
 	if (self && self->getObject() && anim && anim->getObject())
@@ -2810,6 +2816,7 @@ NCB_METHOD_PROXY(hasLookAt, VRM_hasLookAt);          // -> bool
 NCB_METHOD_PROXY(getNormalizedBoneNode, VRM_getNormalizedBoneNode);// (name) -> Object3D
 NCB_METHOD_PROXY(resetNormalizedPose, VRM_resetNormalizedPose);
 NCB_METHOD_PROXY(applyAnimation, VRM_applyAnimation);// (vrmAnimation, time)
+NCB_METHOD_PROXY(applyAnimationBlend, VRM_applyAnimationBlend);// (vrmAnimation, time, blend) クロスフェード
 NCB_METHOD_PROXY(getMetaName, VRM_getMetaName);      // -> string
 NCB_METHOD_PROXY(getMetaVersion, VRM_getMetaVersion);
 NCB_METHOD_PROXY(getMetaLicenseUrl, VRM_getMetaLicenseUrl);

@@ -280,7 +280,8 @@ namespace krkrvrm {
 
         /// VRM アニメーションを時刻 time(sec) で正規化ボーンへ適用する。
         /// 適用後 update() を呼ぶと raw へ転写される (update 内で updateRig)。
-        void applyAnimation(const VRMAnimation& anim, float time);
+        // blend<1 のとき、各ボーンを現在姿勢から anim の姿勢へ slerp(クロスフェード)。
+        void applyAnimation(const VRMAnimation& anim, float time, float blend = 1.f);
     };
 
     /// VRM ローダ。threepp GLTFLoader で読み、生 glTF JSON の VRMC_vrm 拡張を解釈して VRM を組む。
