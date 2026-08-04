@@ -80,6 +80,8 @@ class Tachie
     var xfading = false, xfadeT = 0.0, xfadeDur = 0.3, xfadeTau = 0.09;   // 開始/切替時のクロスフェード
     var restReturning = false, restXfadeT = 0.0;   // 停止→素立ちのクロスフェード
     var poseData;                 // 適用中のポーズ([name,qx,qy,qz,qw,…]) or void
+    // ポーズ列モーション(Pose を時間で繋ぐ). keys=[%[data/isRest, in, hold],…]
+    var seqActive = false, seqKeys, seqLoop = false, seqIdx = 0, seqPhase = "in", seqT = 0.0;
 
     // --- カメラ姿勢(フレーミング基準 + 旋回/ズーム) ---
     var camTX = 0.0, camTY = 1.0, camTZ = 0.0;  // 注視点(world)
@@ -281,17 +283,17 @@ class Tachie
         motionLoop = loop;
         motionPlaying = true;
         motionId = (id === void) ? "" : id;
-        poseData = void; restReturning = false;
+        poseData = void; restReturning = false; seqActive = false;
         xfading = true; xfadeT = 0.0;   // 現在姿勢からこのモーションへクロスフェード
     }
     // モーション/ポーズを止めて素立ちへ戻す(現在ポーズから rest へクロスフェード)
     function stopMotion()
     {
-        if (motionAnim === void && poseData === void && !restReturning) return;
+        if (motionAnim === void && poseData === void && !seqActive && !restReturning) return;
         motionAnim = void;
         motionPlaying = false;
         motionId = "";
-        poseData = void;
+        poseData = void; seqActive = false;
         restReturning = true; restXfadeT = 0.0;   // 現在姿勢を保ったまま rest へ寄せる
     }
 
@@ -314,11 +316,53 @@ class Tachie
         if (arr === void) return;
         poseData = arr;
         motionAnim = void; motionPlaying = false; motionId = "";
-        restReturning = false;
+        restReturning = false; seqActive = false;
         xfading = true; xfadeT = 0.0;
     }
     // ポーズを解除して素立ちへ
     function clearPose() { stopMotion(); }
+
+    // --- ポーズ列モーション(Pose を時間で繋いで自動モーション化) ---
+    // keys[i] = %[ "data"=>ポーズ配列 or void, "isRest"=>1(素立ち), "in"=>遷移秒, "hold"=>保持秒 ]
+    function playPoseSeq(keys, loop)
+    {
+        if (keys === void || keys.count == 0) return;
+        seqKeys = keys; seqLoop = loop; seqIdx = 0; seqPhase = "in"; seqT = 0.0;
+        seqActive = true;
+        motionAnim = void; motionPlaying = false; motionId = "";
+        poseData = void; restReturning = false;
+    }
+    function applyKeyBlend(key, b)
+    {
+        if (key.isRest) vrm.blendToRest(b);
+        else if (key.data !== void) vrm.applyPose(key.data, b);
+    }
+    function updatePoseSeq(dt)
+    {
+        var key = seqKeys[seqIdx];
+        seqT += dt;
+        if (seqPhase == "in") {
+            var inDur = (key.in !== void) ? key.in : 0.3;
+            var b = (inDur > 0.0) ? dt / (inDur * 0.4) : 1.0; if (b > 1.0) b = 1.0;
+            applyKeyBlend(key, b);
+            if (seqT >= inDur) { applyKeyBlend(key, 1.0); seqPhase = "hold"; seqT = 0.0; }
+        } else {
+            applyKeyBlend(key, 1.0);   // 保持
+            var holdDur = (key.hold !== void) ? key.hold : 0.0;
+            if (seqT >= holdDur) {
+                seqIdx++;
+                if (seqIdx >= seqKeys.count) {
+                    if (seqLoop) { seqIdx = 0; }
+                    else {
+                        seqActive = false;
+                        poseData = key.isRest ? void : key.data;   // 最終ポーズ保持(rest なら idle へ)
+                        return;
+                    }
+                }
+                seqPhase = "in"; seqT = 0.0;
+            }
+        }
+    }
 
     // 立ち絵演出トゥイーン(dest レイヤ)。op=不透明度, dx=baseX 相対の x。
     function playTween(op0, op1, dx0, dx1, dur)
@@ -386,7 +430,9 @@ class Tachie
     function update(dt)
     {
         updateTween(dt);   // dest レイヤの演出トゥイーン
-        if (motionAnim !== void) {
+        if (seqActive) {
+            updatePoseSeq(dt);
+        } else if (motionAnim !== void) {
             // VRMA 再生中はモーションが全身ポーズを駆動(idle と競合するので idle 停止)
             if (motionPlaying) {
                 motionTime += dt;

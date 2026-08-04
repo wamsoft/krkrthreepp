@@ -9,7 +9,7 @@
 |---|---|---|
 | **Expression（表情）** | 顔。名前付き or 合成 | VRM表情名 / `{表情名:weight,…}` の束 |
 | **Pose（ポーズ）** | 全身の**静止姿勢** | 正規化ボーンの回転集合（データ/採取/VRMA1フレーム） |
-| **Motion（モーション）** | **時間つき**の全身動き | VRMA(取込) / **Poseの列＋時間**(合成)※poseseq は実装予定 |
+| **Motion（モーション）** | **時間つき**の全身動き | VRMA(取込) / **Poseの列＋時間**(合成=poseseq) |
 | **Scene（シーン）** | 宣言的な複数キャラ状態 | expr + pose/motion + gaze + 位置 |
 
 補間器（クロスフェード）は共通で効く:
@@ -57,6 +57,18 @@ global.stageDef = %[
 - 再生: 対象キャラへ `playMotion`。開始/切替/停止でクロスフェード。「停止」で素立ちへ。
 - ※ VRMA によっては hips 回転等で崩れる素材があるので動作確認済みのみ登録。
 
+**poseseq（ポーズ列モーション）✅実装済**: VRMA でなく Pose を時間で繋いで合成する。
+```tjs
+%[ "id"=>"seqdemo", "name"=>"ポーズ列", "type"=>"poseseq", "loop"=>1,
+   "keys"=>[ %[ "pose"=>"rest", "in"=>0.4, "hold"=>0.4 ],
+             %[ "pose"=>"cap",  "in"=>0.5, "hold"=>0.7 ] ] ]
+```
+- `type`=="poseseq" で判定。`keys` は各キーフレーム:
+  - `pose`: ポーズ id（poseSlots のキー。"rest"=素立ち。"cap"=採取スロット）
+  - `in`: そのポーズへ寄せる遷移秒 / `hold`: 保持秒
+- ランタイム(`Tachie.playPoseSeq`)が pose→(in秒 補間)→hold→次… を再生。loop 対応。
+  → **ポーズ通しを繋いで自動でモーション化**。既存の Pose 補間器(applyPose/blendToRest)で駆動。
+
 ### poses（ポーズ）✅実装済
 全身の静止姿勢＝正規化ヒューマノイドボーンの回転集合。データは
 `[boneName, qx, qy, qz, qw, boneName, …]` のフラット配列（quaternion）。
@@ -92,7 +104,9 @@ global.stageDef = %[
 
 - ✅ characters / expressions（合成）/ motions（VRMA・クロスフェード）/ scenes（適用・保存/復元）
 - ✅ **Pose**（採取／適用（クロスフェード）／保存・読込。データ = ボーン quaternion のフラット配列）
-- 🔜 **poseseq モーション**（Pose 列＋時間 → 補間再生でモーション合成）
+- ✅ **poseseq モーション**（Pose 列＋時間 → 補間再生でモーション合成、loop 対応）
+
+用語 Expression/Pose/Motion/Scene の4層＋補間器が一通り実装済み。
 
 ## 関連 API（advsample / tachie）
 - 表情: `Tachie.setEmotionSet(id, [name,w,…])` / `setEmotion(name)`

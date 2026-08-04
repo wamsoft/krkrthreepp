@@ -640,11 +640,33 @@ class ADVSample extends Window
         else Debug.message("motion load failed: " + file);
         return anim;
     }
+    // poseseq モーションの keys を解決([%[data/isRest,in,hold],…])
+    function resolveSeqKeys(def)
+    {
+        var keys = [];
+        for (var i = 0; i < def.keys.count; i++) {
+            var k = def.keys[i];
+            var rk = %[ "in" => k.in, "hold" => k.hold ];
+            if (k.pose == "rest") rk["isRest"] = 1;
+            else {
+                var d = poseSlots[k.pose];
+                if (d === void) rk["isRest"] = 1;   // 未定義ポーズは素立ち扱い
+                else rk["data"] = d;
+            }
+            keys.add(rk);
+        }
+        return keys;
+    }
     function playMotionOnTargets(def)
     {
+        var list = targetList();
+        if (def.type == "poseseq") {
+            var keys = resolveSeqKeys(def);
+            for (var i = 0; i < list.count; i++) list[i].playPoseSeq(keys, def.loop);
+            return;
+        }
         var anim = loadMotion(def.file);
         if (anim === void) return;
-        var list = targetList();
         for (var i = 0; i < list.count; i++) list[i].playMotion(anim, def.loop, def.id);
     }
     function stopMotionOnTargets()
@@ -658,6 +680,7 @@ class ADVSample extends Window
         if (mid == "none" || mid == "") { t.stopMotion(); return; }
         var def = motionById[mid];
         if (def === void) return;
+        if (def.type == "poseseq") { t.playPoseSeq(resolveSeqKeys(def), def.loop); return; }
         var anim = loadMotion(def.file);
         if (anim !== void) t.playMotion(anim, def.loop, def.id);
     }

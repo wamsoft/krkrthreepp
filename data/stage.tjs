@@ -27,7 +27,12 @@ global.stageDef = %[
     "motions" => [
         %[ "id" => "idle",   "name" => "待機",   "file" => "anim.vrma",       "loop" => 1 ],
         %[ "id" => "behind", "name" => "後ろ手", "file" => "pose_behind.vrma", "loop" => 0 ],
-        %[ "id" => "left",   "name" => "左向き", "file" => "pose_left.vrma",   "loop" => 0 ]
+        %[ "id" => "left",   "name" => "左向き", "file" => "pose_left.vrma",   "loop" => 0 ],
+        // ポーズ列モーション: 素立ち↔採取ポーズ("cap") を繋いでループ。
+        // 事前にパネル「ポーズ:採取」で cap を採っておく(未採取なら素立ちのまま)。
+        %[ "id" => "seqdemo", "name" => "ポーズ列", "type" => "poseseq", "loop" => 1,
+           "keys" => [ %[ "pose"=>"rest", "in"=>0.4, "hold"=>0.4 ],
+                       %[ "pose"=>"cap",  "in"=>0.5, "hold"=>0.7 ] ] ]
     ],
 
     // 名前付きシーン(宣言的に各キャラの表情/モーション/視線を一括指定)。
