@@ -40,18 +40,29 @@ global.stageDef = %[
                        %[ "pose"=>"cap",  "in"=>0.5, "hold"=>0.7 ] ] ]
     ],
 
-    // 名前付きシーン(宣言的に各キャラの表情/モーション/視線を一括指定)。
+    // 名前付きシーン(宣言的に各キャラの表情/モーション/視線/演出/カメラを一括指定)。
     // chars のキーは characters の id。各値: expr(表情名/"neutral") / motion(モーションid/"none") /
-    // gaze("camera"=カメラ目線ON / "off")。省略した項目は変更しない。
+    // gaze("camera"=カメラ目線ON / "off") / x,z(位置=空間モードのみ) / fx(登場演出 fadein/fadeout/slidein)。
+    // camera: シーンのカメラ指定。省略項目は変更しない。
+    //   mode("tachie"/"space") / reset(1=既定位置へ) / frame(構図 full/knee/waist/bust/face 立ち絵) / fov(空間画角)
+    // 省略した項目は変更しない。
     "scenes" => [
         %[ "id" => "reset", "name" => "標準",
+           "camera" => %[ "mode"=>"tachie", "frame"=>"waist", "reset"=>1 ],
            "chars" => %[ "left"  => %[ "expr"=>"neutral", "motion"=>"none", "gaze"=>"off" ],
                          "right" => %[ "expr"=>"neutral", "motion"=>"none", "gaze"=>"off" ] ] ],
         %[ "id" => "talk", "name" => "会話",
+           "camera" => %[ "frame"=>"bust" ],   // 会話は寄る(胸上)
            "chars" => %[ "left"  => %[ "expr"=>"happy",   "motion"=>"idle", "gaze"=>"camera" ],
                          "right" => %[ "expr"=>"relaxed", "motion"=>"left" ] ] ],
         %[ "id" => "surprise", "name" => "驚き",
-           "chars" => %[ "left"  => %[ "expr"=>"surprised", "motion"=>"behind" ],
-                         "right" => %[ "expr"=>"surprised", "motion"=>"none" ] ] ]
+           "camera" => %[ "frame"=>"face" ],   // 驚きは顔アップ
+           "chars" => %[ "left"  => %[ "expr"=>"surprised", "motion"=>"behind", "fx"=>"fadein" ],
+                         "right" => %[ "expr"=>"surprised", "motion"=>"none",   "fx"=>"fadein" ] ] ],
+        // イベント例: 空間モードへ切替え、望遠で寄り、左右からスライド登場。
+        %[ "id" => "event", "name" => "イベント",
+           "camera" => %[ "mode"=>"space", "reset"=>1, "fov"=>26 ],
+           "chars" => %[ "left"  => %[ "expr"=>"grin",  "gaze"=>"camera", "fx"=>"slidein" ],
+                         "right" => %[ "expr"=>"shock", "fx"=>"slidein" ] ] ]
     ]
 ];

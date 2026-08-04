@@ -10,7 +10,7 @@
 | **Expression（表情）** | 顔。名前付き or 合成 | VRM表情名 / `{表情名:weight,…}` の束 |
 | **Pose（ポーズ）** | 全身の**静止姿勢** | 正規化ボーンの回転集合（データ/採取/VRMA1フレーム） |
 | **Motion（モーション）** | **時間つき**の全身動き | VRMA(取込) / **Poseの列＋時間**(合成=poseseq) |
-| **Scene（シーン）** | 宣言的な複数キャラ状態 | expr + pose/motion + gaze + 位置 |
+| **Scene（シーン）** | 宣言的な複数キャラ状態＋演出＋カメラ | expr + motion + gaze + 位置 + fx + camera |
 
 補間器（クロスフェード）は共通で効く:
 - VRMA 内部: キーフレーム間 nlerp
@@ -99,20 +99,32 @@ weight 指定する最下層。作者が用意した表情に無い表情（例:
 - パネル「ポーズ」行: 採取 / 適用 / 素立ち / 保存 / 読込。メタ定義 `poses` があれば読込。
 
 ### scenes（名前付きシーン）✅実装済
-宣言的に各キャラの状態を一括指定する（TyranoScript タグ相当）。
+宣言的に各キャラの状態＋演出＋カメラを一括指定する（TyranoScript タグ相当）。
 ```tjs
 %[ "id"=>"talk", "name"=>"会話",
+   "camera"=>%[ "frame"=>"bust" ],                 // 会話は胸上へ寄る
    "chars"=>%[ "left"  => %[ "expr"=>"happy", "motion"=>"idle", "gaze"=>"camera" ],
                "right" => %[ "expr"=>"relaxed", "motion"=>"left" ] ] ]
+// イベント例: 空間モードへ切替＋望遠＋左右からスライド登場
+%[ "id"=>"event", "name"=>"イベント",
+   "camera"=>%[ "mode"=>"space", "reset"=>1, "fov"=>26 ],
+   "chars"=>%[ "left" =>%[ "expr"=>"grin", "gaze"=>"camera", "fx"=>"slidein" ],
+               "right"=>%[ "expr"=>"shock", "fx"=>"slidein" ] ] ]
 ```
 - `chars` のキーは characters の `id`。各キャラ状態のキー:
-  - `expr`: 表情名（VRM単一 / 合成 id / "neutral"）
+  - `expr`: 表情名（VRM単一 / 合成 id / 生モーフ id / "neutral"）
   - `motion`: モーション id（"none"=停止）
   - `gaze`: "camera"（カメラ目線ON） / "off"
   - `x`,`z`: 位置（左右 / 前後）※**空間モードでのみ適用**
+  - `fx`: 登場演出（"fadein" / "fadeout" / "slidein"）※dest レイヤのトゥイーン
   - 省略した項目は変更しない
-- 適用: `applyScene`。現在状態は `captureState`→`saveStruct` でファイル保存、
-  `Scripts.evalStorage`→`applyState` で復元（再起動を跨ぐ）。
+- `camera`（シーンのカメラ指定。省略項目は変更しない）:
+  - `mode`: "tachie" / "space"（モード切替）
+  - `reset`: 1 でカメラを既定位置へ
+  - `frame`: 立ち絵モードの構図プリセット（full/knee/waist/bust/face）を全キャラへ
+  - `fov`: 空間モードの画角
+- 適用: `applyScene`（chars → camera の順）。現在状態は `captureState`→`saveStruct` でファイル
+  保存、`Scripts.evalStorage`→`applyState` で復元（再起動を跨ぐ。camera/fx は宣言専用で capture 対象外）。
 
 ---
 

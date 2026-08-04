@@ -719,17 +719,45 @@ class ADVSample extends Window
             var nz = (st.z !== void) ? st.z : t.offZ;
             t.spaceSet(nx, nz);
         }
+        // 登場演出(dest レイヤのトゥイーン)。fadein/fadeout/slidein。
+        if (st.fx !== void) applyCharFx(t, st.fx);
     }
-    // シーン定義(chars: id->state)を全キャラへ適用
+    // キャラ単位の演出トリガ(シーン適用時)
+    function applyCharFx(t, fx)
+    {
+        switch (fx) {
+        case "fadein":  t.fadeIn(0.5);  break;
+        case "fadeout": t.fadeOut(0.5); break;
+        case "slidein":
+            var dx = (t == tachies[0]) ? -240 : 240;   // 左は左から/右は右から
+            t.slideIn(0.6, dx);
+            break;
+        }
+    }
+    // シーンのカメラ指定(mode/reset/frame/fov)。省略項目は変更しない。
+    //   mode  … "tachie"/"space"(切替)
+    //   reset … 1 でカメラを既定位置へ
+    //   frame … 立ち絵モードの構図プリセット(full/knee/waist/bust/face)を全キャラへ
+    //   fov   … 空間モードの画角
+    function applySceneCamera(cam)
+    {
+        if (cam.mode  !== void && cam.mode != mode) setMode(cam.mode);
+        if (cam.reset !== void && cam.reset) cameraReset();
+        if (cam.frame !== void) { for (var i = 0; i < tachies.count; i++) tachies[i].frame(cam.frame); }
+        if (cam.fov   !== void) setFov(cam.fov);
+    }
+    // シーン定義(chars: id->state / camera: 演出カメラ)を適用
     function applyScene(def)
     {
         var cs = def.chars;
-        if (cs === void) return;
-        var chars = stageDef.characters;
-        for (var i = 0; i < chars.count && i < tachies.count; i++) {
-            var st = cs[chars[i].id];
-            if (st !== void) applyCharState(tachies[i], st);
+        if (cs !== void) {
+            var chars = stageDef.characters;
+            for (var i = 0; i < chars.count && i < tachies.count; i++) {
+                var st = cs[chars[i].id];
+                if (st !== void) applyCharState(tachies[i], st);
+            }
         }
+        if (def.camera !== void) applySceneCamera(def.camera);
     }
     // 現在状態を dict へ(セーブ用)
     function captureState()
