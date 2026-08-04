@@ -17,8 +17,14 @@ Scripts.execStorage("tachie.tjs");
 // 状態のファイル保存用(Dictionary.saveStruct)。無くても動く(メモリ保存にフォールバック)。
 try { Plugins.link("saveStruct.dll"); } catch (e) { }
 
+// 3D 描画領域(右上に配置)のサイズ
 var SCREEN_W = 1280;
 var SCREEN_H = 720;
+// ウィンドウ全体。右上 1280x720 を再生領域、左列+下帯をパネル/情報表示に使う。
+var WIN_W = 1920;
+var WIN_H = 1080;
+var RENDER_X = WIN_W - SCREEN_W;   // = 640 (描画領域を右へ寄せる)
+var RENDER_Y = 0;
 
 // 立ち絵1体分の描画バッファ(=dest レイヤ)サイズ。両キャラ共通なので
 // adaptor/renderer をこのサイズ固定で使え、フレーム毎のリサイズが要らない。
@@ -253,12 +259,16 @@ class ADVSample extends Window
     var renderer;   // 共有 Threepp.GLRenderer
     var framer;     // 共有 VRMFraming
 
-    var back;       // 背景レイヤ (1280x720)
+    var baseLayer;  // 全窓ベース(1920x1080, L字の空き領域)
+    var back;       // 3D 描画領域(1280x720, 右上)。全描画レイヤの親
+    var infoLayer;  // 左列の情報/ログ表示
     var tachies;    // Tachie 配列 [左, 右]
     var target = 2; // 操作対象 0:左 1:右 2:両方
 
     var panel;      // ControlPanel
     var timer, lastTick;
+    var logLines;   // 情報欄の操作ログ(リング)
+    var infoClock = 0.0;
 
     // --- モード ---
     // "tachie": 現行(1キャラ=1レイヤ・各自カメラ) / "space": 単一カメラで空間に並べて
@@ -290,13 +300,30 @@ class ADVSample extends Window
     {
         super.Window();
         caption = "krkr_threepp ADV sample";
-        setInnerSize(SCREEN_W, SCREEN_H);
+        setInnerSize(WIN_W, WIN_H);
 
-        // 背景
-        back = new Layer(this, null);
+        // 全窓ベース(L字の空き領域を暗色で埋める)
+        baseLayer = new Layer(this, null);
+        baseLayer.setImageSize(WIN_W, WIN_H);
+        baseLayer.setSize(WIN_W, WIN_H);
+        baseLayer.setPos(0, 0);
+        baseLayer.fillRect(0, 0, WIN_W, WIN_H, 0xFF12141E);
+        baseLayer.visible = true;
+        add(baseLayer);
+
+        // 情報/ログ表示(左列)
+        logLines = [];
+        infoLayer = new Layer(this, baseLayer);
+        infoLayer.setImageSize(RENDER_X, WIN_H);
+        infoLayer.setSize(RENDER_X, WIN_H);
+        infoLayer.setPos(0, 0);
+        infoLayer.visible = true;
+
+        // 3D 描画領域(右上)。全描画レイヤ(dest/space/gaze)はこの back の子。
+        back = new Layer(this, baseLayer);
         back.setImageSize(SCREEN_W, SCREEN_H);
         back.setSize(SCREEN_W, SCREEN_H);
-        back.setPos(0, 0);
+        back.setPos(RENDER_X, RENDER_Y);
         drawBackground(back);
         back.visible = true;
         add(back);
@@ -1009,6 +1036,7 @@ class ADVSample extends Window
     // Elements パネルからの操作。val は toggle_button の bool 値(それ以外は void)。
     function onPanel(id, val)
     {
+        logLine(id);   // 情報欄の操作ログへ
         // 表情ボタン(id=表情名)は動的なので switch より先に判定
         if (emoNameSet !== void && emoNameSet[id] !== void) { applyEmotion(id); return; }
         // モーションボタン(id=m_*)
@@ -1094,6 +1122,50 @@ class ADVSample extends Window
         } else {
             for (var i = 0; i < tachies.count; i++) tachies[i].render();
         }
+
+        // 左列の情報表示を ~4Hz で更新
+        infoClock += dt;
+        if (infoClock >= 0.25) { drawInfo((dt > 0.0) ? (1.0 / dt) : 60.0); infoClock = 0.0; }
+    }
+
+    // 左列に状態＋操作ログを描く
+    function drawInfo(fps)
+    {
+        if (infoLayer === void) return;
+        var L = infoLayer;
+        L.fillRect(0, 0, RENDER_X, WIN_H, 0xFF161923);
+        L.fillRect(0, 0, RENDER_X, 2, 0x40FFFFFF);
+        try { L.font.face = "ＭＳ ゴシック"; } catch (e) { }
+        var x = 18, y = 16, lh = 24;
+        var white = 0xFFEFEFEF, dim = 0xFF9AA3B4, key = 0xFF8FD0FF;
+        L.font.height = 22;
+        L.drawText(x, y, "krkr_threepp ADV サンプル", key, 255, true); y += 34;
+        L.font.height = 16;
+        L.drawText(x, y, "モード:" + (mode == "space" ? "空間" : "立ち絵")
+                       + "  対象:" + (target==0?"左":(target==1?"右":"両方"))
+                       + "  FPS:" + (int)fps, dim, 255, true); y += lh + 6;
+        for (var i = 0; i < tachies.count; i++) {
+            var t = tachies[i];
+            L.font.height = 17;
+            L.drawText(x, y, stageDef.characters[i].name + ":", white, 255, true); y += lh;
+            L.font.height = 14;
+            L.drawText(x + 14, y, "表情=" + (t.emotion == "" ? "neutral" : t.emotion)
+                          + " 動=" + (t.motionId == "" ? "-" : t.motionId)
+                          + " 目線=" + (t.lookAtCamera ? "ON" : "off"), dim, 255, true);
+            y += lh;
+        }
+        y += 8;
+        L.font.height = 16;
+        L.drawText(x, y, "─ 操作ログ ─", key, 255, true); y += lh;
+        L.font.height = 14;
+        for (var i = 0; i < logLines.count; i++) { L.drawText(x, y, logLines[i], dim, 255, true); y += 19; }
+        L.update();
+    }
+    function logLine(s)
+    {
+        if (logLines === void) logLines = [];
+        logLines.add(s);
+        while (logLines.count > 18) logLines.erase(0);
     }
 
     function finalize()
