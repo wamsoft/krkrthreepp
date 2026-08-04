@@ -90,10 +90,14 @@ class ControlPanel extends Dialog
         return out;
     }
 
+    // 表情ボタンはモデル実装の表情名から生成(id=表情名)。先頭に 標準(neutral)。
     function exprBtns()
     {
-        return [ btn("e_neutral","標準"), btn("e_happy","喜"), btn("e_angry","怒"),
-                 btn("e_sad","哀"), btn("e_relaxed","楽"), btn("e_surprised","驚") ];
+        var kids = [ btn("neutral", "標準") ];
+        var names = app.emotionNames();
+        for (var i = 0; i < names.count; i++)
+            kids.add(btn(names[i], app.exprLabel(names[i])));
+        return kids;
     }
     function camBtns()
     {
@@ -588,6 +592,44 @@ class ADVSample extends Window
         var list = targetList();
         for (var i = 0; i < list.count; i++) list[i].setEmotion(name);
     }
+
+    // --- 表情名の列挙(モデル実装から) ---
+    var emoNameSet;   // 表情ボタン id 判定用
+    var exprLabels = %[ "happy"=>"喜", "angry"=>"怒", "sad"=>"哀", "relaxed"=>"楽",
+                        "surprised"=>"驚", "neutral"=>"標準",
+                        "joy"=>"喜", "sorrow"=>"哀", "fun"=>"楽" ];
+    function exprLabel(name) { var l = exprLabels[name]; return (l === void) ? name : l; }
+    // 感情系の表情名一覧(ビセーム/まばたき/視線/neutral は除外)。既知の感情を
+    // 好ましい順(喜怒哀楽驚)で先頭に、カスタム表情を末尾に。emoNameSet も更新。
+    function emotionNames()
+    {
+        var vrm = tachies[0].vrm;
+        var n = vrm.getExpressionCount();
+        var have = %[];
+        for (var i = 0; i < n; i++) { var nm = vrm.getExpressionName(i); if (nm != "") have[nm] = 1; }
+
+        var skip = %[ "aa"=>1, "ih"=>1, "ou"=>1, "ee"=>1, "oh"=>1,
+                      "blink"=>1, "blinkLeft"=>1, "blinkRight"=>1, "blink_l"=>1, "blink_r"=>1,
+                      "lookUp"=>1, "lookDown"=>1, "lookLeft"=>1, "lookRight"=>1, "neutral"=>1 ];
+        var pref = ["happy", "angry", "sad", "relaxed", "surprised", "joy", "sorrow", "fun"];
+
+        var list = [];
+        emoNameSet = %[ "neutral"=>1 ];
+        // 既知の感情を好ましい順で
+        for (var i = 0; i < pref.count; i++) {
+            var nm = pref[i];
+            if (have[nm] !== void && skip[nm] === void && emoNameSet[nm] === void) {
+                list.add(nm); emoNameSet[nm] = 1;
+            }
+        }
+        // 残りの非スキップ表情(カスタム)を末尾に
+        for (var i = 0; i < n; i++) {
+            var nm = vrm.getExpressionName(i);
+            if (nm == "" || skip[nm] !== void || emoNameSet[nm] !== void) continue;
+            list.add(nm); emoNameSet[nm] = 1;
+        }
+        return list;
+    }
     // ON/OFF トグルは全キャラ共通(toggle_button の値をそのまま適用)
     function setAllBlink(on)
     {
@@ -656,6 +698,9 @@ class ADVSample extends Window
     // Elements パネルからの操作。val は toggle_button の bool 値(それ以外は void)。
     function onPanel(id, val)
     {
+        // 表情ボタン(id=表情名)は動的なので switch より先に判定
+        if (emoNameSet !== void && emoNameSet[id] !== void) { applyEmotion(id); return; }
+
         switch (id) {
         case "t_left":  target = 0; break;
         case "t_right": target = 1; break;
@@ -666,13 +711,6 @@ class ADVSample extends Window
         case "f_waist": applyFrame("waist"); break;
         case "f_bust":  applyFrame("bust");  break;
         case "f_face":  applyFrame("face");  break;
-
-        case "e_neutral":   applyEmotion("neutral");   break;
-        case "e_happy":     applyEmotion("happy");     break;
-        case "e_angry":     applyEmotion("angry");     break;
-        case "e_sad":       applyEmotion("sad");       break;
-        case "e_relaxed":   applyEmotion("relaxed");   break;
-        case "e_surprised": applyEmotion("surprised"); break;
 
         case "cam_left":  cameraOrbit(-0.18, 0.0); break;
         case "cam_right": cameraOrbit( 0.18, 0.0); break;
