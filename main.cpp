@@ -2719,6 +2719,12 @@ static int         VRM_getBoneCount(ThreeWrapper<VRM> *self)      { return (self
 static void  VRM_setExpression(ThreeWrapper<VRM> *self, std::string name, float weight) { if (self && self->getObject()) self->getObject()->expressionManager.setValue(name, weight); }
 static float VRM_getExpression(ThreeWrapper<VRM> *self, std::string name)               { return (self && self->getObject()) ? self->getObject()->expressionManager.getValue(name) : 0.f; }
 static int   VRM_getExpressionCount(ThreeWrapper<VRM> *self)                             { return (self && self->getObject()) ? (int)self->getObject()->expressionManager.size() : 0; }
+// 生モーフ(ブレンドシェイプ)を名前で直接指定する層。表情の後に override 適用。
+static void VRM_setMorph(ThreeWrapper<VRM> *self, std::string name, float w) { if (self && self->getObject()) self->getObject()->setMorph(name, w); }
+static void VRM_clearMorphs(ThreeWrapper<VRM> *self)                         { if (self && self->getObject()) self->getObject()->clearMorphs(); }
+static int  VRM_getMorphCount(ThreeWrapper<VRM> *self)                       { return (self && self->getObject()) ? (int)self->getObject()->morphCount() : 0; }
+static std::string VRM_getMorphName(ThreeWrapper<VRM> *self, int i)          { return (self && self->getObject()) ? self->getObject()->morphName((std::size_t)i) : std::string(); }
+
 // i 番目の表情名を返す(範囲外は空)。表情一覧UIやエディタで使う。
 static std::string VRM_getExpressionName(ThreeWrapper<VRM> *self, int i) {
 	if (self && self->getObject()) {
@@ -2836,6 +2842,10 @@ NCB_METHOD_PROXY(setExpression, VRM_setExpression);  // (name, weight)
 NCB_METHOD_PROXY(getExpression, VRM_getExpression);  // (name) -> float
 NCB_METHOD_PROXY(getExpressionCount, VRM_getExpressionCount);
 NCB_METHOD_PROXY(getExpressionName, VRM_getExpressionName);  // (i) -> 表情名
+NCB_METHOD_PROXY(setMorph, VRM_setMorph);            // (name, weight) 生モーフ直接指定
+NCB_METHOD_PROXY(clearMorphs, VRM_clearMorphs);      // 生モーフ全解除
+NCB_METHOD_PROXY(getMorphCount, VRM_getMorphCount);  // -> モーフ数
+NCB_METHOD_PROXY(getMorphName, VRM_getMorphName);    // (i) -> モーフ短名
 NCB_METHOD_PROXY(update, VRM_update);                // morph/視線へ反映 (毎フレーム)
 NCB_METHOD_PROXY(setColliderScale, VRM_setColliderScale);// 揺れコライダー半径の一律スケール(既定1.0)
 NCB_METHOD_PROXY(getColliderScale, VRM_getColliderScale);

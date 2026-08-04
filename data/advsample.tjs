@@ -835,6 +835,14 @@ class ADVSample extends Window
     }
     function setCharExpr(t, name)
     {
+        t.vrm.clearMorphs();   // 前の生モーフ指定を解除
+        var def = (exprCompositeById !== void) ? exprCompositeById[name] : void;
+        if (def !== void && def.morphs !== void) {
+            // 生モーフ表情: 個別モーフ(ブレンドシェイプ)を名前で直接指定
+            for (var i = 0; i < def.morphs.count; i += 2) t.vrm.setMorph(def.morphs[i], def.morphs[i + 1]);
+            t.setEmotionSet(name, (def.set !== void) ? def.set : []);   // 併せて VRM 表情部分(あれば)
+            return;
+        }
         var id = (name == "neutral" || name === void) ? "" : name;
         t.setEmotionSet(id, exprSetFor(name));
     }

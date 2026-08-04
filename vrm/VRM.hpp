@@ -257,6 +257,19 @@ namespace krkrvrm {
         }
         void captureRestPose() { humanoid.captureRestPose(); }
         void blendToRest(float t) { humanoid.blendToRest(t); }
+
+        // --- 生モーフ(ブレンドシェイプ)を名前で直接指定する層 ---
+        // 表情(expression)より下の階層。update() で expression 適用の後に override 適用する。
+        void setMorph(const std::string& name, float weight);   // 名前で個別モーフを設定
+        void clearMorphs();                                     // 生モーフ指定を全解除(影響度も 0 へ)
+        [[nodiscard]] std::size_t morphCount() const { return morphNames_.size(); }
+        [[nodiscard]] std::string morphName(std::size_t i) const {
+            return i < morphNames_.size() ? morphNames_[i] : std::string();
+        }
+        std::vector<std::string> morphNames_;   ///< 列挙用(短名)
+        std::unordered_map<std::string, std::vector<std::pair<std::shared_ptr<threepp::Mesh>, int>>> morphMap_;
+        std::unordered_map<std::string, float> rawMorphs_;   ///< override 指定
+        void applyRawMorphs();   ///< expression 適用の後に呼ぶ
         VRMExpressionManager expressionManager;
         VRMLookAt lookAt;
         VRMMeta meta;

@@ -48,6 +48,22 @@ global.stageDef = %[
 - 適用: `id` で呼ぶと set の全表情を weight つきで当てる。単一 VRM 表情との切替も
   同じセット補間でクロスフェード。パネルの「表情」行は 合成表情→VRM単一表情 の順に生成。
 
+#### 生モーフ表情（個別ブレンドシェイプ直接指定）✅実装済
+VRM 表情（名前付きモーフ束）ではなく、**個々のブレンドシェイプ（モーフ）を名前で直接**
+weight 指定する最下層。作者が用意した表情に無い表情（例: 片目ウインク）を作れる。
+```tjs
+%[ "id"=>"wink", "name"=>"ウインク",
+   "morphs"=>[ "Fcl_EYE_Close_L",1.0, "Fcl_MTH_Fun",0.7, "Fcl_BRW_Fun",1.0 ] ]
+```
+- `morphs`: `[モーフ名, weight, …]`。VRoid は `Fcl_*` 名（`glTF mesh.extras.targetNames`）。
+- `set` と併記可（生モーフ＋VRM表情の合成）。適用は VRM 表情の**後**に override するので
+  まばたき等にも上書き勝ちする。
+- C++ API: `VRM.setMorph(name,weight)` / `clearMorphs()` / `getMorphCount()` / `getMorphName(i)`。
+  列挙で全モーフ名（VRoid=57個）を取得できる。
+- **同時モーフ数に上限なし**: threepp fork の GL レンダラを attribute 8 枠方式 →
+  **morph テクスチャ方式**（全モーフを RGBA32F テクスチャに詰め `gl_VertexID`+`texelFetch` で
+  走査）へ改修済み。旧来の「1メッシュ同時8モーフ」制限を撤廃した。
+
 ### motions（VRMA モーション）✅実装済
 ```tjs
 %[ "id"=>"idle", "name"=>"待機", "file"=>"anim.vrma", "loop"=>1 ]

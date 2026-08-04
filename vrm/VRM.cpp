@@ -926,6 +926,33 @@ void main() {
         for (auto& c : constraints) c.update();
     }
 
+    // 生モーフ(ブレンドシェイプ)を名前で直接指定 -----------------------------
+    void VRM::setMorph(const std::string& name, float weight) {
+        rawMorphs_[name] = weight;
+    }
+    void VRM::clearMorphs() {
+        // 現在指定中のモーフ影響度を 0 に戻してからクリア
+        for (auto& [name, w] : rawMorphs_) {
+            auto it = morphMap_.find(name);
+            if (it == morphMap_.end()) continue;
+            for (auto& [mesh, idx] : it->second) {
+                auto& inf = mesh->morphTargetInfluences();
+                if (idx >= 0 && idx < (int)inf.size()) inf[idx] = 0.f;
+            }
+        }
+        rawMorphs_.clear();
+    }
+    void VRM::applyRawMorphs() {
+        for (auto& [name, w] : rawMorphs_) {
+            auto it = morphMap_.find(name);
+            if (it == morphMap_.end()) continue;
+            for (auto& [mesh, idx] : it->second) {
+                auto& inf = mesh->morphTargetInfluences();
+                if (idx >= 0 && idx < (int)inf.size()) inf[idx] = w;   // 表情の後に上書き
+            }
+        }
+    }
+
     void VRM::update(float deltaSec) {
         // ポーズ(正規化rig転写) → 制約 → 視線 → 表情 → springBone。
         // lookAt(expression 方式)は lookLeft/Right/Up/Down 表情ウェイトを設定するので、
@@ -934,6 +961,7 @@ void main() {
         updateConstraints();// VRMC_node_constraint (roll/aim/rotation)
         lookAt.update();
         expressionManager.applyToScene();
+        applyRawMorphs();   // 生モーフ override(表情の後に適用)
         if (!springBone.empty()) {
             if (scene) scene->updateMatrixWorld(true);// 揺れ物理は最新 world 行列が要る
             springBone.update(deltaSec);
@@ -1022,6 +1050,39 @@ void main() {
                 return -1;
             return gltf["nodes"][nodeIdx].value("mesh", -1);
         };
+
+        // 生モーフ名 -> (mesh, index) マップ。glTF mesh の extras.targetNames から。
+        // 短名(最後の '.' 以降。例 "Face_Blendshape.Fcl_EYE_Close_L" -> "Fcl_EYE_Close_L")と
+        // フル名の両方を登録。列挙は短名。
+        if (gltf.contains("meshes")) {
+            const auto& gmeshes = gltf["meshes"];
+            for (int mi = 0; mi < (int)gmeshes.size(); ++mi) {
+                const auto& gm = gmeshes[mi];
+                std::vector<std::string> tnames;
+                if (gm.contains("extras") && gm["extras"].contains("targetNames")) {
+                    for (const auto& tn : gm["extras"]["targetNames"]) tnames.push_back(tn.get<std::string>());
+                } else if (gm.contains("primitives")) {
+                    for (const auto& p : gm["primitives"])
+                        if (p.contains("extras") && p["extras"].contains("targetNames")) {
+                            for (const auto& tn : p["extras"]["targetNames"]) tnames.push_back(tn.get<std::string>());
+                            break;
+                        }
+                }
+                if (tnames.empty()) continue;
+                auto meshes = meshesForMeshIdx(mi);
+                for (int ti = 0; ti < (int)tnames.size(); ++ti) {
+                    const std::string& full = tnames[ti];
+                    std::string shortn = full;
+                    auto dot = full.rfind('.');
+                    if (dot != std::string::npos) shortn = full.substr(dot + 1);
+                    for (auto& m : meshes) {
+                        vrm->morphMap_[full].push_back({m, ti});
+                        if (shortn != full) vrm->morphMap_[shortn].push_back({m, ti});
+                    }
+                    vrm->morphNames_.push_back(shortn);
+                }
+            }
+        }
 
         if (isVrm1) {
             // ---- VRM 1.0 (VRMC_vrm) ----

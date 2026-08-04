@@ -80,7 +80,13 @@ VRMA アニメ(+hips ルートモーション)・揺れ物(springBone, center �
 ### リポジトリ
 - 親 (`.`): VRM 実装 + ncbind バインド (`main.cpp`)。
 - threepp fork (`threepp/`, branch `work_sdl3`): GLES 化 / GLTFLoader 露出・修正 / MToon 用の
-  ShaderMaterial・MeshToonMaterial mixin 追加 等。**push は force 必要 (rebase 履歴)、未 push**。
+  ShaderMaterial・MeshToonMaterial mixin 追加 / **morph テクスチャ化**(全モーフを RGBA32F
+  テクスチャに詰め `gl_VertexID`+`texelFetch` で走査。旧 attribute 8 枠方式の「同時8モーフ」
+  上限を撤廃) 等。**push は force 必要 (rebase 履歴)、未 push**。
+  - ⚠ **シェーダ chunk (`src/shaders/**/*.glsl`) を編集したら再 configure 必須**:
+    `cmake/embed.cmake` が configure 時に `.glsl` を READ して生成ヘッダ (`build/*/generated/`)
+    へ埋め込む。`cmake --build` だけでは古い生成ヘッダが使われ、コンパイル失敗が**黙殺**され
+    描画破綻になる (旧 `createShader` は `GL_COMPILE_STATUS` 未チェックだった→報告するよう修正済)。
 - ncbind (`../ncbind`): 単一継承(is-a)拡張 + CreateAdaptor 祖先 attach。
 - gles (`../gles`): git 管理外。`unpremultiply` 追加分はソース保存 + DLL を plugin64 に配置。
 
