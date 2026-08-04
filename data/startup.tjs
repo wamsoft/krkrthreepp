@@ -330,5 +330,11 @@ class VRMViewer extends Window
     }
 }
 
-var win = new VRMViewer();
-win.visible = true;
+// -sample: 16:9 ADV 風サンプル(立ち絵2体 + Elements パネル)を起動する。
+// 無指定なら従来の単体 VRM ビューア。
+if (System.getArgument("-sample") !== void) {
+    Scripts.execStorage("advsample.tjs");
+} else {
+    var win = new VRMViewer();
+    win.visible = true;
+}

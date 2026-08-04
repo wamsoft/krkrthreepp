@@ -1,0 +1,204 @@
+/**
+ * Tachie — VRM を ADV 立ち絵として扱う 1 キャラ分の枠組み
+ *
+ * 1 キャラ = 1 dest レイヤ。自前の Scene / VRM / カメラ / フレーミングを持ち、
+ * 共有の GLESAdaptor + GLRenderer で自分の dest レイヤへ描画する。
+ * 画面内の左右位置は dest レイヤの setPos で決める(吉里吉里 2D 側の配置)。
+ *
+ * "生きてる立ち絵" の最低ライン:
+ *   - 自動まばたき (blink 表情のパルス)
+ *   - カメラ目線 (setLookAtTarget をカメラ位置に向ける)
+ *   - 表情の切り替え (setEmotion)
+ *
+ * 前提: Threepp / GLESAdaptor プラグインは link 済み、VRMFraming は execStorage 済み。
+ */
+class Tachie
+{
+    var owner;      // Window
+    var adaptor;    // 共有 GLESAdaptor
+    var renderer;   // 共有 Threepp.GLRenderer
+    var framer;     // 共有 VRMFraming
+
+    var scene;      // このキャラ専用 Scene
+    var vrm;        // Threepp.VRM
+    var camera;     // Threepp.PerspectiveCamera (このキャラ用フレーミング)
+    var dest;       // 描画結果を受ける Layer
+
+    var w, h;       // 描画バッファ(=dest レイヤ)のサイズ
+    var preset  = "bust";
+    var frontZ  = 1;   // +1=VRM1.0 正面(+Z) / -1=VRM0.x
+
+    // --- 自動まばたき ---
+    var blinkEnabled  = true;
+    var blinkClock    = 0.0;   // 次のまばたきまでの経過
+    var blinkInterval = 3.0;   // 次のまばたきまでの間隔(秒)
+    var blinkPhase    = -1;    // -1:待機 0:閉じ 1:開き
+    var blinkTime     = 0.0;
+    var blinkSeed     = 0;     // 間隔ゆらぎ用
+
+    // --- 表情(感情) ---
+    var emotion = "";          // 現在当てている感情表情("" = なし)
+
+    // --- カメラ目線 ---
+    // 近距離カメラだと目線角が極端になり不自然なので既定 OFF。
+    // 「視線のADV化」機能で改めて安定した実装にする(TODO)。
+    var lookAtCamera = false;
+
+    function Tachie(owner, adaptor, renderer, framer, parentLayer, w, h)
+    {
+        this.owner    = owner;
+        this.adaptor  = adaptor;
+        this.renderer = renderer;
+        this.framer   = framer;
+        this.w = w;
+        this.h = h;
+
+        scene  = new Threepp.Scene();
+        camera = new Threepp.PerspectiveCamera(30, w * 1.0 / h, 0.1, 100);
+
+        // 立ち絵向けの素直なライト(背景に馴染ませる調整は将来)
+        var dir = new Threepp.DirectionalLight(0xffffff, 1.35);
+        dir.setPosition(0.5, 1.0, 1.0);
+        scene.add(dir);
+        var amb = new Threepp.AmbientLight(0xffffff, 0.75);
+        scene.add(amb);
+
+        // 描画結果を受けるレイヤ (α込みを通常アルファ合成)
+        dest = new Layer(owner, parentLayer);
+        dest.setImageSize(w, h);
+        dest.setSize(w, h);
+        dest.type = ltAlpha;
+        dest.visible = true;
+        owner.add(dest);
+    }
+
+    // VRM を読み込み、指定位置へ配置してフレーミングする
+    function load(vrmName, frontZ, x, y)
+    {
+        this.frontZ = frontZ;
+        var loader = new Threepp.VRMLoader();
+        vrm = loader.loadStorage(Storages.getPlacedPath(vrmName + ".vrm"));
+        if (vrm === void) {
+            Debug.message("Tachie: VRM load failed: " + vrmName);
+            return false;
+        }
+        scene.add(vrm.getScene());
+        restPose();
+        dest.setPos(x, y);
+        // 間隔ゆらぎの初期位相をキャラごとにずらす
+        blinkSeed = (x + 1) * 131 + 7;
+        blinkInterval = 2.4 + (blinkSeed % 20) / 10.0;
+        frame(preset);
+        return true;
+    }
+
+    // 素立ちポーズ: T字ポーズの腕を体側へ下ろす。
+    // normalized ボーンに与えると vrm.update() が raw へ写して持続する
+    // (VRMA を applyAnimation しない限りこの姿勢のまま)。
+    function restPose()
+    {
+        var lua = vrm.getNormalizedBoneNode("leftUpperArm");
+        var rua = vrm.getNormalizedBoneNode("rightUpperArm");
+        // 前方(+Z)向き・上(+Y)・腕は±X。Z軸回りに回して腕を下ろす。
+        if (lua !== void) lua.rotateZ(-1.25);
+        if (rua !== void) rua.rotateZ( 1.25);
+        // 軽く肘を曲げて自然に
+        var lla = vrm.getNormalizedBoneNode("leftLowerArm");
+        var rla = vrm.getNormalizedBoneNode("rightLowerArm");
+        if (lla !== void) lla.rotateY(-0.20);
+        if (rla !== void) rla.rotateY( 0.20);
+    }
+
+    // フレーミングプリセットを適用してカメラを置き直す
+    function frame(p)
+    {
+        preset = p;
+        framer.frontZ = frontZ;
+        framer.apply(vrm, camera, scene, p, w * 1.0 / h);
+        if (lookAtCamera) applyLookAtCamera();
+    }
+
+    // 視線をカメラ(=プレイヤー)へ向ける
+    function applyLookAtCamera()
+    {
+        var cp = camera.position;   // Vector3 (standalone camera なので world=local)
+        vrm.setLookAtTarget(cp.x, cp.y, cp.z);
+    }
+
+    // 感情表情を切り替える(前の感情は 0 に戻す)。"" / "neutral" で素の顔。
+    function setEmotion(name)
+    {
+        if (emotion != "") vrm.setExpression(emotion, 0.0);
+        if (name == "neutral") name = "";
+        emotion = name;
+        if (emotion != "") {
+            // 表情中は自動まばたきを止める(目形が競合して一瞬乱れるため)。
+            // 進行中のまばたきも 0 に戻してから表情を当てる。
+            vrm.setExpression("blink", 0.0);
+            blinkPhase = -1; blinkClock = 0.0;
+            vrm.setExpression(emotion, 1.0);
+        }
+    }
+
+    function setBlinkEnabled(on)
+    {
+        blinkEnabled = on;
+        if (!on) { vrm.setExpression("blink", 0.0); blinkPhase = -1; }
+    }
+
+    // 毎フレーム更新(dt 秒)
+    function update(dt)
+    {
+        // 感情表情を当てている間はまばたきしない(目形の競合回避)
+        if (blinkEnabled && emotion == "") updateBlink(dt);
+        if (lookAtCamera) applyLookAtCamera();
+        vrm.update(dt);
+    }
+
+    // 自動まばたきの状態機械
+    function updateBlink(dt)
+    {
+        if (blinkPhase < 0) {
+            blinkClock += dt;
+            if (blinkClock >= blinkInterval) {
+                blinkPhase = 0; blinkTime = 0.0; blinkClock = 0.0;
+                // 次の間隔をゆらす(2.4〜5.3秒程度)
+                blinkSeed = (blinkSeed * 1103515245 + 12345) & 0x7fffffff;
+                blinkInterval = 2.4 + (blinkSeed % 30) / 10.0;
+            }
+            return;
+        }
+        var CLOSE = 0.06, OPEN = 0.10;
+        blinkTime += dt;
+        if (blinkPhase == 0) {
+            var wgt = blinkTime / CLOSE;
+            if (wgt >= 1.0) { wgt = 1.0; blinkPhase = 1; blinkTime = 0.0; }
+            vrm.setExpression("blink", wgt);
+        } else {
+            var wgt = 1.0 - blinkTime / OPEN;
+            if (wgt <= 0.0) { wgt = 0.0; blinkPhase = -1; }
+            vrm.setExpression("blink", wgt);
+        }
+    }
+
+    // 自分の dest レイヤへ 1 回描画する
+    function render()
+    {
+        adaptor.capture(dest, global.tachieRenderCb, this, 0x00000000);
+        dest.update();
+    }
+
+    function finalize()
+    {
+        invalidate vrm if vrm !== void;
+    }
+}
+
+// capture コールバックは adaptor コンテキストで走りクラスメンバが見えないため、
+// 必要な参照は param(=Tachie)経由で受ける。グローバル関数として置く。
+function tachieRenderCb(w, h, t)
+{
+    t.renderer.onBeginScene(w, h);
+    t.renderer.render(t.scene, t.camera);
+    t.renderer.onEndScene();
+}

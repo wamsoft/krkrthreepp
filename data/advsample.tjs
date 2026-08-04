@@ -1,0 +1,285 @@
+/**
+ * advsample.tjs — 16:9 ADV 風サンプル (立ち絵2体 + Elements 操作パネル)
+ *
+ * 起動:  krkrz64.exe <data> -readencoding=UTF-8 -sample
+ *   (startup.tjs が -sample を見て本スクリプトを実行する)
+ *
+ * 画面 1280x720。左右に VRM 立ち絵を 2 体。各キャラは 1 dest レイヤで、
+ * 共有の GLESAdaptor + GLRenderer が各レイヤへ個別に描画する。
+ * 各種動作(フレーミング/表情/まばたき)の確認は Elements パネルで行う。
+ *
+ * REPL/Agent 用グローバル: global.app (ADVSample), global.win(=app 別名)。
+ */
+
+Scripts.execStorage("vrmframing.tjs");
+Scripts.execStorage("tachie.tjs");
+
+var SCREEN_W = 1280;
+var SCREEN_H = 720;
+
+// 立ち絵1体分の描画バッファ(=dest レイヤ)サイズ。両キャラ共通なので
+// adaptor/renderer をこのサイズ固定で使え、フレーム毎のリサイズが要らない。
+// キャラを横に十分な余白付きで収め(T字腕でも切れない)、左右レイヤを
+// オーバーラップさせて配置する(ltAlpha 透明なので重ねても問題ない)。
+var TACHIE_W = 720;
+var TACHIE_H = 720;
+// 各キャラの dest レイヤ左上位置(キャラは各レイヤ中央に立つ)。中央付近で重なる。
+var LEFT_X  = -30;
+var RIGHT_X = 590;
+
+// ---------------------------------------------------------------------------
+//  Elements 操作パネル (常駐・非モーダル)
+// ---------------------------------------------------------------------------
+class ControlPanel extends Dialog
+{
+    var app;
+
+    function ControlPanel(app)
+    {
+        super.Dialog();
+        this.app = app;
+    }
+
+    function onAction(id, payload)
+    {
+        app.onPanel(id);
+    }
+
+    // --- レイアウト部品 -----------------------------------------------
+    function btn(id, text)
+    {
+        return %[ "type" => "button", "id" => id, "text" => text,
+                  "close_on_click" => 0 ];
+    }
+    function labelCell(text, w)
+    {
+        return %[ "type" => "hsize", "width" => w,
+                  "child" => %[ "type" => "align_left",
+                                "child" => %[ "type" => "label", "text" => text ] ] ];
+    }
+    // defs = [id, text, id, text, ...]
+    function row(labelText, defs)
+    {
+        var kids = [];
+        kids.add(labelCell(labelText, 96));
+        for (var i = 0; i < defs.count; i += 2) {
+            kids.add(btn(defs[i], defs[i + 1]));
+            kids.add(%[ "type" => "hspacer", "width" => 8 ]);
+        }
+        return %[ "type" => "htile", "children" => kids ];
+    }
+
+    function buildLayout()
+    {
+        var rows = [];
+        rows.add(row("対象:", ["t_left","左", "t_right","右", "t_both","両方"]));
+        rows.add(%[ "type" => "vspacer", "height" => 8 ]);
+        rows.add(row("フレーム:", ["f_full","全身", "f_knee","膝上",
+                                   "f_waist","腰上", "f_bust","胸上", "f_face","顔"]));
+        rows.add(%[ "type" => "vspacer", "height" => 8 ]);
+        rows.add(row("表情:", ["e_neutral","標準", "e_happy","喜", "e_angry","怒",
+                               "e_sad","哀", "e_relaxed","楽", "e_surprised","驚"]));
+        rows.add(%[ "type" => "vspacer", "height" => 8 ]);
+        rows.add(row("その他:", ["blink_toggle","まばたき切替", "hide","隠す(Tab)"]));
+
+        return %[
+            "size"       => [1240, 190],
+            "align"      => "bottom",
+            "margin"     => 12,
+            "background" => [18, 20, 30, 235],
+            "input"      => %[ "arrow_focus_nav" => 1 ],
+            "content"    => %[ "type" => "margin", "padding" => 14,
+                               "child" => %[ "type" => "vtile", "children" => rows ] ]
+        ];
+    }
+
+    function open()
+    {
+        // 非モーダル常駐。grabFocus=false でゲーム側キー入力を奪わない。
+        return showDict(buildLayout(), false);
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  ADV サンプル本体
+// ---------------------------------------------------------------------------
+class ADVSample extends Window
+{
+    var adaptor;    // 共有 GLESAdaptor
+    var renderer;   // 共有 Threepp.GLRenderer
+    var framer;     // 共有 VRMFraming
+
+    var back;       // 背景レイヤ (1280x720)
+    var tachies;    // Tachie 配列 [左, 右]
+    var target = 2; // 操作対象 0:左 1:右 2:両方
+
+    var panel;      // ControlPanel
+    var timer, lastTick;
+
+    function ADVSample()
+    {
+        super.Window();
+        caption = "krkr_threepp ADV sample";
+        setInnerSize(SCREEN_W, SCREEN_H);
+
+        // 背景
+        back = new Layer(this, null);
+        back.setImageSize(SCREEN_W, SCREEN_H);
+        back.setSize(SCREEN_W, SCREEN_H);
+        back.setPos(0, 0);
+        drawBackground(back);
+        back.visible = true;
+        add(back);
+
+        // 共有 GLES コンテキスト & レンダラ (立ち絵1体分のサイズで固定)
+        adaptor = new GLESAdaptor(this);
+        adaptor.setScreenSize(TACHIE_W, TACHIE_H);
+        adaptor.unpremultiply = true;
+        adaptor.makeCurrent();
+        renderer = new Threepp.GLRenderer(adaptor, TACHIE_W, TACHIE_H);
+        renderer.setClearColor(0x000000, 0.0);
+
+        framer = new VRMFraming();
+
+        // 立ち絵2体を左右に。1キャラ=1レイヤで setPos 配置。
+        tachies = [];
+        var left  = new Tachie(this, adaptor, renderer, framer, back, TACHIE_W, TACHIE_H);
+        left.load("model", 1, LEFT_X, 0);
+        tachies.add(left);
+
+        var right = new Tachie(this, adaptor, renderer, framer, back, TACHIE_W, TACHIE_H);
+        right.load("AvatarSample_A_VRM1_0", 1, RIGHT_X, 0);
+        tachies.add(right);
+
+        // 既定フレーミング(腰上。頭は全部出て足は隠れる ADV 立ち絵構図)
+        applyFrame("waist");
+
+        // 操作パネル(常駐。DrawDevice 準備前は onContinuousHandler で再試行)
+        panel = new ControlPanel(this);
+        if (panel.open()) panelReady = true;
+
+        // 描画ループ
+        lastTick = System.getTickCount();
+        timer = new Timer(this, "onFrame");
+        timer.interval = 16;
+        timer.enabled = true;
+        add(timer);
+    }
+
+    // 起動直後は overlay renderer 未登録で showDict が false のことがあるので
+    // 成功するまで onContinuousHandler で再試行する。
+    var panelReady  = false;  // 初回 open 成功済み(DrawDevice 準備完了)
+    var panelWanted = true;   // 表示したい状態(Tab で切替 / 隠すボタンで false)
+
+    // 起動直後は DrawDevice 未登録で open が false のことがあるので、初回だけ
+    // 成功するまで再試行する(以後の表示制御は Tab / 隠すボタン)。
+    function onContinuousHandler(tick)
+    {
+        if (!panelReady && panelWanted && panel !== void) {
+            if (panel.open()) panelReady = true;
+        }
+    }
+
+    // Tab で表示/非表示トグル
+    function onKeyDown(key, shift)
+    {
+        if (key == VK_TAB) { togglePanel(); return; }
+        super.onKeyDown(key, shift);
+    }
+    function togglePanel()
+    {
+        if (panel === void) return;
+        panelWanted = !panelWanted;
+        if (panelWanted) { if (panel.open()) panelReady = true; }
+        else panel.close();
+    }
+
+    function drawBackground(layer)
+    {
+        // 縦グラデ + 床ライン。ADV の背景想定のあっさり塗り。
+        for (var y = 0; y < SCREEN_H; y++) {
+            var t = y * 1.0 / SCREEN_H;
+            var r = (int)(0x28 + 0x20 * t);
+            var g = (int)(0x2c + 0x2a * t);
+            var b = (int)(0x3a + 0x36 * t);
+            layer.fillRect(0, y, SCREEN_W, 1, 0xFF000000 + (r << 16) + (g << 8) + b);
+        }
+        // 床っぽい水平線
+        layer.fillRect(0, (int)(SCREEN_H * 0.82), SCREEN_W, 2, 0x30FFFFFF);
+    }
+
+    // --- 操作対象の解決 -----------------------------------------------
+    function targetList()
+    {
+        if (target == 0) return [tachies[0]];
+        if (target == 1) return [tachies[1]];
+        return tachies;
+    }
+    function applyFrame(p)
+    {
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].frame(p);
+    }
+    function applyEmotion(name)
+    {
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].setEmotion(name);
+    }
+    function toggleBlink()
+    {
+        var list = targetList();
+        for (var i = 0; i < list.count; i++)
+            list[i].setBlinkEnabled(!list[i].blinkEnabled);
+    }
+
+    // Elements パネルからの操作
+    function onPanel(id)
+    {
+        switch (id) {
+        case "t_left":  target = 0; break;
+        case "t_right": target = 1; break;
+        case "t_both":  target = 2; break;
+
+        case "f_full":  applyFrame("full");  break;
+        case "f_knee":  applyFrame("knee");  break;
+        case "f_waist": applyFrame("waist"); break;
+        case "f_bust":  applyFrame("bust");  break;
+        case "f_face":  applyFrame("face");  break;
+
+        case "e_neutral":   applyEmotion("neutral");   break;
+        case "e_happy":     applyEmotion("happy");     break;
+        case "e_angry":     applyEmotion("angry");     break;
+        case "e_sad":       applyEmotion("sad");       break;
+        case "e_relaxed":   applyEmotion("relaxed");   break;
+        case "e_surprised": applyEmotion("surprised"); break;
+
+        case "blink_toggle": toggleBlink(); break;
+        case "hide":         panelWanted = false; if (panel !== void) panel.close(); break;
+        }
+    }
+
+    function onFrame()
+    {
+        var now = System.getTickCount();
+        var dt  = (now - lastTick) / 1000.0;
+        lastTick = now;
+        if (dt > 0.1) dt = 0.1;
+
+        for (var i = 0; i < tachies.count; i++) tachies[i].update(dt);
+        for (var i = 0; i < tachies.count; i++) tachies[i].render();
+    }
+
+    function finalize()
+    {
+        if (timer !== void) timer.enabled = false;
+        if (panel !== void) { panel.close() if panel.active; }
+        for (var i = 0; i < tachies.count; i++) invalidate tachies[i];
+        invalidate renderer if renderer !== void;
+        invalidate adaptor  if adaptor  !== void;
+        super.finalize(...);
+    }
+}
+
+global.app = new ADVSample();
+global.win = app;
+app.visible = true;
