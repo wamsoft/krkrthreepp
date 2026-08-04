@@ -52,6 +52,7 @@ class Tachie
     var camYaw = 0.0;           // 水平旋回(0=正面)
     var camPitch = 0.0;         // 仰俯
     var camDistScale = 1.0;     // ズーム倍率
+    var camEyeY = 1.4;          // 視線を向ける高さ(目の world Y)
 
     function Tachie(owner, adaptor, renderer, framer, parentLayer, w, h)
     {
@@ -126,6 +127,14 @@ class Tachie
         var r = framer.apply(vrm, camera, scene, p, w * 1.0 / h);
         camTX = r.tx; camTY = r.ty; camTZ = r.tz;
         camBaseDist = r.dist;
+        // 視線を向ける高さ = 目の world Y(無ければ head + 少し上)
+        var eye = vrm.getBoneNode("leftEye");
+        if (eye === void) eye = vrm.getBoneNode("rightEye");
+        if (eye !== void) camEyeY = eye.getWorldPosition().y;
+        else {
+            var hd = vrm.getBoneNode("head");
+            camEyeY = (hd !== void) ? hd.getWorldPosition().y + 0.06 : camTY;
+        }
         updateCameraPose();
     }
 
@@ -164,13 +173,14 @@ class Tachie
         updateCameraPose();
     }
 
-    // 視線をカメラ(=プレイヤー)へ向ける
+    // 視線をカメラ(=プレイヤー)へ向ける。カメラの水平方向を、ただし目の高さで
+    // 見る→正面からプレイヤーを見る自然な視線に(注視点が胴だと下向きになるのを回避)。
     function applyLookAtCamera()
     {
-        var cx = camTX + camBaseDist * camDistScale * Math.sin(camYaw) * Math.cos(camPitch);
-        var cy = camTY + camBaseDist * camDistScale * Math.sin(camPitch);
-        var cz = camTZ + frontZ * camBaseDist * camDistScale * Math.cos(camYaw) * Math.cos(camPitch);
-        vrm.setLookAtTarget(cx, cy, cz);
+        var dist = camBaseDist * camDistScale;
+        var cx = camTX + dist * Math.sin(camYaw) * Math.cos(camPitch);
+        var cz = camTZ + frontZ * dist * Math.cos(camYaw) * Math.cos(camPitch);
+        vrm.setLookAtTarget(cx, camEyeY, cz);
     }
     function setLookAtCamera(on)
     {
