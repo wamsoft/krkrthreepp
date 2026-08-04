@@ -27,6 +27,10 @@ var TACHIE_H = 720;
 var LEFT_X  = -30;
 var RIGHT_X = 590;
 
+// 空間モードのカメラ画角。狭い(望遠)ほど投影が平行に近づき、寄せても左右の
+// キャラが外向きに歪みにくい。
+var SPACE_FOV = 20;
+
 // ---------------------------------------------------------------------------
 //  Elements 操作パネル (常駐・非モーダル)
 // ---------------------------------------------------------------------------
@@ -69,26 +73,58 @@ class ControlPanel extends Dialog
         return %[ "type" => "htile", "children" => kids ];
     }
 
-    function buildLayout()
+    // rowspecs = [ [label, defs], ... ] を vspacer 挟んで縦積み
+    function stack(rowspecs)
     {
         var rows = [];
-        rows.add(row("対象:", ["t_left","左", "t_right","右", "t_both","両方"]));
-        rows.add(%[ "type" => "vspacer", "height" => 8 ]);
-        rows.add(row("フレーム:", ["f_full","全身", "f_knee","膝上",
-                                   "f_waist","腰上", "f_bust","胸上", "f_face","顔"]));
-        rows.add(%[ "type" => "vspacer", "height" => 8 ]);
-        rows.add(row("表情:", ["e_neutral","標準", "e_happy","喜", "e_angry","怒",
-                               "e_sad","哀", "e_relaxed","楽", "e_surprised","驚"]));
-        rows.add(%[ "type" => "vspacer", "height" => 8 ]);
-        rows.add(row("カメラ:", ["cam_left","◀", "cam_right","▶", "cam_up","▲",
-                                "cam_down","▼", "cam_in","寄る", "cam_out","引く",
-                                "cam_reset","正面"]));
-        rows.add(%[ "type" => "vspacer", "height" => 8 ]);
-        rows.add(row("切替:", ["blink_toggle","まばたき", "look_toggle","カメラ目線",
-                              "idle_toggle","idle", "hide","隠す(Tab)"]));
+        for (var i = 0; i < rowspecs.count; i++) {
+            if (i > 0) rows.add(%[ "type" => "vspacer", "height" => 8 ]);
+            rows.add(row(rowspecs[i][0], rowspecs[i][1]));
+        }
+        return rows;
+    }
 
+    // 立ち絵モードのパネル
+    function tachieRows()
+    {
+        return stack([
+            ["対象:",    ["t_left","左", "t_right","右", "t_both","両方"]],
+            ["フレーム:", ["f_full","全身", "f_knee","膝上", "f_waist","腰上",
+                          "f_bust","胸上", "f_face","顔"]],
+            ["表情:",    ["e_neutral","標準", "e_happy","喜", "e_angry","怒",
+                          "e_sad","哀", "e_relaxed","楽", "e_surprised","驚"]],
+            ["カメラ:",  ["cam_left","◀", "cam_right","▶", "cam_up","▲", "cam_down","▼",
+                          "cam_in","寄る", "cam_out","引く", "cam_reset","正面"]],
+            ["切替:",    ["blink_toggle","まばたき", "look_toggle","カメラ目線",
+                          "idle_toggle","idle", "hide","隠す(Tab)"]],
+            ["モード:",  ["mode_tachie","立ち絵", "mode_space","空間"]]
+        ]);
+    }
+
+    // 空間モードのパネル (フレーム指定は無効。位置・画角・カメラ中心)
+    function spaceRows()
+    {
+        return stack([
+            ["対象:",   ["t_left","左", "t_right","右", "t_both","両方"]],
+            ["表情:",   ["e_neutral","標準", "e_happy","喜", "e_angry","怒",
+                         "e_sad","哀", "e_relaxed","楽", "e_surprised","驚"]],
+            ["位置:",   ["pos_left","← 左", "pos_right","右 →", "pos_fwd","前(近)",
+                         "pos_back","後(遠)", "pos_reset","並べ直す"]],
+            ["カメラ:", ["cam_left","◀", "cam_right","▶", "cam_up","▲", "cam_down","▼",
+                         "cam_in","寄る", "cam_out","引く", "cam_reset","正面"]],
+            ["操作:",   ["camm_orbit","回り込み", "camm_move","平行移動",
+                         "bg_fixed","背景=固定", "bg_follow","背景=追従"]],
+            ["画角:",   ["fov_tele","望遠(平行寄り)", "fov_wide","広角"]],
+            ["切替:",   ["blink_toggle","まばたき", "idle_toggle","idle", "hide","隠す(Tab)"]],
+            ["モード:", ["mode_tachie","立ち絵", "mode_space","空間"]]
+        ]);
+    }
+
+    function buildLayout()
+    {
+        var rows = (app.mode == "space") ? spaceRows() : tachieRows();
         return %[
-            "size"       => [1240, 190],
+            "size"       => [1260, 460],
             "align"      => "bottom",
             "margin"     => 12,
             "background" => [18, 20, 30, 235],
@@ -120,6 +156,18 @@ class ADVSample extends Window
 
     var panel;      // ControlPanel
     var timer, lastTick;
+
+    // --- モード ---
+    // "tachie": 現行(1キャラ=1レイヤ・各自カメラ) / "space": 単一カメラで空間に並べて
+    // 1枚のフルスクリーンレイヤへ描画、背景はカメラ追従ビルボード。
+    var mode = "tachie";
+    var spaceScene, spaceCamera, spaceDest, spaceBg, spaceBgLayer;
+    // 舞台(書割の前で演技)イメージ: 望遠で寄り気味の既定。
+    var sCamYaw = 0.0, sCamPitch = 0.02, sCamDist = 3.8;   // 空間カメラ軌道
+    var sTX = 0.0, sTY = 1.0, sTZ = 0.0;                   // 空間カメラ注視点
+    var sFov = SPACE_FOV;                                  // 空間カメラ画角(望遠/広角)
+    var sCamMode = "orbit";   // "orbit"(回り込み) / "move"(平行移動)
+    var bgFollow = false;     // 背景板 false=舞台奥に固定 / true=カメラ追従(常に画面を埋める)
 
     function ADVSample()
     {
@@ -222,6 +270,176 @@ class ADVSample extends Window
         layer.fillRect(0, (int)(SCREEN_H * 0.82), SCREEN_W, 2, 0x30FFFFFF);
     }
 
+    // ==================================================================
+    //  空間モード (単一カメラ + 背景ビルボード)
+    // ==================================================================
+    // 空間用の背景をレイヤへ描く(ビルボードのテクスチャ元)。あっさりした
+    // 屋内風グラデ + 床。将来は画像差し替え。
+    function drawSpaceBg(layer)
+    {
+        var W = layer.imageWidth, H = layer.imageHeight;
+        var horizon = (int)(H * 0.62);
+        for (var y = 0; y < H; y++) {
+            var c;
+            if (y < horizon) {           // 壁
+                var t = y * 1.0 / horizon;
+                var r = (int)(0x3a + 0x18 * t), g = (int)(0x36 + 0x1a * t), b = (int)(0x42 + 0x20 * t);
+                c = 0xFF000000 + (r << 16) + (g << 8) + b;
+            } else {                     // 床
+                var t2 = (y - horizon) * 1.0 / (H - horizon);
+                var r2 = (int)(0x2a - 0x10 * t2), g2 = (int)(0x24 - 0x0e * t2), b2 = (int)(0x28 - 0x10 * t2);
+                c = 0xFF000000 + (r2 << 16) + (g2 << 8) + b2;
+            }
+            layer.fillRect(0, y, W, 1, c);
+        }
+        layer.fillRect(0, horizon, W, 2, 0x40FFFFFF);   // 地平線
+    }
+
+    // 背景ビットマップをレイヤへ読み込む(成功で true)。textureFromLayer の元にする。
+    function loadBgImage(layer, name)
+    {
+        try {
+            layer.loadImages(name);   // 画像サイズにレイヤがリサイズされる
+            return true;
+        } catch (e) {
+            Debug.message("bg image load failed: " + name);
+            return false;
+        }
+    }
+
+    // 空間シーンを初回だけ構築する
+    function buildSpace()
+    {
+        if (spaceScene !== void) return;
+        spaceScene  = new Threepp.Scene();
+        spaceCamera = new Threepp.PerspectiveCamera(sFov, SCREEN_W * 1.0 / SCREEN_H, 0.1, 100);
+
+        var dir = new Threepp.DirectionalLight(0xffffff, 1.25);
+        dir.setPosition(0.5, 1.0, 1.0); spaceScene.add(dir);
+        var amb = new Threepp.AmbientLight(0xffffff, 0.8); spaceScene.add(amb);
+
+        // 背景ビルボード (書割): 背景ビットマップをレイヤへ読み込み → テクスチャ → 平面 Mesh
+        spaceBgLayer = new Layer(this, back);
+        spaceBgLayer.visible = false;
+        if (!loadBgImage(spaceBgLayer, "bg.jpg")) {
+            // 読み込めなければ生成グラデにフォールバック
+            spaceBgLayer.setImageSize(1024, 576);
+            spaceBgLayer.setSize(1024, 576);
+            drawSpaceBg(spaceBgLayer);
+        }
+        var tex  = textureFromLayer(spaceBgLayer);
+        var bmat = new Threepp.MeshBasicMaterial();
+        bmat.setMap(tex);
+        var bgeo = new Threepp.PlaneGeometry(1, 1);
+        spaceBg  = new Threepp.Mesh(bgeo, bmat);
+        spaceScene.add(spaceBg);
+
+        // フルスクリーンの描画先レイヤ
+        spaceDest = new Layer(this, back);
+        spaceDest.setImageSize(SCREEN_W, SCREEN_H);
+        spaceDest.setSize(SCREEN_W, SCREEN_H);
+        spaceDest.setPos(0, 0);
+        spaceDest.type = ltAlpha;
+        spaceDest.visible = false;
+        add(spaceDest);
+
+        updateSpaceCamera();
+    }
+
+    // 注視点まわりの旋回/ズームから空間カメラを置く
+    function updateSpaceCamera()
+    {
+        var cp = Math.cos(sCamPitch);
+        var px = sTX + sCamDist * Math.sin(sCamYaw) * cp;
+        var py = sTY + sCamDist * Math.sin(sCamPitch);
+        var pz = sTZ + sCamDist * Math.cos(sCamYaw) * cp;
+        spaceCamera.setPosition(px, py, pz);
+        spaceCamera.lookAt(sTX, sTY, sTZ);
+        spaceCamera.updateProjectionMatrix();
+    }
+
+    // 背景板の更新。bgFollow=false: 舞台奥に固定した板(カメラ移動で自然に見え方が
+    // 変わる)。bgFollow=true: カメラ追従で常に画面を埋める書割。
+    // ※ textureFromLayer は上下反転しない(threepp の flipY はローダ側)ため、
+    //   どちらも平面の Y を負スケールにして上下を正す。
+    function updateSpaceBg()
+    {
+        if (spaceBg === void) return;
+        if (!bgFollow) {
+            // 舞台奥の固定板 (16:9)。床(y=0)付近から立てる。+Z(客席)向き。
+            spaceBg.setPosition(0.0, 2.4, -3.5);
+            spaceBg.setRotation(0, 0, 0);
+            spaceBg.setScale(10.0, -5.6, 1.0);
+            return;
+        }
+        // カメラ追従(常に画面を埋める)
+        var cp = spaceCamera.position;   // Vector3
+        var fx = sTX - cp.x, fy = sTY - cp.y, fz = sTZ - cp.z;   // カメラ→注視(前方)
+        var fl = Math.sqrt(fx*fx + fy*fy + fz*fz); if (fl < 0.001) fl = 1;
+        fx /= fl; fy /= fl; fz /= fl;
+        var D = 9.0;   // 注視点から奥へ
+        var bx = sTX + fx*D, by = sTY + fy*D, bz = sTZ + fz*D;
+        spaceBg.setPosition(bx, by, bz);
+        // three.js の Mesh.lookAt は +Z をターゲットへ向ける → カメラ位置を直接見る。
+        spaceBg.lookAt(cp.x, cp.y, cp.z);
+        var camToBg = sCamDist + D;
+        var fov = sFov * Math.PI / 180.0;
+        var hh = 2.0 * camToBg * Math.tan(fov * 0.5) * 1.08;
+        spaceBg.setScale(hh * (SCREEN_W * 1.0 / SCREEN_H), -hh, 1.0);
+    }
+
+    // モード切替
+    function setMode(m)
+    {
+        if (m == mode) return;
+        if (m == "space") {
+            buildSpace();
+            for (var i = 0; i < tachies.count; i++) {
+                var t = tachies[i];
+                spaceScene.add(t.vrm.getScene());          // 空間へ移設
+                t.spaceSet((i == 0) ? -0.6 : 0.6, 0.0);    // 左右に並べる(rig ごと)
+                t.setLookAtCamera(false);                  // 視線は一旦素に
+                t.dest.visible = false;
+            }
+            spaceDest.visible = true;
+            adaptor.setScreenSize(SCREEN_W, SCREEN_H);
+            updateSpaceCamera();
+        } else {
+            for (var i = 0; i < tachies.count; i++) {
+                var t = tachies[i];
+                t.scene.add(t.vrm.getScene());          // 立ち絵シーンへ戻す
+                t.spaceSet(0, 0);
+                t.dest.visible = true;
+                t.frame(t.preset);                      // カメラ再フレーミング
+            }
+            if (spaceDest !== void) spaceDest.visible = false;
+            adaptor.setScreenSize(TACHIE_W, TACHIE_H);
+        }
+        mode = m;
+        // モードごとに操作パネルを組み替える
+        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
+    }
+
+    // 空間カメラの画角(望遠/広角)を変える
+    function setFov(f)
+    {
+        if (f < 8)  f = 8;
+        if (f > 60) f = 60;
+        sFov = f;
+        if (spaceCamera !== void) { spaceCamera.fov = sFov; spaceCamera.updateProjectionMatrix(); }
+    }
+    // 空間モードでの選択キャラの配置
+    function moveChar(dx, dz)
+    {
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].spaceNudge(dx, dz);
+    }
+    function resetCharPos()
+    {
+        tachies[0].spaceSet(-0.6, 0.0);
+        tachies[1].spaceSet( 0.6, 0.0);
+    }
+
     // --- 操作対象の解決 -----------------------------------------------
     function targetList()
     {
@@ -259,16 +477,52 @@ class ADVSample extends Window
     }
     function cameraOrbit(dyaw, dpitch)
     {
+        if (mode == "space") {
+            if (sCamMode == "move") {
+                // 平行移動: dyaw→左右(truck) / dpitch→上下(pedestal)。注視点を動かすと
+                // カメラ位置も一緒に動く(視線方向は不変=平行移動)。
+                var hs = dyaw * 1.3;
+                sTX += hs * Math.cos(sCamYaw);
+                sTZ += -hs * Math.sin(sCamYaw);
+                sTY += dpitch * 1.3;
+            } else {
+                sCamYaw += dyaw; sCamPitch += dpitch;
+                if (sCamPitch >  1.2) sCamPitch =  1.2;
+                if (sCamPitch < -1.2) sCamPitch = -1.2;
+            }
+            updateSpaceCamera();
+            return;
+        }
         var list = targetList();
         for (var i = 0; i < list.count; i++) list[i].orbit(dyaw, dpitch);
     }
     function cameraDolly(factor)
     {
+        if (mode == "space") {
+            if (sCamMode == "move") {
+                // 前後平行移動: factor<1(寄る)=前へ / >1(引く)=後ろへ
+                var step = (factor < 1.0) ? 0.3 : -0.3;
+                sTX += step * (-Math.sin(sCamYaw));
+                sTZ += step * (-Math.cos(sCamYaw));
+            } else {
+                sCamDist *= factor;
+                if (sCamDist < 1.0)  sCamDist = 1.0;
+                if (sCamDist > 12.0) sCamDist = 12.0;
+            }
+            updateSpaceCamera();
+            return;
+        }
         var list = targetList();
         for (var i = 0; i < list.count; i++) list[i].dolly(factor);
     }
     function cameraReset()
     {
+        if (mode == "space") {
+            sCamYaw = 0.0; sCamPitch = 0.02; sCamDist = 3.8;
+            sTX = 0.0; sTY = 1.0; sTZ = 0.0;
+            updateSpaceCamera();
+            return;
+        }
         var list = targetList();
         for (var i = 0; i < list.count; i++) list[i].resetCamera();
     }
@@ -302,9 +556,27 @@ class ADVSample extends Window
         case "cam_out":   cameraDolly(1.1); break;
         case "cam_reset": cameraReset(); break;
 
+        case "pos_left":  moveChar(-0.15, 0.0); break;
+        case "pos_right": moveChar( 0.15, 0.0); break;
+        case "pos_fwd":   moveChar( 0.0,  0.2); break;   // 前=カメラ側(+z)
+        case "pos_back":  moveChar( 0.0, -0.2); break;
+        case "pos_reset": resetCharPos(); break;
+
+        case "fov_tele":  setFov(sFov - 4); break;       // 望遠(平行寄り)
+        case "fov_wide":  setFov(sFov + 4); break;       // 広角
+
+        case "camm_orbit": sCamMode = "orbit"; break;    // 回り込み
+        case "camm_move":  sCamMode = "move";  break;    // 平行移動
+        case "bg_fixed":   bgFollow = false; break;      // 背景=舞台奥に固定
+        case "bg_follow":  bgFollow = true;  break;      // 背景=カメラ追従
+
         case "blink_toggle": toggleBlink(); break;
         case "look_toggle":  toggleLook();  break;
         case "idle_toggle":  toggleIdle();  break;
+
+        case "mode_tachie":  setMode("tachie"); break;
+        case "mode_space":   setMode("space");  break;
+
         case "hide":         panelWanted = false; if (panel !== void) panel.close(); break;
         }
     }
@@ -316,8 +588,16 @@ class ADVSample extends Window
         lastTick = now;
         if (dt > 0.1) dt = 0.1;
 
+        // rig/表情/まばたき/揺れ物は両モードとも更新
         for (var i = 0; i < tachies.count; i++) tachies[i].update(dt);
-        for (var i = 0; i < tachies.count; i++) tachies[i].render();
+
+        if (mode == "space") {
+            updateSpaceBg();
+            adaptor.capture(spaceDest, global.spaceRenderCb, this, 0x00000000);
+            spaceDest.update();
+        } else {
+            for (var i = 0; i < tachies.count; i++) tachies[i].render();
+        }
     }
 
     function finalize()
@@ -329,6 +609,14 @@ class ADVSample extends Window
         invalidate adaptor  if adaptor  !== void;
         super.finalize(...);
     }
+}
+
+// 空間モードの描画コールバック(adaptor コンテキストで走るので app を param で受ける)
+function spaceRenderCb(w, h, app)
+{
+    app.renderer.onBeginScene(w, h);
+    app.renderer.render(app.spaceScene, app.spaceCamera);
+    app.renderer.onEndScene();
 }
 
 global.app = new ADVSample();

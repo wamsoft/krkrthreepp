@@ -50,6 +50,9 @@ namespace krkrvrm {
         void resetNormalizedPose();///< 正規化ノードを rest(identity) に戻す
         void updateRig();          ///< 正規化ポーズを raw ボーンへ転写 (hips は位置も転写)
         [[nodiscard]] bool hasRig() const { return static_cast<bool>(rigRoot_); }
+        /// 正規化リグ root を平行移動する。updateRig は hips を正規化リグ world 位置へ
+        /// 置くため、これでキャラ全体を world 空間で動かせる。
+        void setRootOffset(float x, float y, float z) { if (rigRoot_) rigRoot_->position.set(x, y, z); }
 
         // --- hips ルートモーション用 ---
         [[nodiscard]] bool hasHips() const { return hasHips_; }
@@ -239,6 +242,13 @@ namespace krkrvrm {
     public:
         std::shared_ptr<threepp::Group> scene;///< GLTFResult.scene をそのまま。Scene に add して描画する
         VRMHumanoid humanoid;
+
+        /// キャラ全体を world 空間で平行移動する。scene root だけでは rig が hips を
+        /// 正規化リグ(原点)基準へ置くため動かないので、正規化リグ root も揃えて動かす。
+        void setOffset(float x, float y, float z) {
+            if (scene) scene->position.set(x, y, z);
+            humanoid.setRootOffset(x, y, z);
+        }
         VRMExpressionManager expressionManager;
         VRMLookAt lookAt;
         VRMMeta meta;

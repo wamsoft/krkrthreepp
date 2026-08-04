@@ -49,6 +49,9 @@ class Tachie
     var idleEnabled = true;
     var idleT = 0.0;
 
+    // --- 空間モードでの配置(world) ---
+    var offX = 0.0, offZ = 0.0;   // 左右(x) / 前後(z)
+
     // --- カメラ姿勢(フレーミング基準 + 旋回/ズーム) ---
     var camTX = 0.0, camTY = 1.0, camTZ = 0.0;  // 注視点(world)
     var camBaseDist = 2.0;      // フレーミングが決めた基準距離
@@ -211,6 +214,16 @@ class Tachie
     {
         blinkEnabled = on;
         if (!on) { vrm.setExpression("blink", 0.0); blinkPhase = -1; }
+    }
+
+    // 空間モードでの world 配置。offX=左右 / offZ=前後(+z=カメラ側=前)。
+    function spaceSet(x, z) { offX = x; offZ = z; vrm.setOffset(offX, 0, offZ); }
+    function spaceNudge(dx, dz)
+    {
+        offX += dx; offZ += dz;
+        if (offX < -3.0) offX = -3.0;  if (offX > 3.0) offX = 3.0;
+        if (offZ < -3.0) offZ = -3.0;  if (offZ > 3.0) offZ = 3.0;
+        vrm.setOffset(offX, 0, offZ);
     }
 
     // idle 呼吸: 胸を前後に、頭をわずかに揺らして生きてる感を出す。

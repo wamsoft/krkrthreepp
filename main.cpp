@@ -2697,6 +2697,13 @@ static std::shared_ptr<Group> VRM_getScene(ThreeWrapper<VRM> *self)
 	return (self && self->getObject()) ? self->getObject()->scene : nullptr;
 }
 
+// VRM.setOffset(x,y,z): キャラ全体を world 空間で平行移動 (scene + 正規化リグ root)。
+// 単一カメラの空間モードで複数キャラを並べるのに使う。
+static void VRM_setOffset(ThreeWrapper<VRM> *self, float x, float y, float z)
+{
+	if (self && self->getObject()) self->getObject()->setOffset(x, y, z);
+}
+
 // VRM.getBoneNode(name) -> Threepp.Bone（human bone 名。無ければ void）
 static std::shared_ptr<Bone> VRM_getBoneNode(ThreeWrapper<VRM> *self, std::string name)
 {
@@ -2779,6 +2786,7 @@ NCB_METHOD_PROXY(loadStorage, VRMLoader_loadStorage);// (吉里吉里ストレ�
 NCB_REGISTER_THREE_SUBCLASS(VRM)
 Factory(VRMFactory);                                 // コンバータ復路(CreateAdaptor)用
 NCB_METHOD_PROXY(getScene, VRM_getScene);            // -> Threepp.Group
+NCB_METHOD_PROXY(setOffset, VRM_setOffset);          // (x,y,z) キャラ全体を平行移動
 NCB_METHOD_PROXY(getBoneNode, VRM_getBoneNode);      // (name) -> Threepp.Bone
 NCB_METHOD_PROXY(getBoneCount, VRM_getBoneCount);    // -> int
 NCB_METHOD_PROXY(setExpression, VRM_setExpression);  // (name, weight)
