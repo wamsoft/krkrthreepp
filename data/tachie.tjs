@@ -36,8 +36,12 @@ class Tachie
     var blinkTime     = 0.0;
     var blinkSeed     = 0;     // 間隔ゆらぎ用
 
-    // --- 表情(感情) ---
-    var emotion = "";          // 現在当てている感情表情("" = なし)
+    // --- 表情(感情) --- weight を時間補間してなめらかに切替
+    var emotion = "";          // 目標の感情表情("" = 素/neutral)
+    var emoW = 0.0;            // emotion の現在ウェイト(0→1)
+    var prevEmotion = "";      // フェードアウト中の前の表情
+    var prevW = 0.0;           // その現在ウェイト(→0)
+    var emoDur = 0.15;         // 遷移時間(秒)
 
     // --- カメラ目線(視線ADV化) ---
     // 多くの VRM は素の目が正面向き(=前面カメラのプレイヤーを見ている)。VRM の
@@ -196,17 +200,33 @@ class Tachie
     }
 
     // 感情表情を切り替える(前の感情は 0 に戻す)。"" / "neutral" で素の顔。
+    // 感情表情を切り替える。前の表情はフェードアウト、新しい表情はフェードインで
+    // なめらかに遷移する。"" / "neutral" で素の顔へ。
     function setEmotion(name)
     {
-        if (emotion != "") vrm.setExpression(emotion, 0.0);
         if (name == "neutral") name = "";
+        if (name == emotion) return;
+        if (emotion != "") { prevEmotion = emotion; prevW = emoW; }   // 現在のをフェードアウトへ
         emotion = name;
+        emoW = 0.0;
         if (emotion != "") {
-            // 表情中は自動まばたきを止める(目形が競合して一瞬乱れるため)。
-            // 進行中のまばたきも 0 に戻してから表情を当てる。
+            // 表情に入る間は自動まばたきを止める(目形が競合して乱れるため)
             vrm.setExpression("blink", 0.0);
             blinkPhase = -1; blinkClock = 0.0;
-            vrm.setExpression(emotion, 1.0);
+        }
+    }
+    // 表情ウェイトの時間補間(毎フレーム)
+    function updateExpression(dt)
+    {
+        var sp = (emoDur > 0.0) ? dt / emoDur : 1.0;
+        if (prevEmotion != "") {
+            prevW -= sp;
+            if (prevW <= 0.0) { prevW = 0.0; vrm.setExpression(prevEmotion, 0.0); prevEmotion = ""; }
+            else vrm.setExpression(prevEmotion, prevW);
+        }
+        if (emotion != "") {
+            if (emoW < 1.0) { emoW += sp; if (emoW > 1.0) emoW = 1.0; }
+            vrm.setExpression(emotion, emoW);
         }
     }
 
@@ -260,8 +280,10 @@ class Tachie
     function update(dt)
     {
         if (idleEnabled) updateIdle(dt);
-        // 感情表情を当てている間はまばたきしない(目形の競合回避)
-        if (blinkEnabled && emotion == "") updateBlink(dt);
+        updateExpression(dt);
+        // 感情表情の遷移中/適用中はまばたきしない(目形の競合回避)
+        var faceBusy = (emotion != "" || prevEmotion != "");
+        if (blinkEnabled && !faceBusy) updateBlink(dt);
         if (lookAtCamera) applyLookAtCamera();
         vrm.update(dt);
     }
