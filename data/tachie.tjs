@@ -56,6 +56,11 @@ class Tachie
     // --- 空間モードでの配置(world) ---
     var offX = 0.0, offZ = 0.0;   // 左右(x) / 前後(z)
 
+    // --- VRMA モーション再生 ---
+    var motionAnim;               // Threepp.VRMAnimation("" のとき無し)
+    var motionDur = 0.0, motionTime = 0.0;
+    var motionLoop = true, motionPlaying = false;
+
     // --- カメラ姿勢(フレーミング基準 + 旋回/ズーム) ---
     var camTX = 0.0, camTY = 1.0, camTZ = 0.0;  // 注視点(world)
     var camBaseDist = 2.0;      // フレーミングが決めた基準距離
@@ -236,6 +241,25 @@ class Tachie
         if (!on) { vrm.setExpression("blink", 0.0); blinkPhase = -1; }
     }
 
+    // VRMA モーションを再生する。loop=0 は一度再生して最終ポーズを保持(=ポーズ付け)。
+    function playMotion(anim, loop)
+    {
+        if (anim === void) return;
+        motionAnim = anim;
+        motionDur = anim.getDuration();
+        motionTime = 0.0;
+        motionLoop = loop;
+        motionPlaying = true;
+    }
+    // モーションを止めて素立ち(腕下ろし)へ戻す
+    function stopMotion()
+    {
+        motionAnim = void;
+        motionPlaying = false;
+        vrm.resetNormalizedPose();   // 正規化ポーズを rest へ
+        restPose();                  // 腕を下ろす
+    }
+
     // 空間モードでの world 配置。offX=左右 / offZ=前後(+z=カメラ側=前)。
     function spaceSet(x, z) { offX = x; offZ = z; vrm.setOffset(offX, 0, offZ); }
     function spaceNudge(dx, dz)
@@ -279,7 +303,19 @@ class Tachie
     // 毎フレーム更新(dt 秒)
     function update(dt)
     {
-        if (idleEnabled) updateIdle(dt);
+        if (motionAnim !== void) {
+            // VRMA 再生中はモーションが全身ポーズを駆動(idle と競合するので idle 停止)
+            if (motionPlaying) {
+                motionTime += dt;
+                if (motionTime >= motionDur) {
+                    if (motionLoop) { motionTime = (motionDur > 0.0) ? motionTime - motionDur : 0.0; }
+                    else { motionTime = motionDur; motionPlaying = false; }
+                }
+            }
+            vrm.applyAnimation(motionAnim, motionTime);   // 停止後も最終ポーズを保持
+        } else {
+            if (idleEnabled) updateIdle(dt);
+        }
         updateExpression(dt);
         // 感情表情の遷移中/適用中はまばたきしない(目形の競合回避)
         var faceBusy = (emotion != "" || prevEmotion != "");

@@ -1,0 +1,24 @@
+/**
+ * stage.tjs — 舞台メタ定義 (キャラ / モーション)
+ *
+ * advsample.tjs が execStorage して global.stageDef を読む。JSON プラグインに
+ * 依存しない TJS 辞書。将来の複数キャラ定義・宣言的 ADV 連携もこの器を拡張する。
+ *
+ * characters: 左右に並べるキャラ (今は2体固定)。
+ *   id/name/vrm(ファイル名)/frontZ(+1=VRM1.0 正面 / -1=VRM0.x)
+ * motions: 配置した VRMA。パネルから再生する。
+ *   id/name/file(vrmaファイル名)/loop(1=ループ / 0=一度再生して保持=ポーズ)
+ */
+global.stageDef = %[
+    "characters" => [
+        %[ "id" => "left",  "name" => "モデル",   "vrm" => "model",                "frontZ" => 1 ],
+        %[ "id" => "right", "name" => "アバター", "vrm" => "AvatarSample_A_VRM1_0", "frontZ" => 1 ]
+    ],
+    // loop=1 はループ再生、loop=0 は一度再生して最終ポーズを保持(=ポーズ付け)。
+    // ※ VRMA によっては hips 回転等を含み崩れるものがある(素材依存)。動作確認済みのみ登録。
+    "motions" => [
+        %[ "id" => "idle",   "name" => "待機",   "file" => "anim.vrma",       "loop" => 1 ],
+        %[ "id" => "behind", "name" => "後ろ手", "file" => "pose_behind.vrma", "loop" => 0 ],
+        %[ "id" => "left",   "name" => "左向き", "file" => "pose_left.vrma",   "loop" => 0 ]
+    ]
+];

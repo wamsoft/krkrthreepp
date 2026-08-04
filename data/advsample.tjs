@@ -99,6 +99,15 @@ class ControlPanel extends Dialog
             kids.add(btn(names[i], app.exprLabel(names[i])));
         return kids;
     }
+    // モーションボタンはメタ定義から生成(id=m_*)。末尾に 停止。
+    function motionBtns()
+    {
+        var kids = [];
+        var ms = app.stageDef.motions;
+        for (var i = 0; i < ms.count; i++) kids.add(btn("m_" + ms[i].id, ms[i].name));
+        kids.add(btn("m_stop", "停止"));
+        return kids;
+    }
     function camBtns()
     {
         return [ btn("cam_left","◀"), btn("cam_right","▶"), btn("cam_up","▲"),
@@ -134,6 +143,7 @@ class ControlPanel extends Dialog
             wrow("フレーム:", [ btn("f_full","全身"), btn("f_knee","膝上"), btn("f_waist","腰上"),
                               btn("f_bust","胸上"), btn("f_face","顔") ]),
             wrow("表情:",    exprBtns()),
+            wrow("モーション:", motionBtns()),
             wrow("カメラ:",  camBtns()),
             wrow("切替:",    togglesRow()),
             wrow("モード:",  modeRadios())
@@ -146,6 +156,7 @@ class ControlPanel extends Dialog
         return rowsJoin([
             wrow("対象:",   targetRadios()),
             wrow("表情:",   exprBtns()),
+            wrow("モーション:", motionBtns()),
             wrow("位置:",   [ btn("pos_left","← 左"), btn("pos_right","右 →"), btn("pos_fwd","前(近)"),
                             btn("pos_back","後(遠)"), btn("pos_reset","並べ直す") ]),
             wrow("カメラ:", camBtns()),
@@ -163,7 +174,7 @@ class ControlPanel extends Dialog
     {
         var rows = (app.mode == "space") ? spaceRows() : tachieRows();
         return %[
-            "size"       => [1260, 460],
+            "size"       => [1260, 560],
             "align"      => "bottom",
             "margin"     => 12,
             "background" => [18, 20, 30, 235],
@@ -240,6 +251,11 @@ class ADVSample extends Window
     var gazeActive = false;
     var gazeX = SCREEN_W / 2, gazeY = SCREEN_H / 2;
 
+    // --- 舞台メタ定義 / VRMA モーション ---
+    var stageDef;      // stage.tjs の global.stageDef
+    var motionCache;   // file -> Threepp.VRMAnimation
+    var motionBtnMap;  // パネル id("m_*") -> motion 定義
+
     function ADVSample()
     {
         super.Window();
@@ -266,14 +282,21 @@ class ADVSample extends Window
         framer = new VRMFraming();
 
         // 立ち絵2体を左右に。1キャラ=1レイヤで setPos 配置。
-        tachies = [];
-        var left  = new Tachie(this, adaptor, renderer, framer, back, TACHIE_W, TACHIE_H);
-        left.load("model", 1, LEFT_X, 0);
-        tachies.add(left);
+        // 舞台メタ定義(キャラ/モーション)を読む
+        Scripts.execStorage("stage.tjs");
+        stageDef = global.stageDef;
+        motionCache = %[];
+        buildMotionMap();
 
-        var right = new Tachie(this, adaptor, renderer, framer, back, TACHIE_W, TACHIE_H);
-        right.load("AvatarSample_A_VRM1_0", 1, RIGHT_X, 0);
-        tachies.add(right);
+        // メタ定義のキャラを左右に生成
+        tachies = [];
+        var xs = [LEFT_X, RIGHT_X];
+        var chars = stageDef.characters;
+        for (var i = 0; i < chars.count && i < 2; i++) {
+            var t = new Tachie(this, adaptor, renderer, framer, back, TACHIE_W, TACHIE_H);
+            t.load(chars[i].vrm, chars[i].frontZ, xs[i], 0);
+            tachies.add(t);
+        }
 
         // 既定フレーミング(腰上。頭は全部出て足は隠れる ADV 立ち絵構図)
         applyFrame("waist");
@@ -511,6 +534,36 @@ class ADVSample extends Window
         tachies[1].spaceSet( 0.6, 0.0);
     }
 
+    // --- VRMA モーション --------------------------------------------------
+    function buildMotionMap()
+    {
+        motionBtnMap = %[];
+        var ms = stageDef.motions;
+        for (var i = 0; i < ms.count; i++) motionBtnMap["m_" + ms[i].id] = ms[i];
+    }
+    // VRMA を読み込んでキャッシュ(初回のみ)
+    function loadMotion(file)
+    {
+        if (motionCache[file] !== void) return motionCache[file];
+        var loader = new Threepp.VRMAnimationLoader();
+        var anim = loader.loadStorage(Storages.getPlacedPath(file));
+        if (anim !== void) motionCache[file] = anim;
+        else Debug.message("motion load failed: " + file);
+        return anim;
+    }
+    function playMotionOnTargets(def)
+    {
+        var anim = loadMotion(def.file);
+        if (anim === void) return;
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].playMotion(anim, def.loop);
+    }
+    function stopMotionOnTargets()
+    {
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].stopMotion();
+    }
+
     // --- 視線ターゲット ---------------------------------------------------
     function buildGazeLayer()
     {
@@ -700,6 +753,9 @@ class ADVSample extends Window
     {
         // 表情ボタン(id=表情名)は動的なので switch より先に判定
         if (emoNameSet !== void && emoNameSet[id] !== void) { applyEmotion(id); return; }
+        // モーションボタン(id=m_*)
+        if (motionBtnMap !== void && motionBtnMap[id] !== void) { playMotionOnTargets(motionBtnMap[id]); return; }
+        if (id == "m_stop") { stopMotionOnTargets(); return; }
 
         switch (id) {
         case "t_left":  target = 0; break;
