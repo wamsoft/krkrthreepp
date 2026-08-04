@@ -39,10 +39,19 @@ class Tachie
     // --- 表情(感情) ---
     var emotion = "";          // 現在当てている感情表情("" = なし)
 
-    // --- カメラ目線 ---
-    // 近距離カメラだと目線角が極端になり不自然なので既定 OFF。
-    // 「視線のADV化」機能で改めて安定した実装にする(TODO)。
-    var lookAtCamera = false;
+    // --- カメラ目線(視線ADV化) ---
+    var lookAtCamera = true;   // 既定 ON。カメラ位置に視線を向ける
+
+    // --- idle 呼吸 ---
+    var idleEnabled = true;
+    var idleT = 0.0;
+
+    // --- カメラ姿勢(フレーミング基準 + 旋回/ズーム) ---
+    var camTX = 0.0, camTY = 1.0, camTZ = 0.0;  // 注視点(world)
+    var camBaseDist = 2.0;      // フレーミングが決めた基準距離
+    var camYaw = 0.0;           // 水平旋回(0=正面)
+    var camPitch = 0.0;         // 仰俯
+    var camDistScale = 1.0;     // ズーム倍率
 
     function Tachie(owner, adaptor, renderer, framer, parentLayer, w, h)
     {
@@ -109,20 +118,65 @@ class Tachie
         if (rla !== void) rla.rotateY( 0.20);
     }
 
-    // フレーミングプリセットを適用してカメラを置き直す
+    // フレーミングプリセットを適用する。注視点と基準距離を控え、旋回/ズームは維持。
     function frame(p)
     {
         preset = p;
         framer.frontZ = frontZ;
-        framer.apply(vrm, camera, scene, p, w * 1.0 / h);
+        var r = framer.apply(vrm, camera, scene, p, w * 1.0 / h);
+        camTX = r.tx; camTY = r.ty; camTZ = r.tz;
+        camBaseDist = r.dist;
+        updateCameraPose();
+    }
+
+    // 注視点まわりの旋回/ズームからカメラ位置を決めて置く
+    function updateCameraPose()
+    {
+        var dist = camBaseDist * camDistScale;
+        var cp = Math.cos(camPitch);
+        var px = camTX + dist * Math.sin(camYaw) * cp;
+        var py = camTY + dist * Math.sin(camPitch);
+        var pz = camTZ + frontZ * dist * Math.cos(camYaw) * cp;
+        camera.setPosition(px, py, pz);
+        camera.lookAt(camTX, camTY, camTZ);
+        camera.updateProjectionMatrix();
         if (lookAtCamera) applyLookAtCamera();
+    }
+
+    // カメラ操作
+    function orbit(dyaw, dpitch)
+    {
+        camYaw += dyaw; camPitch += dpitch;
+        if (camPitch >  1.2) camPitch =  1.2;
+        if (camPitch < -1.2) camPitch = -1.2;
+        updateCameraPose();
+    }
+    function dolly(factor)
+    {
+        camDistScale *= factor;
+        if (camDistScale < 0.35) camDistScale = 0.35;
+        if (camDistScale > 3.0)  camDistScale = 3.0;
+        updateCameraPose();
+    }
+    function resetCamera()
+    {
+        camYaw = 0.0; camPitch = 0.0; camDistScale = 1.0;
+        updateCameraPose();
     }
 
     // 視線をカメラ(=プレイヤー)へ向ける
     function applyLookAtCamera()
     {
-        var cp = camera.position;   // Vector3 (standalone camera なので world=local)
-        vrm.setLookAtTarget(cp.x, cp.y, cp.z);
+        var cx = camTX + camBaseDist * camDistScale * Math.sin(camYaw) * Math.cos(camPitch);
+        var cy = camTY + camBaseDist * camDistScale * Math.sin(camPitch);
+        var cz = camTZ + frontZ * camBaseDist * camDistScale * Math.cos(camYaw) * Math.cos(camPitch);
+        vrm.setLookAtTarget(cx, cy, cz);
+    }
+    function setLookAtCamera(on)
+    {
+        lookAtCamera = on;
+        if (on) applyLookAtCamera();
+        else vrm.clearLookAtTarget();
     }
 
     // 感情表情を切り替える(前の感情は 0 に戻す)。"" / "neutral" で素の顔。
@@ -146,9 +200,39 @@ class Tachie
         if (!on) { vrm.setExpression("blink", 0.0); blinkPhase = -1; }
     }
 
+    // idle 呼吸: 胸を前後に、頭をわずかに揺らして生きてる感を出す。
+    // normalized ボーンへ毎フレーム「絶対値」で与える(累積しない)。
+    function updateIdle(dt)
+    {
+        idleT += dt;
+        var chest = vrm.getNormalizedBoneNode("upperChest");
+        if (chest === void) chest = vrm.getNormalizedBoneNode("chest");
+        if (chest === void) chest = vrm.getNormalizedBoneNode("spine");
+        if (chest !== void)
+            chest.setRotation(0.018 * Math.sin(idleT * 1.6), 0, 0);   // 呼吸
+        var head = vrm.getNormalizedBoneNode("head");
+        if (head !== void)
+            head.setRotation(0.010 * Math.sin(idleT * 0.9 + 0.5),
+                             0.012 * Math.sin(idleT * 0.7), 0);        // 頭の微揺れ
+    }
+    function setIdleEnabled(on)
+    {
+        idleEnabled = on;
+        if (!on) {
+            // 揺れを止めて基準姿勢へ戻す
+            var chest = vrm.getNormalizedBoneNode("upperChest");
+            if (chest === void) chest = vrm.getNormalizedBoneNode("chest");
+            if (chest === void) chest = vrm.getNormalizedBoneNode("spine");
+            if (chest !== void) chest.setRotation(0, 0, 0);
+            var head = vrm.getNormalizedBoneNode("head");
+            if (head !== void) head.setRotation(0, 0, 0);
+        }
+    }
+
     // 毎フレーム更新(dt 秒)
     function update(dt)
     {
+        if (idleEnabled) updateIdle(dt);
         // 感情表情を当てている間はまばたきしない(目形の競合回避)
         if (blinkEnabled && emotion == "") updateBlink(dt);
         if (lookAtCamera) applyLookAtCamera();

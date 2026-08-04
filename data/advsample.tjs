@@ -80,7 +80,12 @@ class ControlPanel extends Dialog
         rows.add(row("表情:", ["e_neutral","標準", "e_happy","喜", "e_angry","怒",
                                "e_sad","哀", "e_relaxed","楽", "e_surprised","驚"]));
         rows.add(%[ "type" => "vspacer", "height" => 8 ]);
-        rows.add(row("その他:", ["blink_toggle","まばたき切替", "hide","隠す(Tab)"]));
+        rows.add(row("カメラ:", ["cam_left","◀", "cam_right","▶", "cam_up","▲",
+                                "cam_down","▼", "cam_in","寄る", "cam_out","引く",
+                                "cam_reset","正面"]));
+        rows.add(%[ "type" => "vspacer", "height" => 8 ]);
+        rows.add(row("切替:", ["blink_toggle","まばたき", "look_toggle","カメラ目線",
+                              "idle_toggle","idle", "hide","隠す(Tab)"]));
 
         return %[
             "size"       => [1240, 190],
@@ -180,10 +185,19 @@ class ADVSample extends Window
         }
     }
 
-    // Tab で表示/非表示トグル
+    // Tab でパネル表示/非表示。矢印でカメラ旋回、Z/X でズーム(操作対象に適用)。
     function onKeyDown(key, shift)
     {
-        if (key == VK_TAB) { togglePanel(); return; }
+        switch (key) {
+        case VK_TAB:   togglePanel(); return;
+        case VK_LEFT:  cameraOrbit(-0.12, 0.0);  return;
+        case VK_RIGHT: cameraOrbit( 0.12, 0.0);  return;
+        case VK_UP:    cameraOrbit( 0.0,  0.08); return;
+        case VK_DOWN:  cameraOrbit( 0.0, -0.08); return;
+        case VK_Z:     cameraDolly(1.0 / 1.1);   return;
+        case VK_X:     cameraDolly(1.1);         return;
+        case VK_R:     cameraReset();            return;
+        }
         super.onKeyDown(key, shift);
     }
     function togglePanel()
@@ -231,6 +245,33 @@ class ADVSample extends Window
         for (var i = 0; i < list.count; i++)
             list[i].setBlinkEnabled(!list[i].blinkEnabled);
     }
+    function toggleLook()
+    {
+        var list = targetList();
+        for (var i = 0; i < list.count; i++)
+            list[i].setLookAtCamera(!list[i].lookAtCamera);
+    }
+    function toggleIdle()
+    {
+        var list = targetList();
+        for (var i = 0; i < list.count; i++)
+            list[i].setIdleEnabled(!list[i].idleEnabled);
+    }
+    function cameraOrbit(dyaw, dpitch)
+    {
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].orbit(dyaw, dpitch);
+    }
+    function cameraDolly(factor)
+    {
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].dolly(factor);
+    }
+    function cameraReset()
+    {
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].resetCamera();
+    }
 
     // Elements パネルからの操作
     function onPanel(id)
@@ -253,7 +294,17 @@ class ADVSample extends Window
         case "e_relaxed":   applyEmotion("relaxed");   break;
         case "e_surprised": applyEmotion("surprised"); break;
 
+        case "cam_left":  cameraOrbit(-0.18, 0.0); break;
+        case "cam_right": cameraOrbit( 0.18, 0.0); break;
+        case "cam_up":    cameraOrbit( 0.0,  0.12); break;
+        case "cam_down":  cameraOrbit( 0.0, -0.12); break;
+        case "cam_in":    cameraDolly(1.0 / 1.1); break;
+        case "cam_out":   cameraDolly(1.1); break;
+        case "cam_reset": cameraReset(); break;
+
         case "blink_toggle": toggleBlink(); break;
+        case "look_toggle":  toggleLook();  break;
+        case "idle_toggle":  toggleIdle();  break;
         case "hide":         panelWanted = false; if (panel !== void) panel.close(); break;
         }
     }

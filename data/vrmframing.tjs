@@ -93,7 +93,9 @@ class VRMFraming
         camera.lookAt(cx, targetY, cz);
         camera.updateProjectionMatrix();
 
-        return %[ "targetY" => targetY, "dist" => dist, "viewH" => viewH,
+        // 注視点(world) tx/ty/tz と基準距離 dist を返す。カメラ旋回の基準に使う。
+        return %[ "tx" => cx, "ty" => targetY, "tz" => cz,
+                  "targetY" => targetY, "dist" => dist, "viewH" => viewH,
                   "frameTop" => frameTop ];
     }
 }
