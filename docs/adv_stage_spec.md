@@ -124,6 +124,22 @@ weight 指定する最下層。作者が用意した表情に無い表情（例:
 
 用語 Expression/Pose/Motion/Scene の4層＋補間器が一通り実装済み。
 
+### リップシンク（発話音声 → 口形）✅実装済
+本体(krkrz) の `WaveSoundBuffer` 解析 API を VRM の visème 表情(aa/ih/ou/ee/oh)へ接続。
+発話音声の再生カーソル付近を毎フレーム解析して口を駆動する（要 `useVisBuffer`）。
+- 本体 API（要 `sound.useVisBuffer = true`。**`open()` の前に設定**。未設定だと空値）:
+  - `getSoundLevel(ahead=0, window=0)` → `%[ rms, peak ]`（0..1）
+  - `getSoundSpectrum(numbands, ahead=0)` → 対数バンド配列
+  - `getVowel(ahead=0)` → `%[ a,i,u,e,o, voiced ]`（日本語5母音の重み・合計~1.0）
+- 組み込み口: `Tachie.startLipSync(sound)` / `stopLipSync()`。ADV のボイス再生箇所で、
+  再生する `WaveSoundBuffer`（同時発話人数分を共有する構成でも、そのキャラの1本）を渡す。
+- 駆動: 毎フレーム `updateLipSync` が rms(開口量)×母音分布(口形)で visème を設定・平滑化。
+  無音・停止時は visème に触れず表情へ委譲。
+- 調整ノブ(Tachie): `lipGain`(開口ゲイン 既定3.0) / `lipMax`(開口上限 0.85) /
+  `lipVowelMix`(口形ブレンド 0=音量のみ/aa・安定 ↔ 1=母音フル・表情豊か 既定0.4) /
+  `lipAhead`(出力遅延の先読み補正 サンプル数) / 追従速度(`dt*16`)。
+  ※ リアルタイム母音推定は暴れやすいので、既定は aa 開閉主体＋母音を少し混ぜる安定寄り。
+
 ## 関連 API（advsample / tachie）
 - 表情: `Tachie.setEmotionSet(id, [name,w,…])` / `setEmotion(name)`
 - モーション: `Tachie.playMotion(anim, loop, id)` / `stopMotion()`（素立ちへクロスフェード）
@@ -131,5 +147,7 @@ weight 指定する最下層。作者が用意した表情に無い表情（例:
 - 演出: `Tachie.fadeIn/fadeOut/slideIn`（dest レイヤのトゥイーン, 立ち絵モード）
 - シーン: `ADVSample.applyScene` / `captureState` / `saveSlot` / `loadSlot`
 - ポーズ: `Tachie.capturePose()` / `applyPoseData(arr)` / `clearPose()`
+- リップシンク: `Tachie.startLipSync(sound)` / `stopLipSync()`（本体 `WaveSoundBuffer` の
+  `getSoundLevel`/`getVowel` を visème へ。`useVisBuffer` は open 前に有効化）
 - C++ 追加: `VRM.getExpressionName(i)` / `setOffset` / `applyAnimation(anim,time,blend)` /
   `captureRestPose` / `blendToRest` / `applyPose([name,qx,qy,qz,qw,…], blend)`

@@ -54,6 +54,17 @@ class Tachie
     var prevW = 0.0;           // その現在ウェイト(→0)
     var emoDur = 0.15;         // 遷移時間(秒)
 
+    // --- リップシンク(発話音声から口形を駆動) ---
+    // 本体(WaveSoundBuffer)の getVowel/getSoundLevel(要 useVisBuffer)で再生カーソル付近の
+    // 5 母音重み・音量を取り、visème 表情 aa/ih/ou/ee/oh を毎フレーム設定する。
+    var lipSound = void;       // 発話中の音声(WaveSoundBuffer)。void=無効
+    var lipGain  = 3.0;        // 開口ゲイン(rms→開き量)
+    var lipMax   = 0.85;       // 開口上限(ピークでも開き切らない=自然)
+    var lipVowelMix = 0.4;     // 口形ブレンド 0=音量のみ(aa開閉・安定) / 1=母音フル(表情豊か・暴れ易)
+    var lipAhead = 0;          // 先読みサンプル数(出力遅延補正。0=補正なし)
+    var lipVis   = ["aa", "ih", "ou", "ee", "oh"];  // VRM visème 表情名(a/i/u/e/o)
+    var lipW     = [0.0, 0.0, 0.0, 0.0, 0.0];       // 現在ウェイト(平滑用)
+
     // --- カメラ目線(視線ADV化) ---
     // 多くの VRM は素の目が正面向き(=前面カメラのプレイヤーを見ている)。VRM の
     // bone lookAt を通すとむしろ下向き等のズレが出るため、前面 ADV では既定 OFF。
@@ -472,8 +483,56 @@ class Tachie
         updateExpression(dt);
         // 感情表情の遷移中/適用中はまばたきしない(目形の競合回避)
         if (blinkEnabled && !faceBusy()) updateBlink(dt);
+        updateLipSync(dt);   // 発話中は visème(口)を音声から上書き
         if (lookAtCamera) applyLookAtCamera();
         vrm.update(dt);
+    }
+
+    // 発話音声をセットしてリップシンク開始。snd = 再生中(または直後に play する)WaveSoundBuffer。
+    function startLipSync(snd)
+    {
+        lipSound = snd;
+        if (snd !== void) snd.useVisBuffer = true;   // 解析バッファを有効化(初回空値を避ける)
+    }
+    function stopLipSync() { lipSound = void; }       // visème は以降 0 へ減衰し表情へ委譲
+
+    // 毎フレーム: 音声の母音重み×音量で visème を設定(平滑化)。
+    // 発話しておらず減衰も済んでいれば visème には触れず、表情(感情)に委ねる。
+    function updateLipSync(dt)
+    {
+        var speaking = (lipSound !== void && lipSound.status == "play");
+        var active = speaking;
+        if (!active) { for (var j = 0; j < 5; j++) if (lipW[j] > 0.001) { active = true; break; } }
+        if (!active) return;
+
+        var tgt = [0.0, 0.0, 0.0, 0.0, 0.0];
+        if (speaking) {
+            var amp = lipSound.getSoundLevel(lipAhead).rms * lipGain;   // 音量→開口量(0..1)
+            if (amp > lipMax) amp = lipMax;
+            if (amp > 0.03) {
+                // 母音ベース(口形)を最大値正規化で作る。既定は無声フォールバックの「あ」。
+                var vv0 = amp * 0.8, vv1 = 0.0, vv2 = 0.0, vv3 = 0.0, vv4 = 0.0;
+                var vw = lipSound.getVowel(lipAhead);       // %[a,i,u,e,o,voiced]
+                var mx = vw.a;
+                if (vw.i > mx) mx = vw.i; if (vw.u > mx) mx = vw.u;
+                if (vw.e > mx) mx = vw.e; if (vw.o > mx) mx = vw.o;
+                if (vw.voiced && mx > 0.001) {
+                    var g = amp / mx;   // 主母音を amp まで開く
+                    vv0 = vw.a * g; vv1 = vw.i * g; vv2 = vw.u * g; vv3 = vw.e * g; vv4 = vw.o * g;
+                }
+                // 音量ベース(aa 開閉・安定) と母音ベースをブレンド(口形の暴れを抑える)。
+                var mixv = lipVowelMix, im = 1.0 - lipVowelMix;
+                tgt[0] = amp * im + vv0 * mixv;   // aa は音量成分も受ける
+                tgt[1] = vv1 * mixv; tgt[2] = vv2 * mixv;
+                tgt[3] = vv3 * mixv; tgt[4] = vv4 * mixv;
+                for (var m = 0; m < 5; m++) if (tgt[m] > 1.0) tgt[m] = 1.0;
+            }
+        }
+        var k = dt * 16.0; if (k > 1.0) k = 1.0;   // 追従速度(やや落ち着かせて口形の暴れを抑制)
+        for (var i = 0; i < 5; i++) {
+            lipW[i] += (tgt[i] - lipW[i]) * k;
+            vrm.setExpression(lipVis[i], lipW[i]);
+        }
     }
 
     // 自動まばたきの状態機械

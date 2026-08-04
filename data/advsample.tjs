@@ -166,6 +166,7 @@ class ControlPanel extends Dialog
             wrow("シーン:",   sceneBtns()),
             wrow("演出:",     [ btn("fx_fadein","フェードイン"), btn("fx_fadeout","フェードアウト"),
                               btn("fx_slidein","スライド登場") ]),
+            wrow("リップ:",   [ btn("lip_play","発話(音声)"), btn("lip_stop","停止") ]),
             wrow("カメラ:",  camBtns()),
             wrow("切替:",    togglesRow()),
             wrow("モード:",  modeRadios())
@@ -564,6 +565,26 @@ class ADVSample extends Window
     {
         tachies[0].spaceSet(-0.6, 0.0);
         tachies[1].spaceSet( 0.6, 0.0);
+    }
+
+    // リップシンク: テスト音声を再生し、対象キャラの口を音声から駆動する。
+    // 実 ADV では「ボイス再生」箇所で同じ WaveSoundBuffer を tachie.startLipSync() に渡す。
+    var voiceSnd;                    // 共有音声バッファ(遅延生成)
+    var voiceFile = "testvoice.ogg"; // data/ 配下(非コミットのテスト音声)
+    function lipPlay()
+    {
+        if (voiceSnd === void) voiceSnd = new WaveSoundBuffer(this);
+        voiceSnd.useVisBuffer = true;          // 解析バッファを有効化
+        try { voiceSnd.open(voiceFile); voiceSnd.play(); }
+        catch (e) { Debug.message("lip: 音声を開けません " + voiceFile + " : " + e.message); return; }
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].startLipSync(voiceSnd);
+    }
+    function lipStop()
+    {
+        if (voiceSnd !== void) voiceSnd.stop();
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].stopLipSync();
     }
 
     // 立ち絵演出(dest レイヤのトゥイーン。立ち絵モードで見える)
@@ -973,6 +994,9 @@ class ADVSample extends Window
         if (id == "fx_fadein")  { fxFadeIn();  return; }
         if (id == "fx_fadeout") { fxFadeOut(); return; }
         if (id == "fx_slidein") { fxSlideIn(); return; }
+        // リップシンク(発話音声で口を駆動)
+        if (id == "lip_play")   { lipPlay();  return; }
+        if (id == "lip_stop")   { lipStop();  return; }
         // ポーズ
         if (id == "pose_cap")   { capturePoseAction(); return; }
         if (id == "pose_apply") { applyPoseSlot("cap"); return; }
