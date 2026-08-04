@@ -56,6 +56,11 @@ class Tachie
     // --- 空間モードでの配置(world) ---
     var offX = 0.0, offZ = 0.0;   // 左右(x) / 前後(z)
 
+    // --- 立ち絵演出トゥイーン(dest レイヤの不透明度/位置) ---
+    var baseX = 0, baseY = 0;     // dest 配置(トゥイーンの基準)
+    var tw = false, twT = 0.0, twDur = 0.5;
+    var twOp0 = 255, twOp1 = 255, twDX0 = 0, twDX1 = 0;   // 不透明度 / x オフセット(baseX 相対)
+
     // --- VRMA モーション再生 ---
     var motionAnim;               // Threepp.VRMAnimation("" のとき無し)
     var motionDur = 0.0, motionTime = 0.0;
@@ -114,6 +119,7 @@ class Tachie
         scene.add(vrm.getScene());
         restPose();
         vrm.captureRestPose();   // 素立ち姿勢を記録(停止時のクロスフェード先)
+        baseX = x; baseY = y;
         dest.setPos(x, y);
         // 間隔ゆらぎの初期位相をキャラごとにずらす
         blinkSeed = (x + 1) * 131 + 7;
@@ -267,6 +273,28 @@ class Tachie
         restReturning = true; restXfadeT = 0.0;   // 現在姿勢を保ったまま rest へ寄せる
     }
 
+    // 立ち絵演出トゥイーン(dest レイヤ)。op=不透明度, dx=baseX 相対の x。
+    function playTween(op0, op1, dx0, dx1, dur)
+    {
+        twOp0 = op0; twOp1 = op1; twDX0 = dx0; twDX1 = dx1;
+        twDur = dur; twT = 0.0; tw = true;
+        dest.opacity = op0;
+        dest.setPos(baseX + dx0, baseY);
+    }
+    function fadeIn(dur)      { playTween(0, 255, 0, 0, dur); }
+    function fadeOut(dur)     { playTween(dest.opacity, 0, 0, 0, dur); }
+    function slideIn(dur, dx) { playTween(0, 255, dx, 0, dur); }   // dx から base へ + フェード
+    function updateTween(dt)
+    {
+        if (!tw) return;
+        twT += dt;
+        var u = (twDur > 0.0) ? twT / twDur : 1.0; if (u > 1.0) u = 1.0;
+        var e = u * u * (3.0 - 2.0 * u);   // smoothstep
+        dest.opacity = (int)(twOp0 + (twOp1 - twOp0) * e);
+        dest.setPos((int)(baseX + twDX0 + (twDX1 - twDX0) * e), baseY);
+        if (u >= 1.0) tw = false;
+    }
+
     // 空間モードでの world 配置。offX=左右 / offZ=前後(+z=カメラ側=前)。
     function spaceSet(x, z) { offX = x; offZ = z; vrm.setOffset(offX, 0, offZ); }
     function spaceNudge(dx, dz)
@@ -310,6 +338,7 @@ class Tachie
     // 毎フレーム更新(dt 秒)
     function update(dt)
     {
+        updateTween(dt);   // dest レイヤの演出トゥイーン
         if (motionAnim !== void) {
             // VRMA 再生中はモーションが全身ポーズを駆動(idle と競合するので idle 停止)
             if (motionPlaying) {

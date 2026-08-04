@@ -158,6 +158,8 @@ class ControlPanel extends Dialog
             wrow("表情:",    exprBtns()),
             wrow("モーション:", motionBtns()),
             wrow("シーン:",   sceneBtns()),
+            wrow("演出:",     [ btn("fx_fadein","フェードイン"), btn("fx_fadeout","フェードアウト"),
+                              btn("fx_slidein","スライド登場") ]),
             wrow("カメラ:",  camBtns()),
             wrow("切替:",    togglesRow()),
             wrow("モード:",  modeRadios())
@@ -521,6 +523,9 @@ class ADVSample extends Window
                 var t = tachies[i];
                 t.scene.add(t.vrm.getScene());          // 立ち絵シーンへ戻す
                 t.spaceSet(0, 0);
+                t.tw = false;                           // 演出トゥイーン解除
+                t.dest.opacity = 255;
+                t.dest.setPos(t.baseX, t.baseY);
                 t.dest.visible = true;
                 t.frame(t.preset);                      // カメラ再フレーミング
             }
@@ -550,6 +555,19 @@ class ADVSample extends Window
     {
         tachies[0].spaceSet(-0.6, 0.0);
         tachies[1].spaceSet( 0.6, 0.0);
+    }
+
+    // 立ち絵演出(dest レイヤのトゥイーン。立ち絵モードで見える)
+    function fxFadeIn()  { var list = targetList(); for (var i = 0; i < list.count; i++) list[i].fadeIn(0.5); }
+    function fxFadeOut() { var list = targetList(); for (var i = 0; i < list.count; i++) list[i].fadeOut(0.5); }
+    function fxSlideIn()
+    {
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) {
+            var t = list[i];
+            var dx = (t == tachies[0]) ? -240 : 240;   // 左は左から/右は右から登場
+            t.slideIn(0.6, dx);
+        }
     }
 
     // --- VRMA モーション --------------------------------------------------
@@ -853,6 +871,10 @@ class ADVSample extends Window
         if (sceneBtnMap !== void && sceneBtnMap[id] !== void) { applyScene(sceneBtnMap[id]); return; }
         if (id == "state_save") { saveSlot(); return; }
         if (id == "state_load") { loadSlot(); return; }
+        // 立ち絵演出
+        if (id == "fx_fadein")  { fxFadeIn();  return; }
+        if (id == "fx_fadeout") { fxFadeOut(); return; }
+        if (id == "fx_slidein") { fxSlideIn(); return; }
 
         switch (id) {
         case "t_left":  target = 0; break;
