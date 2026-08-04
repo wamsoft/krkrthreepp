@@ -2703,6 +2703,9 @@ static void VRM_setOffset(ThreeWrapper<VRM> *self, float x, float y, float z)
 {
 	if (self && self->getObject()) self->getObject()->setOffset(x, y, z);
 }
+// 素立ち復帰のクロスフェード: captureRestPose で rest を記録、blendToRest(t) で寄せる。
+static void VRM_captureRestPose(ThreeWrapper<VRM> *self)          { if (self && self->getObject()) self->getObject()->captureRestPose(); }
+static void VRM_blendToRest(ThreeWrapper<VRM> *self, float t)     { if (self && self->getObject()) self->getObject()->blendToRest(t); }
 
 // VRM.getBoneNode(name) -> Threepp.Bone（human bone 名。無ければ void）
 static std::shared_ptr<Bone> VRM_getBoneNode(ThreeWrapper<VRM> *self, std::string name)
@@ -2801,6 +2804,8 @@ NCB_REGISTER_THREE_SUBCLASS(VRM)
 Factory(VRMFactory);                                 // コンバータ復路(CreateAdaptor)用
 NCB_METHOD_PROXY(getScene, VRM_getScene);            // -> Threepp.Group
 NCB_METHOD_PROXY(setOffset, VRM_setOffset);          // (x,y,z) キャラ全体を平行移動
+NCB_METHOD_PROXY(captureRestPose, VRM_captureRestPose);// rest 正規化姿勢を記録
+NCB_METHOD_PROXY(blendToRest, VRM_blendToRest);      // (t) rest へ slerp(素立ち復帰)
 NCB_METHOD_PROXY(getBoneNode, VRM_getBoneNode);      // (name) -> Threepp.Bone
 NCB_METHOD_PROXY(getBoneCount, VRM_getBoneCount);    // -> int
 NCB_METHOD_PROXY(setExpression, VRM_setExpression);  // (name, weight)

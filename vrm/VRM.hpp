@@ -54,6 +54,11 @@ namespace krkrvrm {
         /// 置くため、これでキャラ全体を world 空間で動かせる。
         void setRootOffset(float x, float y, float z) { if (rigRoot_) rigRoot_->position.set(x, y, z); }
 
+        /// 現在の正規化ポーズを rest として記録(素立ち復帰のクロスフェード先)。
+        void captureRestPose();
+        /// 各正規化ボーンを記録した rest へ slerp(t=1 で rest, 途中でクロスフェード)。
+        void blendToRest(float t);
+
         // --- hips ルートモーション用 ---
         [[nodiscard]] bool hasHips() const { return hasHips_; }
         [[nodiscard]] float hipsRestWorldY() const { return hipsRestWorldY_; }///< raw hips の rest world Y
@@ -71,6 +76,7 @@ namespace krkrvrm {
         std::unordered_map<std::string, RigBone> rig_;
         std::vector<std::string> rigOrder_;///< 親→子の順
         std::shared_ptr<threepp::Group> rigRoot_;
+        std::unordered_map<std::string, threepp::Quaternion> restNormPose_;///< rest の正規化姿勢
         bool hasHips_ = false;
         threepp::Vector3 hipsRestNormPos_;///< buildRig 時の正規化 hips 位置 (rest)
         float hipsRestWorldY_ = 0.f;      ///< raw hips の rest world Y (VRMA 高さスケール用)
@@ -249,6 +255,8 @@ namespace krkrvrm {
             if (scene) scene->position.set(x, y, z);
             humanoid.setRootOffset(x, y, z);
         }
+        void captureRestPose() { humanoid.captureRestPose(); }
+        void blendToRest(float t) { humanoid.blendToRest(t); }
         VRMExpressionManager expressionManager;
         VRMLookAt lookAt;
         VRMMeta meta;

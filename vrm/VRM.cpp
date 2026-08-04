@@ -411,6 +411,20 @@ void main() {
             rb.norm->quaternion.set(0.f, 0.f, 0.f, 1.f);
     }
 
+    void VRMHumanoid::captureRestPose() {
+        restNormPose_.clear();
+        for (const auto& [name, rb] : rig_)
+            if (rb.norm) restNormPose_[name] = rb.norm->quaternion;
+    }
+
+    void VRMHumanoid::blendToRest(float t) {
+        for (const auto& [name, rb] : rig_) {
+            if (!rb.norm) continue;
+            auto it = restNormPose_.find(name);
+            if (it != restNormPose_.end()) rb.norm->quaternion.slerp(it->second, t);
+        }
+    }
+
     void VRMHumanoid::updateRig() {
         if (!rigRoot_) return;
         rigRoot_->updateMatrixWorld(true);

@@ -62,6 +62,7 @@ class Tachie
     var motionLoop = true, motionPlaying = false;
     var motionId = "";            // 再生中モーションの id(状態の保存/復元用)
     var xfading = false, xfadeT = 0.0, xfadeDur = 0.3, xfadeTau = 0.09;   // 開始/切替時のクロスフェード
+    var restReturning = false, restXfadeT = 0.0;   // 停止→素立ちのクロスフェード
 
     // --- カメラ姿勢(フレーミング基準 + 旋回/ズーム) ---
     var camTX = 0.0, camTY = 1.0, camTZ = 0.0;  // 注視点(world)
@@ -112,6 +113,7 @@ class Tachie
         }
         scene.add(vrm.getScene());
         restPose();
+        vrm.captureRestPose();   // 素立ち姿勢を記録(停止時のクロスフェード先)
         dest.setPos(x, y);
         // 間隔ゆらぎの初期位相をキャラごとにずらす
         blinkSeed = (x + 1) * 131 + 7;
@@ -255,14 +257,14 @@ class Tachie
         motionId = (id === void) ? "" : id;
         xfading = true; xfadeT = 0.0;   // 現在姿勢からこのモーションへクロスフェード
     }
-    // モーションを止めて素立ち(腕下ろし)へ戻す
+    // モーションを止めて素立ちへ戻す(現在ポーズから rest へクロスフェード)
     function stopMotion()
     {
+        if (motionAnim === void && !restReturning) return;   // 既に素立ち
         motionAnim = void;
         motionPlaying = false;
         motionId = "";
-        vrm.resetNormalizedPose();   // 正規化ポーズを rest へ
-        restPose();                  // 腕を下ろす
+        restReturning = true; restXfadeT = 0.0;   // 現在姿勢を保ったまま rest へ寄せる
     }
 
     // 空間モードでの world 配置。offX=左右 / offZ=前後(+z=カメラ側=前)。
@@ -326,6 +328,12 @@ class Tachie
             } else {
                 vrm.applyAnimation(motionAnim, motionTime);   // 停止後も最終ポーズを保持
             }
+        } else if (restReturning) {
+            // 停止直後: 現在姿勢から素立ちへ寄せ、完了で確定して idle へ
+            restXfadeT += dt;
+            var rb = dt / xfadeTau; if (rb > 1.0) rb = 1.0;
+            vrm.blendToRest(rb);
+            if (restXfadeT >= xfadeDur) { restReturning = false; vrm.resetNormalizedPose(); restPose(); }
         } else {
             if (idleEnabled) updateIdle(dt);
         }
