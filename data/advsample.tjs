@@ -25,6 +25,11 @@ var WIN_W = 1920;
 var WIN_H = 1080;
 var RENDER_X = WIN_W - SCREEN_W;   // = 640 (描画領域を右へ寄せる)
 var RENDER_Y = 0;
+var PANEL_W  = RENDER_X;            // 左列=操作パネル幅(640)
+var INFO_X   = RENDER_X;            // 情報帯は描画の下(右下)
+var INFO_Y   = SCREEN_H;            // = 720
+var INFO_W   = SCREEN_W;            // 1280
+var INFO_H   = WIN_H - SCREEN_H;    // 360
 
 // 立ち絵1体分の描画バッファ(=dest レイヤ)サイズ。両キャラ共通なので
 // adaptor/renderer をこのサイズ固定で使え、フレーム毎のリサイズが要らない。
@@ -59,17 +64,18 @@ class ControlPanel extends Dialog
     }
 
     // --- レイアウト部品 -----------------------------------------------
+    var BTN_SCALE = 1.5;      // ボタン/ラベルの拡大率(広い左列でゆったり)
     function btn(id, text)    // 単発ボタン(押すたびに動作)
     {
-        return %[ "type" => "button", "id" => id, "text" => text, "close_on_click" => 0 ];
+        return %[ "type" => "button", "id" => id, "text" => text, "close_on_click" => 0, "size_scale" => BTN_SCALE ];
     }
     function toggle(id, text, on)   // ON/OFF トグル(押下状態が見える)
     {
-        return %[ "type" => "toggle_button", "id" => id, "text" => text, "value" => (on ? 1 : 0) ];
+        return %[ "type" => "toggle_button", "id" => id, "text" => text, "value" => (on ? 1 : 0), "size_scale" => BTN_SCALE ];
     }
     function radio(id, text, sel)   // 排他選択(同 htile 内で自動排他・選択がハイライト)
     {
-        return %[ "type" => "radio_button", "id" => id, "text" => text, "selected" => (sel ? 1 : 0) ];
+        return %[ "type" => "radio_button", "id" => id, "text" => text, "selected" => (sel ? 1 : 0), "size_scale" => BTN_SCALE ];
     }
     function labelCell(text, w)
     {
@@ -77,24 +83,58 @@ class ControlPanel extends Dialog
                   "child" => %[ "type" => "align_left",
                                 "child" => %[ "type" => "label", "text" => text ] ] ];
     }
-    // ラベル + ウィジェット群を横並び(1 行 = 1 htile = ラジオの排他スコープ)
-    function wrow(labelText, widgets)
+    // 見出しラベル(セクション名。1 行)。label は size(px 絶対)を効かせられる。
+    // vtile 直下だと出ないので align_left で包む(元コードの labelCell と同じ)。
+    function secLabel(text)
+    {
+        return %[ "type" => "align_left",
+                  "child" => %[ "type" => "label", "text" => "▶ " + text, "size" => 22,
+                                "color" => [130, 200, 255, 255] ] ];
+    }
+    // ボタン群を perRow 個ずつ折り返して複数の htile 行にする(左列 640 幅向け)
+    function wrapButtons(widgets, perRow)
+    {
+        var rows = []; var row = [];
+        for (var i = 0; i < widgets.count; i++) {
+            row.add(widgets[i]);
+            row.add(%[ "type" => "hspacer", "width" => 12 ]);
+            if (((i + 1) % perRow) == 0) {
+                rows.add(%[ "type" => "htile", "children" => row ]);
+                rows.add(%[ "type" => "vspacer", "height" => 12 ]);
+                row = [];
+            }
+        }
+        if (row.count > 0) rows.add(%[ "type" => "htile", "children" => row ]);
+        return rows;
+    }
+    // セクション(見出し + 折り返しボタン群)を vtile children 配列で返す
+    function sec(title, widgets, perRow)
+    {
+        var out = [ secLabel(title), %[ "type" => "vspacer", "height" => 8 ] ];
+        var rows = wrapButtons(widgets, perRow);
+        for (var i = 0; i < rows.count; i++) out.add(rows[i]);
+        out.add(%[ "type" => "vspacer", "height" => 20 ]);
+        return out;
+    }
+    // 排他が要る group(ラジオ)は 1 htile に収める(見出し + 1 行)
+    function secOneRow(title, widgets)
     {
         var kids = [];
-        kids.add(labelCell(labelText, 96));
         for (var i = 0; i < widgets.count; i++) {
             kids.add(widgets[i]);
-            kids.add(%[ "type" => "hspacer", "width" => 8 ]);
+            kids.add(%[ "type" => "hspacer", "width" => 16 ]);
         }
-        return %[ "type" => "htile", "children" => kids ];
+        return [ secLabel(title), %[ "type" => "vspacer", "height" => 8 ],
+                 %[ "type" => "htile", "children" => kids ],
+                 %[ "type" => "vspacer", "height" => 20 ] ];
     }
-    // 行配列を vspacer 挟んで縦積み
-    function rowsJoin(arr)
+    // セクション配列(配列の配列)をフラットな vtile children に
+    function catRows(parts)
     {
         var out = [];
-        for (var i = 0; i < arr.count; i++) {
-            if (i > 0) out.add(%[ "type" => "vspacer", "height" => 8 ]);
-            out.add(arr[i]);
+        for (var i = 0; i < parts.count; i++) {
+            var p = parts[i];
+            for (var j = 0; j < p.count; j++) out.add(p[j]);
         }
         return out;
     }
@@ -158,60 +198,61 @@ class ControlPanel extends Dialog
                  btn("hide","隠す(Tab)") ];
     }
 
-    // 立ち絵モードのパネル
+    // 立ち絵モードのパネル(左列 640 幅・折り返し縦積み)
     function tachieRows()
     {
-        return rowsJoin([
-            wrow("対象:",    targetRadios()),
-            wrow("フレーム:", [ btn("f_full","全身"), btn("f_knee","膝上"), btn("f_waist","腰上"),
-                              btn("f_bust","胸上"), btn("f_face","顔") ]),
-            wrow("表情:",    exprBtns()),
-            wrow("モーション:", motionBtns()),
-            wrow("ポーズ:",   [ btn("pose_cap","採取"), btn("pose_apply","適用"), btn("pose_clear","素立ち"),
-                              btn("pose_save","保存"), btn("pose_load","読込") ]),
-            wrow("シーン:",   sceneBtns()),
-            wrow("演出:",     [ btn("fx_fadein","フェードイン"), btn("fx_fadeout","フェードアウト"),
-                              btn("fx_slidein","スライド登場") ]),
-            wrow("リップ:",   [ btn("lip_play","発話(音声)"), btn("lip_stop","停止") ]),
-            wrow("カメラ:",  camBtns()),
-            wrow("切替:",    togglesRow()),
-            wrow("モード:",  modeRadios())
+        return catRows([
+            secOneRow("対象", targetRadios()),
+            sec("フレーム", [ btn("f_full","全身"), btn("f_knee","膝上"), btn("f_waist","腰上"),
+                           btn("f_bust","胸上"), btn("f_face","顔") ], 3),
+            sec("表情", exprBtns(), 3),
+            sec("モーション", motionBtns(), 3),
+            sec("ポーズ", [ btn("pose_cap","採取"), btn("pose_apply","適用"), btn("pose_clear","素立ち"),
+                         btn("pose_save","保存"), btn("pose_load","読込") ], 3),
+            sec("シーン", sceneBtns(), 3),
+            sec("演出", [ btn("fx_fadein","フェードイン"), btn("fx_fadeout","フェードアウト"),
+                       btn("fx_slidein","スライド登場") ], 2),
+            sec("リップ", [ btn("lip_play","発話(音声)"), btn("lip_stop","停止") ], 2),
+            sec("カメラ", camBtns(), 4),
+            sec("切替", togglesRow(), 2),
+            secOneRow("モード", modeRadios())
         ]);
     }
 
     // 空間モードのパネル (フレーム指定は無効。位置・画角・カメラ中心)
     function spaceRows()
     {
-        return rowsJoin([
-            wrow("対象:",   targetRadios()),
-            wrow("表情:",   exprBtns()),
-            wrow("モーション:", motionBtns()),
-            wrow("ポーズ:",   [ btn("pose_cap","採取"), btn("pose_apply","適用"), btn("pose_clear","素立ち"),
-                              btn("pose_save","保存"), btn("pose_load","読込") ]),
-            wrow("シーン:",   sceneBtns()),
-            wrow("位置:",   [ btn("pos_left","← 左"), btn("pos_right","右 →"), btn("pos_fwd","前(近)"),
-                            btn("pos_back","後(遠)"), btn("pos_reset","並べ直す") ]),
-            wrow("カメラ:", camBtns()),
-            wrow("操作:",   [ radio("camm_orbit","回り込み", app.sCamMode=="orbit"),
-                            radio("camm_move","平行移動", app.sCamMode=="move") ]),
-            wrow("背景:",   [ radio("bg_fixed","舞台に固定", !app.bgFollow),
-                            radio("bg_follow","カメラ追従", app.bgFollow) ]),
-            wrow("画角:",   [ btn("fov_tele","望遠(平行寄り)"), btn("fov_wide","広角") ]),
-            wrow("切替:",   togglesRow()),
-            wrow("モード:", modeRadios())
+        return catRows([
+            secOneRow("対象", targetRadios()),
+            sec("表情", exprBtns(), 3),
+            sec("モーション", motionBtns(), 3),
+            sec("ポーズ", [ btn("pose_cap","採取"), btn("pose_apply","適用"), btn("pose_clear","素立ち"),
+                         btn("pose_save","保存"), btn("pose_load","読込") ], 3),
+            sec("シーン", sceneBtns(), 3),
+            sec("位置", [ btn("pos_left","← 左"), btn("pos_right","右 →"), btn("pos_fwd","前(近)"),
+                       btn("pos_back","後(遠)"), btn("pos_reset","並べ直す") ], 3),
+            sec("カメラ", camBtns(), 4),
+            secOneRow("操作", [ radio("camm_orbit","回り込み", app.sCamMode=="orbit"),
+                             radio("camm_move","平行移動", app.sCamMode=="move") ]),
+            secOneRow("背景", [ radio("bg_fixed","舞台に固定", !app.bgFollow),
+                             radio("bg_follow","カメラ追従", app.bgFollow) ]),
+            sec("画角", [ btn("fov_tele","望遠(平行寄り)"), btn("fov_wide","広角") ], 2),
+            sec("切替", togglesRow(), 2),
+            secOneRow("モード", modeRadios())
         ]);
     }
 
+    // 左列(640 幅)に縦パネル。top_left で左上に寄せ、はみ出す分は scroller で縦スクロール。
     function buildLayout()
     {
         var rows = (app.mode == "space") ? spaceRows() : tachieRows();
         return %[
-            "size"       => [1260, 640],
-            "align"      => "bottom",
-            "margin"     => 12,
-            "background" => [18, 20, 30, 235],
+            "size"       => [PANEL_W, WIN_H],
+            "align"      => "top_left",
+            "margin"     => 0,
+            "background" => [18, 20, 30, 240],
             "input"      => %[ "arrow_focus_nav" => 1 ],
-            "content"    => %[ "type" => "margin", "padding" => 14,
+            "content"    => %[ "type" => "margin", "padding" => 20,
                                "child" => %[ "type" => "vtile", "children" => rows ] ]
         ];
     }
@@ -311,12 +352,12 @@ class ADVSample extends Window
         baseLayer.visible = true;
         add(baseLayer);
 
-        // 情報/ログ表示(左列)
+        // 情報/ログ表示(描画の下=右下帯。コンソール風)
         logLines = [];
         infoLayer = new Layer(this, baseLayer);
-        infoLayer.setImageSize(RENDER_X, WIN_H);
-        infoLayer.setSize(RENDER_X, WIN_H);
-        infoLayer.setPos(0, 0);
+        infoLayer.setImageSize(INFO_W, INFO_H);
+        infoLayer.setSize(INFO_W, INFO_H);
+        infoLayer.setPos(INFO_X, INFO_Y);
         infoLayer.visible = true;
 
         // 3D 描画領域(右上)。全描画レイヤ(dest/space/gaze)はこの back の子。
@@ -1128,37 +1169,42 @@ class ADVSample extends Window
         if (infoClock >= 0.25) { drawInfo((dt > 0.0) ? (1.0 / dt) : 60.0); infoClock = 0.0; }
     }
 
-    // 左列に状態＋操作ログを描く
+    // 右下帯(1280x360)に状態(左半分)＋操作ログ(右半分)を横並びで描く
     function drawInfo(fps)
     {
         if (infoLayer === void) return;
         var L = infoLayer;
-        L.fillRect(0, 0, RENDER_X, WIN_H, 0xFF161923);
-        L.fillRect(0, 0, RENDER_X, 2, 0x40FFFFFF);
+        L.fillRect(0, 0, INFO_W, INFO_H, 0xFF161923);
+        L.fillRect(0, 0, INFO_W, 2, 0x40FFFFFF);
         try { L.font.face = "ＭＳ ゴシック"; } catch (e) { }
-        var x = 18, y = 16, lh = 24;
         var white = 0xFFEFEFEF, dim = 0xFF9AA3B4, key = 0xFF8FD0FF;
+        // 左: 状態
+        var x = 24, y = 18;
         L.font.height = 22;
-        L.drawText(x, y, "krkr_threepp ADV サンプル", key, 255, true); y += 34;
-        L.font.height = 16;
+        L.drawText(x, y, "krkr_threepp ADV サンプル", key, 255, true); y += 36;
+        L.font.height = 17;
         L.drawText(x, y, "モード:" + (mode == "space" ? "空間" : "立ち絵")
-                       + "  対象:" + (target==0?"左":(target==1?"右":"両方"))
-                       + "  FPS:" + (int)fps, dim, 255, true); y += lh + 6;
+                       + "    対象:" + (target==0?"左":(target==1?"右":"両方"))
+                       + "    FPS:" + (int)fps, dim, 255, true); y += 32;
         for (var i = 0; i < tachies.count; i++) {
             var t = tachies[i];
-            L.font.height = 17;
-            L.drawText(x, y, stageDef.characters[i].name + ":", white, 255, true); y += lh;
-            L.font.height = 14;
-            L.drawText(x + 14, y, "表情=" + (t.emotion == "" ? "neutral" : t.emotion)
-                          + " 動=" + (t.motionId == "" ? "-" : t.motionId)
-                          + " 目線=" + (t.lookAtCamera ? "ON" : "off"), dim, 255, true);
-            y += lh;
+            L.font.height = 18;
+            L.drawText(x, y, "● " + stageDef.characters[i].name, white, 255, true); y += 26;
+            L.font.height = 15;
+            L.drawText(x + 20, y, "表情=" + (t.emotion == "" ? "neutral" : t.emotion)
+                          + "   動=" + (t.motionId == "" ? "-" : t.motionId)
+                          + "   目線=" + (t.lookAtCamera ? "ON" : "off"), dim, 255, true);
+            y += 32;
         }
-        y += 8;
-        L.font.height = 16;
-        L.drawText(x, y, "─ 操作ログ ─", key, 255, true); y += lh;
-        L.font.height = 14;
-        for (var i = 0; i < logLines.count; i++) { L.drawText(x, y, logLines[i], dim, 255, true); y += 19; }
+        // 右: 操作ログ(最新が下、収まる分だけ)
+        var lx = 660, ly = 18, llh = 22;
+        L.fillRect(lx - 20, 14, 2, INFO_H - 28, 0x30FFFFFF);   // 区切り線
+        L.font.height = 18;
+        L.drawText(lx, ly, "─ 操作ログ ─", key, 255, true); ly += 30;
+        L.font.height = 15;
+        var maxLines = (int)((INFO_H - ly - 12) / llh);
+        var start = logLines.count - maxLines; if (start < 0) start = 0;
+        for (var i = start; i < logLines.count; i++) { L.drawText(lx, ly, logLines[i], dim, 255, true); ly += llh; }
         L.update();
     }
     function logLine(s)
