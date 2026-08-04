@@ -97,6 +97,10 @@ class ControlPanel extends Dialog
     function exprBtns()
     {
         var kids = [ btn("neutral", "標準") ];
+        // 合成表情(メタ定義)
+        var ex = app.stageDef.expressions;
+        if (ex !== void) for (var i = 0; i < ex.count; i++) kids.add(btn(ex[i].id, ex[i].name));
+        // VRM 単一表情(モデル実装)
         var names = app.emotionNames();
         for (var i = 0; i < names.count; i++)
             kids.add(btn(names[i], app.exprLabel(names[i])));
@@ -580,6 +584,9 @@ class ADVSample extends Window
         sceneBtnMap = %[];
         var sc = stageDef.scenes;
         if (sc !== void) for (var i = 0; i < sc.count; i++) sceneBtnMap["sc_" + sc[i].id] = sc[i];
+        exprCompositeById = %[];
+        var ex = stageDef.expressions;
+        if (ex !== void) for (var i = 0; i < ex.count; i++) exprCompositeById[ex[i].id] = ex[i];
     }
     // VRMA を読み込んでキャッシュ(初回のみ)
     function loadMotion(file)
@@ -617,7 +624,7 @@ class ADVSample extends Window
     // 1キャラ分の状態を適用(省略項目は変更しない)
     function applyCharState(t, st)
     {
-        if (st.expr   !== void) t.setEmotion(st.expr);
+        if (st.expr   !== void) setCharExpr(t, st.expr);
         if (st.motion !== void) playMotionForChar(t, st.motion);
         if (st.gaze   !== void) t.setLookAtCamera(st.gaze == "camera");
         // 位置(x=左右, z=前後)。空間モードでのみ意味を持つ。
@@ -751,10 +758,25 @@ class ADVSample extends Window
         var list = targetList();
         for (var i = 0; i < list.count; i++) list[i].frame(p);
     }
+    // 表情名 → 表情セット [name,w,…] に解決する。
+    // "neutral"/"" = 空、合成表情id = その set、それ以外 = 単一 VRM 表情。
+    var exprCompositeById;   // 合成表情 id -> name/set 定義
+    function exprSetFor(name)
+    {
+        if (name == "neutral" || name == "" || name === void) return [];
+        if (exprCompositeById !== void && exprCompositeById[name] !== void)
+            return exprCompositeById[name].set;
+        return [ name, 1.0 ];
+    }
+    function setCharExpr(t, name)
+    {
+        var id = (name == "neutral" || name === void) ? "" : name;
+        t.setEmotionSet(id, exprSetFor(name));
+    }
     function applyEmotion(name)
     {
         var list = targetList();
-        for (var i = 0; i < list.count; i++) list[i].setEmotion(name);
+        for (var i = 0; i < list.count; i++) setCharExpr(list[i], name);
     }
 
     // --- 表情名の列挙(モデル実装から) ---
@@ -792,6 +814,9 @@ class ADVSample extends Window
             if (nm == "" || skip[nm] !== void || emoNameSet[nm] !== void) continue;
             list.add(nm); emoNameSet[nm] = 1;
         }
+        // 合成表情 id もパネル判定用に登録
+        var ex = stageDef.expressions;
+        if (ex !== void) for (var i = 0; i < ex.count; i++) emoNameSet[ex[i].id] = 1;
         return list;
     }
     // ON/OFF トグルは全キャラ共通(toggle_button の値をそのまま適用)

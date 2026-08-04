@@ -14,6 +14,14 @@ global.stageDef = %[
         %[ "id" => "left",  "name" => "モデル",   "vrm" => "model",                "frontZ" => 1 ],
         %[ "id" => "right", "name" => "アバター", "vrm" => "AvatarSample_A_VRM1_0", "frontZ" => 1 ]
     ],
+    // 合成表情: 複数の VRM 表情を weight つきで束ね、1つの名前で一括指定する。
+    // set は [表情名, weight, 表情名, weight, …] のフラット配列。
+    "expressions" => [
+        %[ "id" => "grin",      "name" => "にっこり",   "set" => [ "happy", 1.0, "relaxed", 0.5 ] ],
+        %[ "id" => "opensmile", "name" => "笑顔(口開)", "set" => [ "happy", 0.7, "aa", 0.6 ] ],
+        %[ "id" => "shock",     "name" => "絶句",       "set" => [ "surprised", 0.8, "oh", 0.5 ] ]
+    ],
+
     // loop=1 はループ再生、loop=0 は一度再生して最終ポーズを保持(=ポーズ付け)。
     // ※ VRMA によっては hips 回転等を含み崩れるものがある(素材依存)。動作確認済みのみ登録。
     "motions" => [
