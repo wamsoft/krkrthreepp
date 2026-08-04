@@ -553,6 +553,7 @@ class ADVSample extends Window
             var scn = (mode == "space") ? spaceScene : t.scene;
             scn.updateMatrixWorld(true);
             var hp = t.vrm.getBoneNode("head").getWorldPosition();
+            // ny 下+ なのでターゲットは下げる(マーカー下→ターゲット下→目も下)
             t.vrm.setLookAtTarget(hp.x + nx * spanX, hp.y - ny * spanY, hp.z + t.frontZ * depth);
         }
     }

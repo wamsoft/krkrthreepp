@@ -653,12 +653,13 @@ void main() {
         // VRMLookAtExpressionApplier 準拠)。applyToScene がこの後に走り、表情に付いた
         // textureTransformBind で瞳の UV が動く。eye ボーンは回さない。
         if (expressionMode_ && exprMgr_) {
-            if (pitchDeg < 0.f) {// 上を見る
+            // pitchDeg = asin(dir.y): target が上(dir.y>0)なら lookUp、下なら lookDown。
+            if (pitchDeg >= 0.f) {// target が上 → 上を見る
                 exprMgr_->setValue("lookDown", 0.f);
-                exprMgr_->setValue("lookUp", mapv(-pitchDeg, inMaxV_, outVUp_));
-            } else {
+                exprMgr_->setValue("lookUp", mapv(pitchDeg, inMaxV_, outVUp_));
+            } else {// target が下 → 下を見る
                 exprMgr_->setValue("lookUp", 0.f);
-                exprMgr_->setValue("lookDown", mapv(pitchDeg, inMaxV_, outVDown_));
+                exprMgr_->setValue("lookDown", mapv(-pitchDeg, inMaxV_, outVDown_));
             }
             if (yawDeg < 0.f) {
                 exprMgr_->setValue("lookLeft", 0.f);
@@ -678,7 +679,9 @@ void main() {
         const float pitchOut = (pitchDeg < 0.f) ? -ap : ap;
 
         threepp::Quaternion delta;
-        delta.setFromEuler(threepp::Euler(pitchOut * DEG2RAD, yawOut * DEG2RAD, 0.f));
+        // ピッチは three.js の Euler X 正回転が +Z を下へ倒すため符号を反転し、
+        // target が上(pitchOut>0)のとき目が上を向くようにする(three-vrm の縦方向に一致)。
+        delta.setFromEuler(threepp::Euler(-pitchOut * DEG2RAD, yawOut * DEG2RAD, 0.f));
         if (leftEye_) {
             threepp::Quaternion q;
             q.copy(leftRest_).multiply(delta);
