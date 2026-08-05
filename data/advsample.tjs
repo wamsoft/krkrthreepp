@@ -2012,7 +2012,8 @@ class ADVSample extends Window
         L.fillRect(0, 0, INSP_W, INSP_H, 0xFF14171F);
         L.fillRect(0, 0, 2, INSP_H, 0x40FFFFFF);   // 左境界
         try { L.font.face = "ＭＳ ゴシック"; } catch (e) { }
-        var white = 0xFFF4F6FA, dim = 0xFFC2CCDA, key = 0xFF9AD8FF, sel = 0xFF88ECAE, off = 0xFF98A2B0;
+        // ★drawText の色は 24bit(0xRRGGBB)。32bit(0xFFRRGGBB)を渡すと暗く化ける。
+        var white = 0xF4F6FA, dim = 0xC2CCDA, key = 0x9AD8FF, sel = 0x88ECAE, off = 0x98A2B0;
         var x = 16, y = 18;
         L.font.height = 20;
         L.drawText(x, y, "インスペクター", key, 255, true); y += 34;
@@ -2067,7 +2068,8 @@ class ADVSample extends Window
         L.fillRect(0, 0, LOG_W, LOG_H, 0xFF12141B);
         L.fillRect(0, 0, LOG_W, 2, 0x40FFFFFF);    // 上境界
         try { L.font.face = "ＭＳ ゴシック"; } catch (e) { }
-        var white = 0xFFF4F6FA, dim = 0xFFC2CCDA, key = 0xFF9AD8FF;
+        // ★drawText の色は 24bit(0xRRGGBB)。32bit(0xFFRRGGBB)を渡すと暗く化ける。
+        var white = 0xF4F6FA, dim = 0xC2CCDA, key = 0x9AD8FF;
         // 左: タイトル + 状態 + キーヒント
         var x = 24, y = 18;
         L.font.height = 22;
