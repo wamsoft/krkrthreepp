@@ -437,12 +437,14 @@ class ControlPanel extends Dialog
             %[ "type" => "htile", "children" => [
                 btn("pose_save2", "保存"), %[ "type" => "hspacer", "width" => 10 ],
                 btn("pose_base_rest", "クリア") ] ] ]));
-        // 既存ポーズの読込(あれば)
+        // 既存ポーズの読込 + VRMA 書き出し(あれば)
         var ids = app.poseIdList();
         if (ids.count > 0) {
             var lb = [];
             for (var i = 0; i < ids.count; i++) lb.add(btn("lp:" + ids[i], ids[i]));
             parts.add(sec("読込", lb, 3));
+            // 保存済みポーズ列を1本の VRMA モーションへ書き出す(poseseq→VRMA)
+            parts.add(grpBox("書出", [ btn("pose_export", "全ポーズ→VRMA") ]));
         }
         return catRows(parts);
     }
@@ -1444,6 +1446,40 @@ class ADVSample extends Window
         for (var j = 0; j < pairs.count; j += 2) ids.add(pairs[j]);
         return ids;
     }
+    // 保存済みポーズ列(poses.json の id 群)を VRMA モーションへ書き出す。
+    // poseIds をキー時刻 i*step 秒に並べ、glTF LINEAR 補間で遷移する poseseq を焼き込む。
+    // 出力は共有 glTF-JSON 形式の .vrma(自前ローダ/three-vrm で読める)。成功で true。
+    function exportPoseSeqVRMA(poseIds, step, outFile)
+    {
+        if (poseLib === void) loadPoseLib();
+        if (poseIds === void || poseIds.count == 0) return false;
+        // 全ポーズに現れるボーンの和集合(順序保持)を列に
+        var boneOrder = []; var seen = %[];
+        for (var i = 0; i < poseIds.count; i++) {
+            var def = poseLib[poseIds[i]]; if (def === void) continue;
+            var pr = dictPairs(def.bones);
+            for (var j = 0; j < pr.count; j += 2) if (seen[pr[j]] === void) { seen[pr[j]] = 1; boneOrder.add(pr[j]); }
+        }
+        var nB = boneOrder.count;
+        if (nB == 0) return false;
+        // 各キー(=ポーズ)の時刻 + quat 平坦列((key,bone,xyzw) 行優先)
+        var times = []; var quats = [];
+        for (var i = 0; i < poseIds.count; i++) {
+            var def = poseLib[poseIds[i]];
+            times.add(i * step);
+            var m = %[];
+            if (def !== void) { var pr = dictPairs(def.bones); for (var j = 0; j < pr.count; j += 2) m[pr[j]] = pr[j + 1]; }
+            for (var b = 0; b < nB; b++) {
+                var q = m[boneOrder[b]];
+                if (q === void) q = [ 0.0, 0.0, 0.0, 1.0 ];
+                quats.add(q[0]); quats.add(q[1]); quats.add(q[2]); quats.add(q[3]);
+            }
+        }
+        var ld = new Threepp.VRMAnimationLoader();
+        var ok = ld.exportPoseSeq(boneOrder, times, quats, outFile);
+        Debug.message("VRMA 書出 " + (ok ? "成功" : "失敗") + ": " + outFile + " (" + poseIds.count + "キー/" + nB + "ボーン)");
+        return ok;
+    }
 
     // --- 表情名の列挙(モデル実装から) ---
     var emoNameSet;   // 表情ボタン id 判定用
@@ -1577,6 +1613,7 @@ class ADVSample extends Window
         if (id == "pose_base_rest") { poseBaseRest();    return; }
         if (id == "pose_name")      { poseName = (val === void) ? "" : "" + val; return; }
         if (id == "pose_save2")     { saveCurrentPose(); return; }
+        if (id == "pose_export")    { exportPoseSeqVRMA(poseIdList(), 1.0, "poseseq.vrma"); return; }
         if (id.length >= 3 && id.substring(0, 3) == "pb:") { editSelectBone(id.substring(3)); return; }
         if (id.length >= 3 && id.substring(0, 3) == "lp:") { loadPoseIntoEdit(id.substring(3)); return; }
         // 表情ボタン(id=表情名)は動的なので switch より先に判定

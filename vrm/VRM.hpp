@@ -368,6 +368,12 @@ namespace krkrvrm {
                                                 const std::string& srcLabel);
     };
 
+    // pose シーケンスを VRMA(.gltf JSON + base64 バッファ)文字列に書き出す。
+    // times[k]=キー時刻(秒), boneNames[b]=ボーン名, quats[b]=各キーの [x,y,z,w] 平坦列(size=times*4)。
+    std::string buildVRMAGltf(const std::vector<float>& times,
+                              const std::vector<std::string>& boneNames,
+                              const std::vector<std::vector<float>>& quats);
+
 }// namespace krkrvrm
 
 #endif// KRKR_THREEPP_VRM_HPP

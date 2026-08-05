@@ -138,8 +138,20 @@ advsample の**作業モード「ポーズ」**（左パネル差し替え、[[p
 - **API（ADVSample）**: `poseBaseCapture()` / `poseBaseRest()` / `editSelectBone(name)` /
   `editSetBoneRot(axis,deg)` / `saveCurrentPose()` / `loadPoseIntoEdit(id)` / `poseIdList()`。
   ライブ反映は `Tachie.setPoseLive(arr)`(クロスフェード無しで poseData に据える)。
-- **TODO**: poseseq→VRMA 書き出し、詳細モード(全ボーン)、対称編集(左右ミラー)、
-  ブラウザ側 three-vrm エディタ。
+
+#### poseseq → VRMA 書き出し ✅実装済
+保存済みポーズ列を **1 本の VRMA モーション**へ焼き込む(glTF LINEAR 補間で遷移)。
+- **プラグイン(C++)**: `VRMAnimationLoader.exportPoseSeq(boneNames, times, quatsFlat, path)` が
+  **glTF-JSON + base64 バッファ形式の .vrma** を書き出す(`buildVRMAGltf` in VRM.cpp)。
+  自前 GLTFLoader は glb/JSON 両対応 + base64 データURI 対応なので読み戻せる。
+  ボーン回転は正規化リグのローカル回転(階層非依存)なので node はフラット、`VRMC_vrm_animation.
+  humanoid.humanBones` で bone→node、animation の rotation channel を bone ごとに 1 本。
+  入力は平坦な並列配列: `boneNames`(nBones) / `times`(nKeys, 秒) / `quatsFlat`((key,bone,xyzw) 行優先)。
+- **ADVSample**: `exportPoseSeqVRMA(poseIds, step, outFile)` が poses.json のポーズ列を時刻 i*step に
+  並べて書き出す。パネル「書出」ボタン(id=`pose_export`)で全保存ポーズ→`poseseq.vrma`。
+- 往復検証済(export→loadStorage→playMotion で書き出し値を再現。t=末尾で該当ボーン quat 一致)。
+- **TODO**: 時間軸 UI(ポーズ列に個別の hold/trans 指定)、表情トラック同時書出、hips ルートモーション、
+  詳細モード(全ボーン)、対称編集(左右ミラー)、ブラウザ側 three-vrm エディタ。
 
 ### scenes（名前付きシーン）✅実装済
 宣言的に各キャラの状態＋演出＋カメラを一括指定する（TyranoScript タグ相当）。

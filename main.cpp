@@ -2682,6 +2682,58 @@ static std::vector<unsigned char> ThreeReadStorageBytes(const ttstr &storageName
 	return buf;
 }
 
+// バイト列を吉里吉里ストレージへ書き出す(bare 名で data/ 直下に出る)。
+static bool ThreeWriteStorageBytes(const ttstr &storageName, const void *data, size_t len)
+{
+	iTJSBinaryStream *st = TVPCreateStream(storageName, TJS_BS_WRITE);
+	if (!st) {
+		TVPAddImportantLog(ttstr(TJS_W("[threepp] storage write open failed: ")) + storageName);
+		return false;
+	}
+	bool ok = true;
+	if (len > 0) ok = (st->Write(data, (tjs_uint)len) == len);
+	st->Destruct();
+	return ok;
+}
+
+// ttstr(ワイド)を ASCII narrow へ(ボーン名等 ASCII 前提)。
+static std::string ThreeAsciiNarrow(const ttstr &s)
+{
+	std::string out;
+	for (const tjs_char *p = s.c_str(); p && *p; ++p) out += (*p < 128) ? (char)*p : '?';
+	return out;
+}
+
+// poseseq を VRMA(.gltf JSON + base64)へ書き出す。入力は平坦な並列配列:
+//   boneNames = [名,…](nBones) / times = [秒,…](nKeys) /
+//   quatsFlat = [ (key,bone,xyzw) 行優先の real, size = nKeys*nBones*4 ]
+// storageName = 出力先(bare 名で data/ 直下)。成功で true。
+static bool VRMAnimationLoader_exportPoseSeq(ThreeWrapper<VRMAnimationLoader> *self,
+                                             tTJSVariant bonesV, tTJSVariant timesV,
+                                             tTJSVariant quatsV, ttstr storageName)
+{
+	if (bonesV.Type() != tvtObject || timesV.Type() != tvtObject || quatsV.Type() != tvtObject) return false;
+	ncbPropAccessor bn(bonesV.AsObjectNoAddRef());
+	ncbPropAccessor tm(timesV.AsObjectNoAddRef());
+	ncbPropAccessor qf(quatsV.AsObjectNoAddRef());
+	tjs_int nBones = bn.GetArrayCount();
+	tjs_int nKeys  = tm.GetArrayCount();
+	if (nBones <= 0 || nKeys <= 0) return false;
+
+	std::vector<std::string> boneNames(nBones);
+	for (tjs_int b = 0; b < nBones; ++b) boneNames[b] = ThreeAsciiNarrow(bn.getStrValue(b));
+	std::vector<float> times(nKeys);
+	for (tjs_int k = 0; k < nKeys; ++k) times[k] = (float)tm.getRealValue(k);
+	std::vector<std::vector<float>> quats(nBones, std::vector<float>((size_t)nKeys * 4));
+	for (tjs_int k = 0; k < nKeys; ++k)
+		for (tjs_int b = 0; b < nBones; ++b)
+			for (int c = 0; c < 4; ++c)
+				quats[b][(size_t)k * 4 + c] = (float)qf.getRealValue(((k * nBones + b) * 4) + c);
+
+	std::string gltf = krkrvrm::buildVRMAGltf(times, boneNames, quats);
+	return ThreeWriteStorageBytes(storageName, gltf.data(), gltf.size());
+}
+
 // 吉里吉里ストレージ名(例 "model.vrm")から VRM を読む。アーカイブ内でも可。
 static std::shared_ptr<VRM> VRMLoader_loadStorage(ThreeWrapper<VRMLoader> *self, ttstr storageName)
 {
@@ -2875,6 +2927,7 @@ NCB_REGISTER_THREE_SUBCLASS(VRMAnimationLoader)
 Factory(VRMAnimationLoaderFactory);
 NCB_METHOD_PROXY(load, VRMAnimationLoader_load);                // (OSパス) デバッグ用
 NCB_METHOD_PROXY(loadStorage, VRMAnimationLoader_loadStorage);  // (吉里吉里ストレージ名) 本番用
+NCB_METHOD_PROXY(exportPoseSeq, VRMAnimationLoader_exportPoseSeq); // (boneNames,times,quatsFlat,path) poseseq→.vrma 書出
 };
 
 // ======================================================================

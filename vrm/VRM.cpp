@@ -1983,6 +1983,109 @@ void main() {
         return anim;
     }
 
+    // -----------------------------------------------------------------------
+    // VRMA 書き出し (poseseq → .vrma)
+    // -----------------------------------------------------------------------
+    namespace {
+        // 標準 Base64 エンコード
+        std::string base64Encode(const unsigned char* data, std::size_t len) {
+            static const char* T =
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            std::string out;
+            out.reserve((len + 2) / 3 * 4);
+            std::size_t i = 0;
+            for (; i + 2 < len; i += 3) {
+                unsigned v = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+                out += T[(v >> 18) & 63]; out += T[(v >> 12) & 63];
+                out += T[(v >> 6) & 63];  out += T[v & 63];
+            }
+            if (i < len) {
+                unsigned v = data[i] << 16;
+                if (i + 1 < len) v |= data[i + 1] << 8;
+                out += T[(v >> 18) & 63];
+                out += T[(v >> 12) & 63];
+                out += (i + 1 < len) ? T[(v >> 6) & 63] : '=';
+                out += '=';
+            }
+            return out;
+        }
+        // float 列をバッファ(LE バイト列, x86 はそのまま memcpy)へ追記
+        void appendFloats(std::vector<unsigned char>& buf, const std::vector<float>& v) {
+            const auto* p = reinterpret_cast<const unsigned char*>(v.data());
+            buf.insert(buf.end(), p, p + v.size() * sizeof(float));
+        }
+    }
+
+    // pose シーケンスを VRMA(.gltf JSON + base64 バッファ)文字列に書き出す。
+    // times[k]=キー時刻(秒), boneNames[b]=ボーン名, quats[b]=各キーの [x,y,z,w] 平坦列(size=times*4)。
+    // ボーン回転は正規化リグのローカル回転(capturePose/editPose と同じ)。node はフラットでよい。
+    std::string buildVRMAGltf(const std::vector<float>& times,
+                              const std::vector<std::string>& boneNames,
+                              const std::vector<std::vector<float>>& quats) {
+        using nlohmann::json;
+        const int nKeys = static_cast<int>(times.size());
+        const int nBones = static_cast<int>(boneNames.size());
+
+        // --- バイナリバッファ: [times][bone0 quats][bone1 quats]… ---
+        std::vector<unsigned char> buf;
+        const int timesOfs = 0;
+        appendFloats(buf, times);
+        std::vector<int> quatOfs(nBones);
+        for (int b = 0; b < nBones; ++b) { quatOfs[b] = static_cast<int>(buf.size()); appendFloats(buf, quats[b]); }
+        const int totalLen = static_cast<int>(buf.size());
+
+        // --- bufferViews / accessors ---
+        json bufferViews = json::array();
+        json accessors = json::array();
+        // bv0 / acc0 = times
+        bufferViews.push_back({{"buffer", 0}, {"byteOffset", timesOfs}, {"byteLength", nKeys * 4}});
+        float tmin = nKeys ? times.front() : 0.f, tmax = nKeys ? times.back() : 0.f;
+        accessors.push_back({{"bufferView", 0}, {"componentType", 5126}, {"count", nKeys},
+                             {"type", "SCALAR"}, {"min", json::array({tmin})}, {"max", json::array({tmax})}});
+        // 各ボーン rotation accessor
+        for (int b = 0; b < nBones; ++b) {
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", quatOfs[b]}, {"byteLength", nKeys * 4 * 4}});
+            accessors.push_back({{"bufferView", b + 1}, {"componentType", 5126}, {"count", nKeys}, {"type", "VEC4"}});
+        }
+
+        // --- nodes: root(0) + bone nodes(1..nBones) ---
+        json nodes = json::array();
+        json rootChildren = json::array();
+        for (int b = 0; b < nBones; ++b) rootChildren.push_back(b + 1);
+        nodes.push_back({{"name", "AnimationRoot"}, {"children", rootChildren}});
+        for (int b = 0; b < nBones; ++b) nodes.push_back({{"name", boneNames[b]}});
+
+        // --- animation samplers/channels ---
+        json samplers = json::array(), channels = json::array();
+        for (int b = 0; b < nBones; ++b) {
+            samplers.push_back({{"input", 0}, {"output", b + 1}, {"interpolation", "LINEAR"}});
+            channels.push_back({{"sampler", b}, {"target", {{"node", b + 1}, {"path", "rotation"}}}});
+        }
+        json animation = {{"name", "pose_sequence"}, {"samplers", samplers}, {"channels", channels}};
+
+        // --- VRMC_vrm_animation 拡張 ---
+        json humanBones = json::object();
+        for (int b = 0; b < nBones; ++b) humanBones[boneNames[b]] = {{"node", b + 1}};
+        json vrmaExt = {{"specVersion", "1.0"}, {"humanoid", {{"humanBones", humanBones}}}};
+
+        // --- ルート glTF ---
+        json gltf;
+        gltf["asset"] = {{"version", "2.0"}, {"generator", "krkr_threepp VRMA exporter"}};
+        gltf["extensionsUsed"] = json::array({"VRMC_vrm_animation"});
+        gltf["extensions"]["VRMC_vrm_animation"] = vrmaExt;
+        gltf["scene"] = 0;
+        gltf["scenes"] = json::array({ {{"nodes", json::array({0})}} });
+        gltf["nodes"] = nodes;
+        gltf["accessors"] = accessors;
+        gltf["bufferViews"] = bufferViews;
+        gltf["animations"] = json::array({animation});
+        gltf["buffers"] = json::array({
+            {{"uri", "data:application/octet-stream;base64," + base64Encode(buf.data(), buf.size())},
+             {"byteLength", totalLen}}
+        });
+        return gltf.dump(2);
+    }
+
     void VRM::applyAnimation(const VRMAnimation& anim, float time, float blend) {
         for (const auto& [boneName, track] : anim.boneRotations_) {
             auto node = humanoid.getNormalizedBoneNode(boneName);
