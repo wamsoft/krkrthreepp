@@ -66,6 +66,23 @@ cycfi の button/label は**構築時にスタイラへフォントを取り込�
   （htile/wrow 内では出る）。font_scale とは別問題。余力があれば vtile 直下の label/align_*
   がゼロ高さで潰れていないか確認（優先度低）。
 
-## 完了後（threepp 側で対応する分）
-この exe を threepp/krkrz64.exe へ配置 → advsample 側で `font_scale` を本採用（1.4〜1.6 目安）
-＋見出し label を復活させてパネルを仕上げる。
+## 完了状況（2026-08-05）
+- **engine 側: 完了**。`json_layout.cpp` に top-level `"font_scale"`（既定 1.0）を実装。
+  推奨案（テーマ一時差替）ではなく **`effective_font_scale(o)` 方式**で実装され、
+  button/toggle_button/radio_button/check_box は styler の size 引数へ、label は
+  明示 size 無しなら `base*font_scale` を font_size(px) へ流す。明示 `size`/`size_scale`
+  があればそちら優先。省略時（=1.0）は従来完全一致。group の `label_size`（既定 1.0）も
+  タイトル倍率として使える。build 済 exe = `x64-windows-win/core/Release/krkrz64.exe`。
+- **threepp 側: 完了**。`data/advsample.tjs` で `font_scale=1.3` を本採用（全11〜12
+  セクションを縦 1080 に収めるため 1.4〜1.6 ではなく 1.3）。個別 `size_scale` は撤去し
+  top-level 一本化。パネルを編集 IDE 風 4 ペイン（左=コマンド/中央=ビュー/右=
+  インスペクター/下=ログ）へ再構成。
+- **見出しは label ではなく group で実現**。下記の未解決事項のとおり単体 label が
+  vtile/htile 内で潰れて描画されないため、見出しは **group（固定高 box を子にした
+  タイトルバー）+ その下に兄弟としてボタン群**で表示している。
+
+## 未解決（engine 側・優先度低）
+- **単体 `label` が vtile/htile/band の中で 0 高さに潰れて描画されない**（group の子
+  として直接置いた場合や button は描画される）。`build_label` 側の垂直 limits か、
+  親レイアウトでの高さ配分の問題と思われる。現状は group タイトルバーで回避しているが、
+  素の見出し label が使えると UI 記述が簡潔になる。余力があれば調査。
