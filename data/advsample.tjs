@@ -59,6 +59,39 @@ function dictPairs(d)
     return a;
 }
 
+// ---------------------------------------------------------------------------
+//  ポーズ編集(簡易エディタ)用の curated ボーン定義 + 回転変換
+// ---------------------------------------------------------------------------
+// 正規化ヒューマノイドボーンのうち、立ち絵ポーズで調整する代表的なものを列挙。
+// [ボーン名, 表示ラベル]。id は "pb:" + ボーン名 でパネルとやりとりする。
+var POSE_BONES = [
+    [ "head", "頭" ], [ "neck", "首" ], [ "chest", "胸" ], [ "spine", "背" ], [ "hips", "腰" ],
+    [ "rightUpperArm", "右腕" ], [ "rightLowerArm", "右肘" ], [ "rightHand", "右手" ],
+    [ "leftUpperArm", "左腕" ], [ "leftLowerArm", "左肘" ], [ "leftHand", "左手" ],
+    [ "rightUpperLeg", "右脚" ], [ "leftUpperLeg", "左脚" ]
+];
+// ポーズライブラリの保存先(共有 JSON。ブラウザ three-vrm エディタと相互運用)。
+var POSE_LIB_FILE = "poses.json";
+var DEG2RAD = 3.14159265358979 / 180.0;
+var RAD2DEG = 180.0 / 3.14159265358979;
+
+// オイラー角(度, XYZ)→ クオータニオン [qx,qy,qz,qw]
+function eulerToQuat(rx, ry, rz)
+{
+    var e = new Threepp.Euler(rx * DEG2RAD, ry * DEG2RAD, rz * DEG2RAD);
+    var q = new Threepp.Quaternion(0, 0, 0, 1);
+    q.setFromEuler(e, 1);
+    return [ q.x, q.y, q.z, q.w ];
+}
+// クオータニオン → オイラー角(度, XYZ)[rx,ry,rz]
+function quatToEuler(qx, qy, qz, qw)
+{
+    var q = new Threepp.Quaternion(qx, qy, qz, qw);
+    var e = new Threepp.Euler(0, 0, 0);
+    e.setFromQuaternion(q);
+    return [ e.x * RAD2DEG, e.y * RAD2DEG, e.z * RAD2DEG ];
+}
+
 // 3D 描画領域(中央ビューポート)のサイズ
 var SCREEN_W = 1280;
 var SCREEN_H = 720;
@@ -318,9 +351,11 @@ class ControlPanel extends Dialog
     function workspaceRow()
     {
         return [ %[ "type" => "htile", "children" => [
-                    radio("work_op",   "操作",     app.workMode == "op"),
-                    %[ "type" => "hspacer", "width" => 12 ],
-                    radio("work_face", "表情編集", app.workMode == "face") ] ],
+                    radio("work_op",   "操作",   app.workMode == "op"),
+                    %[ "type" => "hspacer", "width" => 10 ],
+                    radio("work_face", "表情",   app.workMode == "face"),
+                    %[ "type" => "hspacer", "width" => 10 ],
+                    radio("work_pose", "ポーズ", app.workMode == "pose") ] ],
                  %[ "type" => "vspacer", "height" => 6 ],
                  %[ "type" => "vsize", "height" => 2,
                     "child" => %[ "type" => "box", "color" => [70, 80, 100, 150] ] ],
@@ -361,12 +396,64 @@ class ControlPanel extends Dialog
         return catRows(parts);
     }
 
+    // 回転スライダ 1 軸(-180..180 度 を 0..1 にマップ。id="rot:x/y/z")。
+    // 現在の選択ボーンのオイラー角を initial に反映。
+    function rotSlider(axis, label, deg)
+    {
+        var pos = (deg + 180.0) / 360.0;
+        if (pos < 0.0) pos = 0.0;
+        if (pos > 1.0) pos = 1.0;
+        return %[ "type" => "labeled_row", "label" => label, "label_width" => 40,
+                  "child" => %[ "type" => "slider", "id" => "rot:" + axis, "initial" => pos ] ];
+    }
+    // ポーズ編集パネル(採取/素立ちから関節回転をスライダ編集→JSON保存)。
+    function poseEditRows()
+    {
+        var parts = [ workspaceRow(), secOneRow("対象", targetRadios()) ];
+        // 基準ポーズ
+        parts.add(grpBox("基準", [ %[ "type" => "htile", "children" => [
+                    btn("pose_base_cap", "採取"), %[ "type" => "hspacer", "width" => 10 ],
+                    btn("pose_base_rest", "素立ち") ] ] ]));
+        // 関節選択(curated ボーンを 3 列で。選択中を強調表示)
+        var bb = [];
+        for (var i = 0; i < POSE_BONES.count; i++) {
+            var bn = POSE_BONES[i][0];
+            if (bn == app.editBone) bb.add(radio("pb:" + bn, POSE_BONES[i][1], 1));
+            else                    bb.add(btn("pb:" + bn, POSE_BONES[i][1]));
+        }
+        parts.add(sec("関節", bb, 3));
+        // 選択ボーンの回転スライダ(X/Y/Z)
+        var e = app.editBoneEuler();
+        parts.add(grpBox("回転 [" + app.editBone + "]", [
+            rotSlider("x", "X", e[0]), %[ "type" => "vspacer", "height" => 6 ],
+            rotSlider("y", "Y", e[1]), %[ "type" => "vspacer", "height" => 6 ],
+            rotSlider("z", "Z", e[2]) ]));
+        // ポーズ名 + 保存/クリア
+        parts.add(grpBox("保存", [
+            %[ "type" => "labeled_row", "label" => "名前", "label_width" => 66,
+               "child" => %[ "type" => "input_box", "id" => "pose_name",
+                             "placeholder" => "例: wave" ] ],
+            %[ "type" => "vspacer", "height" => 8 ],
+            %[ "type" => "htile", "children" => [
+                btn("pose_save2", "保存"), %[ "type" => "hspacer", "width" => 10 ],
+                btn("pose_base_rest", "クリア") ] ] ]));
+        // 既存ポーズの読込(あれば)
+        var ids = app.poseIdList();
+        if (ids.count > 0) {
+            var lb = [];
+            for (var i = 0; i < ids.count; i++) lb.add(btn("lp:" + ids[i], ids[i]));
+            parts.add(sec("読込", lb, 3));
+        }
+        return catRows(parts);
+    }
+
     // 左列にコマンドパネルを縦積み。top_left で左上に寄せる(fit-to-content)。
     // 作業モード(app.workMode)で中身をまるごと差し替える。
     function buildLayout()
     {
         var rows;
         if (app.workMode == "face") rows = faceEditRows();
+        else if (app.workMode == "pose") rows = poseEditRows();
         else {
             var body = (app.mode == "space") ? spaceRows() : tachieRows();
             // 操作モードも先頭に作業モード切替を置く
@@ -374,8 +461,8 @@ class ControlPanel extends Dialog
             for (var i = 0; i < body.count; i++) parts.add(body[i]);
             rows = parts;
         }
-        // 表情編集はスライダが多く縦に伸びるので少し小さめのフォントで収める
-        var fs = (app.workMode == "face") ? 1.15 : PANEL_FONT_SCALE;
+        // 編集モードはスライダ等が多く縦に伸びるので少し小さめのフォントで収める
+        var fs = (app.workMode == "face" || app.workMode == "pose") ? 1.15 : PANEL_FONT_SCALE;
         return %[
             "size"       => [PANEL_W, WIN_H],
             "align"      => "top_left",
@@ -446,10 +533,16 @@ class ADVSample extends Window
     // --- 作業モード(左パネルをまるごと差し替える軸。view の tachie/space とは直交) ---
     // "op"  : 通常操作(対象/フレーム/表情/モーション/…)
     // "face": 表情編集(生モーフ簡易エディタ。curated モーフをスライダ編集→JSON保存)
+    // "pose": ポーズ編集(採取/素立ちから関節回転をスライダ編集→JSON保存)
     var workMode = "op";
     var editMorphs;    // 編集中の生モーフ %[Fcl名 => weight(0..1)]
     var editName = ""; // 編集中の表情名(キーワード)
     var faceLib;       // 表情ライブラリ %[id => %[label, morphs:%[Fcl名=>w]]]
+    // ポーズ編集
+    var editPose;      // 編集中のポーズ %[ボーン名 => [qx,qy,qz,qw]]
+    var editBone = "head"; // 回転スライダの対象ボーン
+    var poseName = "";     // 編集中のポーズ名(キーワード)
+    var poseLib;           // ポーズライブラリ %[id => %[label, bones:%[ボーン名=>[qx,qy,qz,qw]]]]
 
     // --- モード ---
     // "tachie": 現行(1キャラ=1レイヤ・各自カメラ) / "space": 単一カメラで空間に並べて
@@ -1123,7 +1216,10 @@ class ADVSample extends Window
     function setWorkMode(m)
     {
         if (m == workMode) return;
+        var prev = workMode;
         workMode = m;
+        // 前モードの後始末
+        if (prev == "face") { var l0 = targetList(); for (var i = 0; i < l0.count; i++) l0[i].vrm.clearMorphs(); }
         if (m == "face") {
             if (editMorphs === void) editMorphs = %[];
             if (faceLib === void) loadFaceLib();
@@ -1135,10 +1231,14 @@ class ADVSample extends Window
             }
             applyFrame("face");
             applyEditToTargets();
-        } else {
-            // 操作モードへ戻る: 生モーフ編集を解除して素の状態へ
+        } else if (m == "pose") {
+            if (poseLib === void) loadPoseLib();
+            // ポーズは全身が見えるよう膝上〜全身へ + idle を止める(編集が上書きされないよう)
             var list = targetList();
-            for (var i = 0; i < list.count; i++) list[i].vrm.clearMorphs();
+            for (var i = 0; i < list.count; i++) list[i].setIdleEnabled(false);
+            applyFrame("knee");
+            if (editPose === void) captureEditPose();   // 初回は現在姿勢を採取(リビルドは末尾で一度)
+            else applyEditPoseLive();
         }
         if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
@@ -1225,6 +1325,121 @@ class ADVSample extends Window
     {
         if (faceLib === void) loadFaceLib();
         var pairs = dictPairs(faceLib);
+        var ids = [];
+        for (var j = 0; j < pairs.count; j += 2) ids.add(pairs[j]);
+        return ids;
+    }
+
+    // ==================================================================
+    //  ポーズ編集(簡易エディタ)
+    // ==================================================================
+    // editPose(%[ボーン名=>[qx,qy,qz,qw]])を対象キャラへライブ適用。
+    function applyEditPoseLive()
+    {
+        if (editPose === void) return;
+        var arr = [];   // applyPose 用フラット配列 [名,qx,qy,qz,qw,…]
+        var pairs = dictPairs(editPose);
+        for (var j = 0; j < pairs.count; j += 2) {
+            var q = pairs[j + 1];
+            arr.add(pairs[j]); arr.add(q[0]); arr.add(q[1]); arr.add(q[2]); arr.add(q[3]);
+        }
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].setPoseLive(arr);
+    }
+    // 現在の対象姿勢を編集スロットへ採取([名,qx,…] → %[名=>[qx,…]])。リビルドしない。
+    function captureEditPose()
+    {
+        var list = targetList();
+        if (list.count == 0) return;
+        var flat = list[0].capturePose();
+        editPose = %[];
+        for (var j = 0; j < flat.count; j += 5)
+            editPose[flat[j]] = [ flat[j + 1], flat[j + 2], flat[j + 3], flat[j + 4] ];
+        applyEditPoseLive();
+    }
+    function poseBaseCapture()
+    {
+        captureEditPose();
+        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
+    }
+    // 素立ち(全ボーン回転なし=単位クオータニオン)を基準にする
+    function poseBaseRest()
+    {
+        editPose = %[];
+        for (var i = 0; i < POSE_BONES.count; i++) editPose[POSE_BONES[i][0]] = [ 0.0, 0.0, 0.0, 1.0 ];
+        applyEditPoseLive();
+        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
+    }
+    // 回転スライダ用: 選択ボーンの現在オイラー角(度)[rx,ry,rz]
+    function editBoneEuler()
+    {
+        if (editPose === void || editPose[editBone] === void) return [ 0.0, 0.0, 0.0 ];
+        var q = editPose[editBone];
+        return quatToEuler(q[0], q[1], q[2], q[3]);
+    }
+    // 選択ボーンを切替(スライダを更新するためパネル再構築)
+    function editSelectBone(name)
+    {
+        editBone = name;
+        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
+    }
+    // 選択ボーンの 1 軸(0=x/1=y/2=z)の角度を deg にしてライブ反映
+    function editSetBoneRot(axis, deg)
+    {
+        if (editPose === void) return;
+        var e = editBoneEuler();
+        e[axis] = deg;
+        editPose[editBone] = eulerToQuat(e[0], e[1], e[2]);
+        applyEditPoseLive();
+    }
+    // --- ポーズライブラリ(共有 JSON: poses.json)---
+    // 形式: %[ "version"=>1, "poses"=>%[ id=>%[ "label"=>名, "bones"=>%[ボーン名=>[qx,qy,qz,qw]] ] ] ]
+    function loadPoseLib()
+    {
+        poseLib = %[];
+        try {
+            if (Storages.isExistentStorage(POSE_LIB_FILE)) {
+                var root = Scripts.evalJSONStorage(Storages.getPlacedPath(POSE_LIB_FILE), 1);
+                if (root !== void && root.poses !== void) poseLib = root.poses;
+            }
+        } catch (e) { Debug.message("poses.json 読込失敗: " + e.message); }
+    }
+    function savePoseLib()
+    {
+        try {
+            var root = %[ "version" => 1, "poses" => poseLib ];
+            Scripts.saveJSON(POSE_LIB_FILE, root, 1, 1);   // bare 名 / utf8 / indent
+            Debug.message("poses.json 保存: " + poseLib.count + " ポーズ");
+        } catch (e) { Debug.message("poses.json 保存失敗: " + e.message); }
+    }
+    function saveCurrentPose()
+    {
+        if (poseName == "" || poseName === void) { Debug.message("ポーズ名を入力してください"); return; }
+        if (poseLib === void) loadPoseLib();
+        if (editPose === void) return;
+        // bones をコピー(参照共有を避ける)
+        var bones = %[];
+        var pairs = dictPairs(editPose);
+        for (var j = 0; j < pairs.count; j += 2) { var q = pairs[j + 1]; bones[pairs[j]] = [ q[0], q[1], q[2], q[3] ]; }
+        poseLib[poseName] = %[ "label" => poseName, "bones" => bones ];
+        savePoseLib();
+    }
+    function loadPoseIntoEdit(id)
+    {
+        if (poseLib === void) loadPoseLib();
+        var def = poseLib[id];
+        if (def === void) return;
+        poseName = id;
+        editPose = %[];
+        var pairs = dictPairs(def.bones);
+        for (var j = 0; j < pairs.count; j += 2) { var q = pairs[j + 1]; editPose[pairs[j]] = [ q[0], q[1], q[2], q[3] ]; }
+        applyEditPoseLive();
+        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
+    }
+    function poseIdList()
+    {
+        if (poseLib === void) loadPoseLib();
+        var pairs = dictPairs(poseLib);
         var ids = [];
         for (var j = 0; j < pairs.count; j += 2) ids.add(pairs[j]);
         return ids;
@@ -1339,17 +1554,31 @@ class ADVSample extends Window
     // input_box の文字列(それ以外は void)。
     function onPanel(id, val)
     {
-        // 生モーフスライダ(id="mo:Fcl名")は連続発火するのでログに出さず先に処理
+        // スライダ(連続発火)はログに出さず先に処理
         if (id.length >= 3 && id.substring(0, 3) == "mo:") { editSetMorph(id.substring(3), val + 0.0); return; }
+        if (id.length >= 4 && id.substring(0, 4) == "rot:") {   // ポーズ回転(0..1 → -180..180 度)
+            var deg = (val + 0.0) * 360.0 - 180.0;
+            var ax = id.substring(4);
+            editSetBoneRot((ax == "x") ? 0 : ((ax == "y") ? 1 : 2), deg);
+            return;
+        }
         logLine(id);   // 情報欄の操作ログへ
         // --- 作業モード切替(左パネルまるごと差し替え)---
         if (id == "work_op")   { setWorkMode("op");   return; }
         if (id == "work_face") { setWorkMode("face"); return; }
+        if (id == "work_pose") { setWorkMode("pose"); return; }
         // --- 表情編集 ---
         if (id == "face_name")  { editName = (val === void) ? "" : "" + val; return; }
         if (id == "face_save")  { saveCurrentFace(); return; }
         if (id == "face_clear") { editClear(); return; }
         if (id.length >= 3 && id.substring(0, 3) == "lf:") { loadFaceIntoEdit(id.substring(3)); return; }
+        // --- ポーズ編集 ---
+        if (id == "pose_base_cap")  { poseBaseCapture(); return; }
+        if (id == "pose_base_rest") { poseBaseRest();    return; }
+        if (id == "pose_name")      { poseName = (val === void) ? "" : "" + val; return; }
+        if (id == "pose_save2")     { saveCurrentPose(); return; }
+        if (id.length >= 3 && id.substring(0, 3) == "pb:") { editSelectBone(id.substring(3)); return; }
+        if (id.length >= 3 && id.substring(0, 3) == "lp:") { loadPoseIntoEdit(id.substring(3)); return; }
         // 表情ボタン(id=表情名)は動的なので switch より先に判定
         if (emoNameSet !== void && emoNameSet[id] !== void) { applyEmotion(id); return; }
         // モーションボタン(id=m_*)

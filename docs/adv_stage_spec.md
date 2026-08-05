@@ -121,6 +121,24 @@ advsample の**作業モード「表情編集」**（左パネルを丸ごと差
   「素立ち」で rest へクロスフェード。
 - **保存/読込**: `(Array.saveStruct incontextof arr)(file)` / `Scripts.evalStorage(file)`。
 - パネル「ポーズ」行: 採取 / 適用 / 素立ち / 保存 / 読込。メタ定義 `poses` があれば読込。
+- **⚠ applyPose の分割適用**: `VRM.applyPose(arr,blend)` に**大きい配列を渡すと先頭5ボーン
+  (25要素)しか反映されない**(ncbPropAccessor が配列後半を読めない)。`Tachie.applyPoseChunked()`
+  が **5要素(1ボーン)ずつに分割**して呼ぶ。全ポーズ適用経路(update/poseseq)はこれ経由。
+
+#### ポーズエディタ（簡易エディタ）＋ poses.json ✅実装済
+advsample の**作業モード「ポーズ」**（左パネル差し替え、[[project_resume_next]] 最新13の表情エディタと
+同方式）で、採取/素立ちを基準に curated 関節の回転をスライダ編集し、キーワード付きで保存する。
+- **基準**: 採取(現在姿勢) / 素立ち(全ボーン単位クオータニオン)。
+- **関節**: curated ボーン(`POSE_BONES` = 頭/首/胸/背/腰/両腕(腕/肘/手)/両脚)を選択(id=`pb:<bone>`)。
+- **回転**: 選択ボーンの X/Y/Z オイラー角スライダ(id=`rot:x/y/z`、0..1 → -180..180°)。
+  `Threepp.Euler`/`Quaternion` の `setFromEuler`/`setFromQuaternion` で相互変換。中央ビューにライブ反映。
+- **共有 JSON（`data/poses.json`）**: `%[version, poses:%[ id:%[label, bones:%[bone=>[qx,qy,qz,qw]] ] ]]`。
+  ブラウザ three-vrm エディタと相互運用。json.dll で読み書き(書込は bare 名で data/ 直下)。
+- **API（ADVSample）**: `poseBaseCapture()` / `poseBaseRest()` / `editSelectBone(name)` /
+  `editSetBoneRot(axis,deg)` / `saveCurrentPose()` / `loadPoseIntoEdit(id)` / `poseIdList()`。
+  ライブ反映は `Tachie.setPoseLive(arr)`(クロスフェード無しで poseData に据える)。
+- **TODO**: poseseq→VRMA 書き出し、詳細モード(全ボーン)、対称編集(左右ミラー)、
+  ブラウザ側 three-vrm エディタ。
 
 ### scenes（名前付きシーン）✅実装済
 宣言的に各キャラの状態＋演出＋カメラを一括指定する（TyranoScript タグ相当）。
