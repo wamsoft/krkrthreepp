@@ -372,10 +372,14 @@ namespace krkrvrm {
     // times[k]=キー時刻(秒), boneNames[b]=ボーン名, quats[b]=各キーの [x,y,z,w] 平坦列(size=times*4)。
     // hipsPos(任意, 空=ルートモーション無し)=各キーの hips rest からのオフセット [x,y,z] 平坦列
     // (size=times*3)。非空なら hips ノードに translation チャンネルを追加する。
+    // exprNames(任意)=表情名列。exprWeights[e]=各キーの weight 平坦列(size=times)。非空なら
+    // VRMC_vrm_animation.expressions + 表情ノードの translation.x=weight チャンネルを追加する。
     std::string buildVRMAGltf(const std::vector<float>& times,
                               const std::vector<std::string>& boneNames,
                               const std::vector<std::vector<float>>& quats,
-                              const std::vector<float>& hipsPos = {});
+                              const std::vector<float>& hipsPos = {},
+                              const std::vector<std::string>& exprNames = {},
+                              const std::vector<std::vector<float>>& exprWeights = {});
 
 }// namespace krkrvrm
 

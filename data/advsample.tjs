@@ -502,6 +502,17 @@ class ControlPanel extends Dialog
                     btn("seq_up", "▲"), %[ "type" => "hspacer", "width" => 8 ],
                     btn("seq_down", "▼"), %[ "type" => "hspacer", "width" => 8 ],
                     btn("seq_del", "削除") ] ] ]));
+            // 表情(VRM 表情。無し + モデルの感情/ビセーム)。選択中を強調。
+            var cur = (s.expr !== void) ? s.expr : "";
+            var eb = [];
+            if (cur == "") eb.add(radio("se:none", "無し", 1)); else eb.add(btn("se:none", "無し"));
+            var enames = app.emotionNames();
+            for (var i = 0; i < enames.count; i++) {
+                var nm = enames[i];
+                if (nm == cur) eb.add(radio("se:" + nm, app.exprLabel(nm), 1));
+                else           eb.add(btn("se:" + nm, app.exprLabel(nm)));
+            }
+            parts.add(sec("表情", eb, 3));
         }
         // 操作
         parts.add(grpBox("操作", [ %[ "type" => "htile", "children" => [
@@ -1456,7 +1467,7 @@ class ADVSample extends Window
         t.vrm.resetNormalizedPose();   // 正規化を identity(T-pose)へ
         t.restPose();                  // 腕を体側へ下ろして自然な A-pose に
         editPose = %[];
-        var flat = t.vrm.capturePose();
+        var flat = t.capturePose();    // ★Tachie のメソッド(vrm ではない)
         for (var j = 0; j < flat.count; j += 5)
             editPose[flat[j]] = [ flat[j + 1], flat[j + 2], flat[j + 3], flat[j + 4] ];
         editHips = [ 0.0, 0.0, 0.0 ];
@@ -1587,7 +1598,7 @@ class ADVSample extends Window
             hips.add(h[0]); hips.add(h[1]); hips.add(h[2]);
         }
         var ld = new Threepp.VRMAnimationLoader();
-        var ok = ld.exportPoseSeq(boneOrder, times, quats, (anyHips ? hips : []), outFile);
+        var ok = ld.exportPoseSeq(boneOrder, times, quats, (anyHips ? hips : []), [], [], outFile);
         Debug.message("VRMA 書出 " + (ok ? "成功" : "失敗") + ": " + outFile + " (" + poseIds.count + "キー/" + nB + "ボーン"
                       + (anyHips ? "/hips有" : "") + ")");
         return ok;
@@ -1617,8 +1628,15 @@ class ADVSample extends Window
     function seqAddPose(id)
     {
         seqEnsure();
-        seq.add(%[ "pose" => id, "hold" => 0.8, "trans" => 0.4 ]);
+        seq.add(%[ "pose" => id, "hold" => 0.8, "trans" => 0.4, "expr" => "" ]);
         seqSel = seq.count - 1;
+        seqRebuildPanel();
+    }
+    // 選択手順の表情(VRM 表情名。""=無し)を設定。パネル再構築で選択反映。
+    function seqSetExpr(name)
+    {
+        if (seq === void || seqSel < 0 || seqSel >= seq.count) return;
+        seq[seqSel].expr = (name == "none") ? "" : name;
         seqRebuildPanel();
     }
     function seqSelectStep(i) { seqSel = i; seqRebuildPanel(); }
@@ -1651,7 +1669,8 @@ class ADVSample extends Window
         for (var i = 0; i < seq.count; i++) {
             var s = seq[i];
             var d = poseFlatFromLib(s.pose);
-            var k = %[ "in" => s.trans, "hold" => s.hold, "hips" => poseHipsFromLib(s.pose) ];
+            var k = %[ "in" => s.trans, "hold" => s.hold, "hips" => poseHipsFromLib(s.pose),
+                       "expr" => (s.expr !== void ? s.expr : "") ];
             if (d === void) k["isRest"] = 1; else k["data"] = d;
             keys.add(k);
         }
@@ -1704,11 +1723,27 @@ class ADVSample extends Window
             seqAppendKey(times, quats, cursor, maps[i], boneOrder);
             hips.add(h[0]); hips.add(h[1]); hips.add(h[2]);
         }
+        // 表情トラック: 使われている表情名の和集合。各表情の weight は、その手順の2キー(保持始/終)で
+        // 1、他は 0(LINEAR 補間で遷移中フェード)。keyframe kf の手順 = kf/2。
+        var exprNames = []; var exprSeen = %[];
+        for (var i = 0; i < seq.count; i++) {
+            var ex = seq[i].expr;
+            if (ex !== void && ex != "" && exprSeen[ex] === void) { exprSeen[ex] = 1; exprNames.add(ex); }
+        }
+        var nKf = times.count;
+        var exprW = [];   // expr-major 平坦: [e0: kf0..kfN, e1: …]
+        for (var e = 0; e < exprNames.count; e++) {
+            for (var kf = 0; kf < nKf; kf++) {
+                var st = (int)(kf / 2);
+                exprW.add((st < seq.count && seq[st].expr == exprNames[e]) ? 1.0 : 0.0);
+            }
+        }
         var ld = new Threepp.VRMAnimationLoader();
-        var ok = ld.exportPoseSeq(boneOrder, times, quats, (anyHips ? hips : []), outFile);
+        var ok = ld.exportPoseSeq(boneOrder, times, quats, (anyHips ? hips : []), exprNames, exprW, outFile);
         Debug.message("シーケンス書出 " + (ok ? "成功" : "失敗") + ": " + outFile
                       + " (" + seq.count + "手順/" + times.count + "キー/" + boneOrder.count + "ボーン"
-                      + (anyHips ? "/hips有" : "") + ", " + cursor + "秒)");
+                      + (anyHips ? "/hips有" : "") + (exprNames.count > 0 ? ("/表情" + exprNames.count) : "")
+                      + ", " + cursor + "秒)");
         return ok;
     }
 
@@ -1853,6 +1888,7 @@ class ADVSample extends Window
         if (id == "seq_export")  { seqExportVRMA("poseseq.vrma"); return; }
         if (id.length >= 3 && id.substring(0, 3) == "ss:") { seqSelectStep((int)id.substring(3)); return; }
         if (id.length >= 3 && id.substring(0, 3) == "sq:") { seqAddPose(id.substring(3)); return; }
+        if (id.length >= 3 && id.substring(0, 3) == "se:") { seqSetExpr(id.substring(3)); return; }
         // --- 表情編集 ---
         if (id == "face_name")  { editName = (val === void) ? "" : "" + val; return; }
         if (id == "face_save")  { saveCurrentFace(); return; }

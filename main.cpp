@@ -2709,9 +2709,11 @@ static std::string ThreeAsciiNarrow(const ttstr &s)
 //   quatsFlat = [ (key,bone,xyzw) 行優先の real, size = nKeys*nBones*4 ]
 // storageName = 出力先(bare 名で data/ 直下)。成功で true。
 // hipsPosV は空配列可(ルートモーション無し)。非空なら size=nKeys*3(hips rest からの xyz オフセット)。
+// exprNamesV / exprWeightsV は空可。exprWeightsV は nExpr*nKeys の平坦列(expr-major, e*nKeys+k)。
 static bool VRMAnimationLoader_exportPoseSeq(ThreeWrapper<VRMAnimationLoader> *self,
-                                             tTJSVariant bonesV, tTJSVariant timesV,
-                                             tTJSVariant quatsV, tTJSVariant hipsV, ttstr storageName)
+                                             tTJSVariant bonesV, tTJSVariant timesV, tTJSVariant quatsV,
+                                             tTJSVariant hipsV, tTJSVariant exprNamesV, tTJSVariant exprWeightsV,
+                                             ttstr storageName)
 {
 	if (bonesV.Type() != tvtObject || timesV.Type() != tvtObject || quatsV.Type() != tvtObject) return false;
 	ncbPropAccessor bn(bonesV.AsObjectNoAddRef());
@@ -2742,7 +2744,24 @@ static bool VRMAnimationLoader_exportPoseSeq(ThreeWrapper<VRMAnimationLoader> *s
 		}
 	}
 
-	std::string gltf = krkrvrm::buildVRMAGltf(times, boneNames, quats, hipsPos);
+	// 表情トラック(任意)。exprNames と exprWeights(nExpr*nKeys 平坦)を組む。
+	std::vector<std::string> exprNames;
+	std::vector<std::vector<float>> exprWeights;
+	if (exprNamesV.Type() == tvtObject && exprWeightsV.Type() == tvtObject) {
+		ncbPropAccessor en(exprNamesV.AsObjectNoAddRef());
+		ncbPropAccessor ew(exprWeightsV.AsObjectNoAddRef());
+		tjs_int nExpr = en.GetArrayCount();
+		if (nExpr > 0 && ew.GetArrayCount() == nExpr * nKeys) {
+			exprNames.resize(nExpr);
+			exprWeights.assign(nExpr, std::vector<float>(nKeys));
+			for (tjs_int e = 0; e < nExpr; ++e) {
+				exprNames[e] = ThreeAsciiNarrow(en.getStrValue(e));
+				for (tjs_int k = 0; k < nKeys; ++k) exprWeights[e][k] = (float)ew.getRealValue(e * nKeys + k);
+			}
+		}
+	}
+
+	std::string gltf = krkrvrm::buildVRMAGltf(times, boneNames, quats, hipsPos, exprNames, exprWeights);
 	return ThreeWriteStorageBytes(storageName, gltf.data(), gltf.size());
 }
 

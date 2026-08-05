@@ -301,6 +301,8 @@ class Tachie
     // モーション/ポーズを止めて素立ちへ戻す(現在ポーズから rest へクロスフェード)
     function stopMotion()
     {
+        // シーケンスプレビューで載せた表情を戻す
+        if (seqCurExpr != "") { vrm.setExpression(seqCurExpr, 0.0); seqCurExpr = ""; }
         if (motionAnim === void && poseData === void && !seqActive && !restReturning) return;
         motionAnim = void;
         motionPlaying = false;
@@ -354,6 +356,7 @@ class Tachie
         motionAnim = void; motionPlaying = false; motionId = "";
         poseData = void; restReturning = false;
     }
+    var seqCurExpr = "";   // シーケンスプレビューで現在セットしている表情名
     function applyKeyBlend(key, b)
     {
         if (key.isRest) vrm.blendToRest(b);
@@ -366,6 +369,13 @@ class Tachie
             var c = vrm.getHipsOffset();
             vrm.applyHipsOffset(c.x + (tx - c.x) * b, c.y + (ty - c.y) * b, c.z + (tz - c.z) * b);
         }
+        // 表情: このキーの表情を weight b で。手順が変わったら前の表情を 0 に。
+        var ex = (key.expr !== void) ? key.expr : "";
+        if (ex != seqCurExpr) {
+            if (seqCurExpr != "") vrm.setExpression(seqCurExpr, 0.0);
+            seqCurExpr = ex;
+        }
+        if (ex != "") vrm.setExpression(ex, b);
     }
     function updatePoseSeq(dt)
     {

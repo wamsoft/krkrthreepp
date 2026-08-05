@@ -177,8 +177,23 @@ advsample の**作業モード「ポーズ」**（左パネル差し替え、[[p
 - **往復検証**: ジャンプ(hips+0.35m)を含む rest→jump→rest を書き出し→`playMotion` で頂点 hips.y=0.35 を
   実機確認(キャラが浮上)。**★注意**: ローダの hips 適用はフレームループの poseData 再適用と競合するので、
   検証は直接 applyAnimation でなく playMotion で行うこと。
-- **TODO**: 表情トラック同時書出、詳細モード(全ボーン)、対称編集(左右ミラー)、素立ち=A-pose 化
-  (現状「素立ち」は identity=T-pose)、ブラウザ側 three-vrm エディタ。
+
+#### 表情トラック同時書出 ✅実装済
+シーケンスの各手順に **VRM 表情**(無し + モデルの感情 happy/angry/sad/relaxed/surprised 等)を指定でき、
+VRMA の `VRMC_vrm_animation.expressions` + 表情ノードの `translation.x=weight` チャンネルとして書き出す。
+- **C++**: `buildVRMAGltf` に exprNames/exprWeights 引数。preset 名(happy/aa 等)は `expressions.preset`、
+  それ以外は `custom` へ。`exportPoseSeq(bones,times,quats,hips,exprNames,exprWeightsFlat,path)`
+  (exprWeights は expr-major の平坦列 nExpr*nKeys)。
+- **TJS**: seq step に `expr`(VRM 表情名/"")。手順選択時に「表情」セレクタ(id=`se:<name>`/`se:none`)。
+  weight は各手順の2キーで 1、他 0(LINEAR で遷移フェード)。プレビューは `applyKeyBlend` が
+  `vrm.setExpression` で反映(手順切替時に前表情を 0)。
+- **★注意/制限**: VRMA 表情トラックは **VRM 表情名**(happy 等)専用。表情エディタの**生モーフ faces.json は
+  VRM 表情ではないので VRMA には焼けない**(別レイヤ。将来モデルの custom expression 化が要る)。
+- **往復検証**: rest(expr=happy)→rest を書き出し→`expressions.preset.happy` 確認、`playMotion`/プレビュー
+  とも happy weight=1.0・笑顔を実機確認。
+- **★重要バグ修正**: 「素立ち」の A-pose 化(下記)で `t.vrm.capturePose()` と誤記していた(capturePose は
+  Tachie メソッド)。例外で editPose が空になり、素立ち直後に保存すると **bones が空**・書き出し失敗して
+  いた。`t.capturePose()` に修正済。
 
 ### scenes（名前付きシーン）✅実装済
 宣言的に各キャラの状態＋演出＋カメラを一括指定する（TyranoScript タグ相当）。

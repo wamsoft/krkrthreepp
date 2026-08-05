@@ -26,6 +26,7 @@
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <set>
 #include <unordered_map>
 
 namespace krkrvrm {
@@ -2022,17 +2023,28 @@ void main() {
     std::string buildVRMAGltf(const std::vector<float>& times,
                               const std::vector<std::string>& boneNames,
                               const std::vector<std::vector<float>>& quats,
-                              const std::vector<float>& hipsPos) {
+                              const std::vector<float>& hipsPos,
+                              const std::vector<std::string>& exprNames,
+                              const std::vector<std::vector<float>>& exprWeights) {
         using nlohmann::json;
         const int nKeys = static_cast<int>(times.size());
         const int nBones = static_cast<int>(boneNames.size());
+        const int nExpr = (int)std::min(exprNames.size(), exprWeights.size());
 
         // hips ルートモーション(translation)を書くか。hipsPos が非空 & boneNames に "hips" があるとき。
         int hipsBoneIdx = -1;
         for (int b = 0; b < nBones; ++b) if (boneNames[b] == "hips") { hipsBoneIdx = b; break; }
         const bool writeHips = (!hipsPos.empty() && hipsBoneIdx >= 0 && (int)hipsPos.size() == nKeys * 3);
 
-        // --- バイナリバッファ: [times][bone0 quats]…[hipsPos?] ---
+        // ノード/accessor/sampler の割り当てベース(bones の後に hips, expr が続く)
+        const int exprNodeBase = 1 + nBones;                    // 表情ノードの先頭 index
+        const int hipsAcc      = 1 + nBones;                    // hips translation accessor index(writeHips 時)
+        const int exprAccBase  = 1 + nBones + (writeHips ? 1 : 0);
+        const int hipsSampler  = nBones;                        // hips sampler index(writeHips 時)
+        const int exprSampBase = nBones + (writeHips ? 1 : 0);
+
+        // --- バイナリバッファ: [times][bone0 quats]…[hipsPos?][expr0 vec3]… ---
+        // 表情 weight は translation.x に入れる(VRM 慣習)。VEC3 [w,0,0] を各キー分。
         std::vector<unsigned char> buf;
         const int timesOfs = 0;
         appendFloats(buf, times);
@@ -2040,6 +2052,15 @@ void main() {
         for (int b = 0; b < nBones; ++b) { quatOfs[b] = static_cast<int>(buf.size()); appendFloats(buf, quats[b]); }
         int hipsOfs = 0;
         if (writeHips) { hipsOfs = static_cast<int>(buf.size()); appendFloats(buf, hipsPos); }
+        std::vector<int> exprOfs(nExpr);
+        for (int e = 0; e < nExpr; ++e) {
+            std::vector<float> v3; v3.reserve((size_t)nKeys * 3);
+            for (int k = 0; k < nKeys; ++k) {
+                float w = ((int)exprWeights[e].size() > k) ? exprWeights[e][k] : 0.f;
+                v3.push_back(w); v3.push_back(0.f); v3.push_back(0.f);
+            }
+            exprOfs[e] = static_cast<int>(buf.size()); appendFloats(buf, v3);
+        }
         const int totalLen = static_cast<int>(buf.size());
 
         // --- bufferViews / accessors ---
@@ -2055,19 +2076,25 @@ void main() {
             bufferViews.push_back({{"buffer", 0}, {"byteOffset", quatOfs[b]}, {"byteLength", nKeys * 4 * 4}});
             accessors.push_back({{"bufferView", b + 1}, {"componentType", 5126}, {"count", nKeys}, {"type", "VEC4"}});
         }
-        // hips translation accessor (acc nBones+1)
-        const int hipsAcc = nBones + 1;
+        // hips translation accessor
         if (writeHips) {
             bufferViews.push_back({{"buffer", 0}, {"byteOffset", hipsOfs}, {"byteLength", nKeys * 3 * 4}});
-            accessors.push_back({{"bufferView", nBones + 1}, {"componentType", 5126}, {"count", nKeys}, {"type", "VEC3"}});
+            accessors.push_back({{"bufferView", (int)bufferViews.size() - 1}, {"componentType", 5126}, {"count", nKeys}, {"type", "VEC3"}});
+        }
+        // 各表情 translation(x=weight)accessor
+        for (int e = 0; e < nExpr; ++e) {
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", exprOfs[e]}, {"byteLength", nKeys * 3 * 4}});
+            accessors.push_back({{"bufferView", (int)bufferViews.size() - 1}, {"componentType", 5126}, {"count", nKeys}, {"type", "VEC3"}});
         }
 
-        // --- nodes: root(0) + bone nodes(1..nBones) ---
+        // --- nodes: root(0) + bone nodes(1..nBones) + expr nodes ---
         json nodes = json::array();
         json rootChildren = json::array();
         for (int b = 0; b < nBones; ++b) rootChildren.push_back(b + 1);
+        for (int e = 0; e < nExpr; ++e) rootChildren.push_back(exprNodeBase + e);
         nodes.push_back({{"name", "AnimationRoot"}, {"children", rootChildren}});
         for (int b = 0; b < nBones; ++b) nodes.push_back({{"name", boneNames[b]}});
+        for (int e = 0; e < nExpr; ++e) nodes.push_back({{"name", exprNames[e]}});
 
         // --- animation samplers/channels ---
         json samplers = json::array(), channels = json::array();
@@ -2075,9 +2102,13 @@ void main() {
             samplers.push_back({{"input", 0}, {"output", b + 1}, {"interpolation", "LINEAR"}});
             channels.push_back({{"sampler", b}, {"target", {{"node", b + 1}, {"path", "rotation"}}}});
         }
-        if (writeHips) {   // hips ノードへ translation チャンネル追加(ルートモーション)
+        if (writeHips) {   // hips ノードへ translation チャンネル(ルートモーション)
             samplers.push_back({{"input", 0}, {"output", hipsAcc}, {"interpolation", "LINEAR"}});
-            channels.push_back({{"sampler", nBones}, {"target", {{"node", hipsBoneIdx + 1}, {"path", "translation"}}}});
+            channels.push_back({{"sampler", hipsSampler}, {"target", {{"node", hipsBoneIdx + 1}, {"path", "translation"}}}});
+        }
+        for (int e = 0; e < nExpr; ++e) {   // 表情ノードへ translation チャンネル(x=weight)
+            samplers.push_back({{"input", 0}, {"output", exprAccBase + e}, {"interpolation", "LINEAR"}});
+            channels.push_back({{"sampler", exprSampBase + e}, {"target", {{"node", exprNodeBase + e}, {"path", "translation"}}}});
         }
         json animation = {{"name", "pose_sequence"}, {"samplers", samplers}, {"channels", channels}};
 
@@ -2085,6 +2116,20 @@ void main() {
         json humanBones = json::object();
         for (int b = 0; b < nBones; ++b) humanBones[boneNames[b]] = {{"node", b + 1}};
         json vrmaExt = {{"specVersion", "1.0"}, {"humanoid", {{"humanBones", humanBones}}}};
+        if (nExpr > 0) {   // 表情ノードを preset / custom に振り分け
+            static const std::set<std::string> kPreset = {
+                "happy","angry","sad","relaxed","surprised","aa","ih","ou","ee","oh",
+                "blink","blinkLeft","blinkRight","lookUp","lookDown","lookLeft","lookRight","neutral"};
+            json preset = json::object(), custom = json::object();
+            for (int e = 0; e < nExpr; ++e) {
+                if (kPreset.count(exprNames[e])) preset[exprNames[e]] = {{"node", exprNodeBase + e}};
+                else                             custom[exprNames[e]] = {{"node", exprNodeBase + e}};
+            }
+            json exprExt = json::object();
+            if (!preset.empty()) exprExt["preset"] = preset;
+            if (!custom.empty()) exprExt["custom"] = custom;
+            vrmaExt["expressions"] = exprExt;
+        }
 
         // --- ルート glTF ---
         json gltf;
