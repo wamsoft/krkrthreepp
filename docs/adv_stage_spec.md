@@ -162,8 +162,23 @@ advsample の**作業モード「ポーズ」**（左パネル差し替え、[[p
 - **書き出し**: `seqExportVRMA(outFile)` が各手順を「(前手順から trans 秒で遷移)→hold 秒保持」= 保持始/
   保持終の 2 キーで並べ、C++ `exportPoseSeq` で焼き込む(タイミングは全て TJS 側でキーフレーム化、
   C++ は汎用のまま)。3手順(hold0.8/trans0.4)で dur=3.2秒 を実機確認。
-- **TODO**: 表情トラック同時書出、hips ルートモーション、詳細モード(全ボーン)、対称編集(左右ミラー)、
-  ブラウザ側 three-vrm エディタ。
+
+#### hips ルートモーション(ジャンプ/しゃがみ/前後移動)✅実装済
+ポーズに **hips の位置オフセット**(rest 基準の [dx,dy,dz] m)を持たせ、ジャンプ・しゃがみ・
+踏み込み等の腰移動を表現。回転編集と同じ枠組みでボーン「腰(hips)」選択時に**移動 X/Y/Z スライダ**
+(±0.5m)を追加。ポーズ配置(舞台上の移動)とは別物で、モーションに内在する腰の移動。
+- **C++**: `VRM.applyHipsOffset(dx,dy,dz)`(正規化 hips を rest+offset へ)/ `VRM.getHipsOffset()`
+  (現在オフセット Vector3)。`Tachie.setPoseLive(arr, hips)` で毎フレーム反映(applyPose は位置を
+  触らないため別途)。`applyKeyBlend` は poseseq 遷移中 hips を lerp。
+- **データ**: pose def に `hips:[dx,dy,dz]`(未指定=[0,0,0]=rest)。
+- **書き出し**: delta 方式(rest からのオフセット)。フラットノード export では loader の高さスケールが
+  scale=1 フォールバックになり、`pos=rest+offset` で同一モデル再生が一致する。`buildVRMAGltf` は
+  hipsPos 非空のとき hips ノードに `translation` チャンネル(VEC3)を追加。`exportPoseSeq` に hips 引数追加。
+- **往復検証**: ジャンプ(hips+0.35m)を含む rest→jump→rest を書き出し→`playMotion` で頂点 hips.y=0.35 を
+  実機確認(キャラが浮上)。**★注意**: ローダの hips 適用はフレームループの poseData 再適用と競合するので、
+  検証は直接 applyAnimation でなく playMotion で行うこと。
+- **TODO**: 表情トラック同時書出、詳細モード(全ボーン)、対称編集(左右ミラー)、素立ち=A-pose 化
+  (現状「素立ち」は identity=T-pose)、ブラウザ側 three-vrm エディタ。
 
 ### scenes（名前付きシーン）✅実装済
 宣言的に各キャラの状態＋演出＋カメラを一括指定する（TyranoScript タグ相当）。

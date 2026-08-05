@@ -408,6 +408,16 @@ class ControlPanel extends Dialog
         return %[ "type" => "labeled_row", "label" => label, "label_width" => 40,
                   "child" => %[ "type" => "slider", "id" => "rot:" + axis, "initial" => pos ] ];
     }
+    // hips 移動スライダ 1 軸(-0.5..0.5 m を 0..1 にマップ。id="hp:x/y/z")。
+    var HIPS_RANGE = 0.5;   // ±0.5m
+    function hipsSlider(axis, label, meter)
+    {
+        var pos = (meter + HIPS_RANGE) / (HIPS_RANGE * 2.0);
+        if (pos < 0.0) pos = 0.0;
+        if (pos > 1.0) pos = 1.0;
+        return %[ "type" => "labeled_row", "label" => label, "label_width" => 40,
+                  "child" => %[ "type" => "slider", "id" => "hp:" + axis, "initial" => pos ] ];
+    }
     // ポーズ編集パネル(採取/素立ちから関節回転をスライダ編集→JSON保存)。
     function poseEditRows()
     {
@@ -430,6 +440,14 @@ class ControlPanel extends Dialog
             rotSlider("x", "X", e[0]), %[ "type" => "vspacer", "height" => 6 ],
             rotSlider("y", "Y", e[1]), %[ "type" => "vspacer", "height" => 6 ],
             rotSlider("z", "Z", e[2]) ]));
+        // hips(腰)選択時は移動(ルートモーション)スライダも(ジャンプ/しゃがみ/前後移動)
+        if (app.editBone == "hips") {
+            var h = app.editHips;
+            parts.add(grpBox("移動 [hips]", [
+                hipsSlider("x", "X", h[0]), %[ "type" => "vspacer", "height" => 6 ],
+                hipsSlider("y", "Y", h[1]), %[ "type" => "vspacer", "height" => 6 ],
+                hipsSlider("z", "Z", h[2]) ]));
+        }
         // ポーズ名 + 保存/クリア
         parts.add(grpBox("保存", [
             %[ "type" => "labeled_row", "label" => "名前", "label_width" => 66,
@@ -596,9 +614,10 @@ class ADVSample extends Window
     var faceLib;       // 表情ライブラリ %[id => %[label, morphs:%[Fcl名=>w]]]
     // ポーズ編集
     var editPose;      // 編集中のポーズ %[ボーン名 => [qx,qy,qz,qw]]
+    var editHips = [ 0.0, 0.0, 0.0 ];  // hips ルートモーション オフセット [dx,dy,dz]
     var editBone = "head"; // 回転スライダの対象ボーン
     var poseName = "";     // 編集中のポーズ名(キーワード)
-    var poseLib;           // ポーズライブラリ %[id => %[label, bones:%[ボーン名=>[qx,qy,qz,qw]]]]
+    var poseLib;           // ポーズライブラリ %[id => %[label, bones:%[…], hips:[dx,dy,dz]]]
 
     // --- モード ---
     // "tachie": 現行(1キャラ=1レイヤ・各自カメラ) / "space": 単一カメラで空間に並べて
@@ -1405,8 +1424,9 @@ class ADVSample extends Window
             var q = pairs[j + 1];
             arr.add(pairs[j]); arr.add(q[0]); arr.add(q[1]); arr.add(q[2]); arr.add(q[3]);
         }
+        var hips = [ editHips[0], editHips[1], editHips[2] ];
         var list = targetList();
-        for (var i = 0; i < list.count; i++) list[i].setPoseLive(arr);
+        for (var i = 0; i < list.count; i++) list[i].setPoseLive(arr, hips);
     }
     // 現在の対象姿勢を編集スロットへ採取([名,qx,…] → %[名=>[qx,…]])。リビルドしない。
     function captureEditPose()
@@ -1417,6 +1437,8 @@ class ADVSample extends Window
         editPose = %[];
         for (var j = 0; j < flat.count; j += 5)
             editPose[flat[j]] = [ flat[j + 1], flat[j + 2], flat[j + 3], flat[j + 4] ];
+        var ho = list[0].vrm.getHipsOffset();
+        editHips = [ ho.x, ho.y, ho.z ];
         applyEditPoseLive();
     }
     function poseBaseCapture()
@@ -1424,13 +1446,20 @@ class ADVSample extends Window
         captureEditPose();
         if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
-    // 素立ち(全ボーン回転なし=単位クオータニオン)を基準にする
+    // 素立ち(全ボーン回転なし=単位クオータニオン + hips オフセット 0)を基準にする
     function poseBaseRest()
     {
         editPose = %[];
         for (var i = 0; i < POSE_BONES.count; i++) editPose[POSE_BONES[i][0]] = [ 0.0, 0.0, 0.0, 1.0 ];
+        editHips = [ 0.0, 0.0, 0.0 ];
         applyEditPoseLive();
         if (panel !== void && panelWanted) { panel.close(); panel.open(); }
+    }
+    // hips ルートモーション オフセット 1 軸(0=x/1=y/2=z)をメートル値で設定しライブ反映
+    function editSetHips(axis, meter)
+    {
+        editHips[axis] = meter;
+        applyEditPoseLive();
     }
     // 回転スライダ用: 選択ボーンの現在オイラー角(度)[rx,ry,rz]
     function editBoneEuler()
@@ -1483,7 +1512,8 @@ class ADVSample extends Window
         var bones = %[];
         var pairs = dictPairs(editPose);
         for (var j = 0; j < pairs.count; j += 2) { var q = pairs[j + 1]; bones[pairs[j]] = [ q[0], q[1], q[2], q[3] ]; }
-        poseLib[poseName] = %[ "label" => poseName, "bones" => bones ];
+        poseLib[poseName] = %[ "label" => poseName, "bones" => bones,
+                               "hips" => [ editHips[0], editHips[1], editHips[2] ] ];
         savePoseLib();
     }
     function loadPoseIntoEdit(id)
@@ -1495,6 +1525,7 @@ class ADVSample extends Window
         editPose = %[];
         var pairs = dictPairs(def.bones);
         for (var j = 0; j < pairs.count; j += 2) { var q = pairs[j + 1]; editPose[pairs[j]] = [ q[0], q[1], q[2], q[3] ]; }
+        editHips = (def.hips !== void) ? [ def.hips[0], def.hips[1], def.hips[2] ] : [ 0.0, 0.0, 0.0 ];
         applyEditPoseLive();
         if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
@@ -1506,8 +1537,17 @@ class ADVSample extends Window
         for (var j = 0; j < pairs.count; j += 2) ids.add(pairs[j]);
         return ids;
     }
+    // ポーズの hips オフセット [dx,dy,dz](無ければ [0,0,0])
+    function poseHipsFromLib(id)
+    {
+        if (poseLib === void) loadPoseLib();
+        var def = poseLib[id];
+        if (def !== void && def.hips !== void) return [ def.hips[0], def.hips[1], def.hips[2] ];
+        return [ 0.0, 0.0, 0.0 ];
+    }
     // 保存済みポーズ列(poses.json の id 群)を VRMA モーションへ書き出す。
     // poseIds をキー時刻 i*step 秒に並べ、glTF LINEAR 補間で遷移する poseseq を焼き込む。
+    // hips オフセットがあれば translation チャンネル(ルートモーション)も書く。
     // 出力は共有 glTF-JSON 形式の .vrma(自前ローダ/three-vrm で読める)。成功で true。
     function exportPoseSeqVRMA(poseIds, step, outFile)
     {
@@ -1522,8 +1562,8 @@ class ADVSample extends Window
         }
         var nB = boneOrder.count;
         if (nB == 0) return false;
-        // 各キー(=ポーズ)の時刻 + quat 平坦列((key,bone,xyzw) 行優先)
-        var times = []; var quats = [];
+        // 各キー(=ポーズ)の時刻 + quat 平坦列((key,bone,xyzw) 行優先) + hips 平坦列((key,xyz))
+        var times = []; var quats = []; var hips = []; var anyHips = false;
         for (var i = 0; i < poseIds.count; i++) {
             var def = poseLib[poseIds[i]];
             times.add(i * step);
@@ -1534,10 +1574,14 @@ class ADVSample extends Window
                 if (q === void) q = [ 0.0, 0.0, 0.0, 1.0 ];
                 quats.add(q[0]); quats.add(q[1]); quats.add(q[2]); quats.add(q[3]);
             }
+            var h = poseHipsFromLib(poseIds[i]);
+            if (h[0] != 0.0 || h[1] != 0.0 || h[2] != 0.0) anyHips = true;
+            hips.add(h[0]); hips.add(h[1]); hips.add(h[2]);
         }
         var ld = new Threepp.VRMAnimationLoader();
-        var ok = ld.exportPoseSeq(boneOrder, times, quats, outFile);
-        Debug.message("VRMA 書出 " + (ok ? "成功" : "失敗") + ": " + outFile + " (" + poseIds.count + "キー/" + nB + "ボーン)");
+        var ok = ld.exportPoseSeq(boneOrder, times, quats, (anyHips ? hips : []), outFile);
+        Debug.message("VRMA 書出 " + (ok ? "成功" : "失敗") + ": " + outFile + " (" + poseIds.count + "キー/" + nB + "ボーン"
+                      + (anyHips ? "/hips有" : "") + ")");
         return ok;
     }
 
@@ -1599,7 +1643,7 @@ class ADVSample extends Window
         for (var i = 0; i < seq.count; i++) {
             var s = seq[i];
             var d = poseFlatFromLib(s.pose);
-            var k = %[ "in" => s.trans, "hold" => s.hold ];
+            var k = %[ "in" => s.trans, "hold" => s.hold, "hips" => poseHipsFromLib(s.pose) ];
             if (d === void) k["isRest"] = 1; else k["data"] = d;
             keys.add(k);
         }
@@ -1640,18 +1684,23 @@ class ADVSample extends Window
         }
         if (boneOrder.count == 0) return false;
         // キーフレーム(保持始/保持終の2枚ずつ。手順間の隙間=遷移として LINEAR 補間される)
-        var times = []; var quats = []; var cursor = 0.0;
+        // hips オフセットも同じ2枚ずつ並べる(ルートモーション)。
+        var times = []; var quats = []; var hips = []; var anyHips = false; var cursor = 0.0;
         for (var i = 0; i < seq.count; i++) {
+            var h = poseHipsFromLib(seq[i].pose);
+            if (h[0] != 0.0 || h[1] != 0.0 || h[2] != 0.0) anyHips = true;
             if (i > 0) cursor += seq[i].trans;   // 先頭以外は前手順から遷移
             seqAppendKey(times, quats, cursor, maps[i], boneOrder);
+            hips.add(h[0]); hips.add(h[1]); hips.add(h[2]);
             cursor += seq[i].hold;
             seqAppendKey(times, quats, cursor, maps[i], boneOrder);
+            hips.add(h[0]); hips.add(h[1]); hips.add(h[2]);
         }
         var ld = new Threepp.VRMAnimationLoader();
-        var ok = ld.exportPoseSeq(boneOrder, times, quats, outFile);
+        var ok = ld.exportPoseSeq(boneOrder, times, quats, (anyHips ? hips : []), outFile);
         Debug.message("シーケンス書出 " + (ok ? "成功" : "失敗") + ": " + outFile
-                      + " (" + seq.count + "手順/" + times.count + "キー/" + boneOrder.count + "ボーン, "
-                      + cursor + "秒)");
+                      + " (" + seq.count + "手順/" + times.count + "キー/" + boneOrder.count + "ボーン"
+                      + (anyHips ? "/hips有" : "") + ", " + cursor + "秒)");
         return ok;
     }
 
@@ -1770,6 +1819,12 @@ class ADVSample extends Window
             var deg = (val + 0.0) * 360.0 - 180.0;
             var ax = id.substring(4);
             editSetBoneRot((ax == "x") ? 0 : ((ax == "y") ? 1 : 2), deg);
+            return;
+        }
+        if (id.length >= 3 && id.substring(0, 3) == "hp:") {    // hips 移動(0..1 → -0.5..0.5 m)
+            var m = (val + 0.0) * 1.0 - 0.5;
+            var ax2 = id.substring(3);
+            editSetHips((ax2 == "x") ? 0 : ((ax2 == "y") ? 1 : 2), m);
             return;
         }
         if (id == "sh") { seqSetHold((val + 0.0) * 3.0);  return; }   // シーケンス保持秒スライダ

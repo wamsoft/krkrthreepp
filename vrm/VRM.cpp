@@ -2021,17 +2021,25 @@ void main() {
     // ボーン回転は正規化リグのローカル回転(capturePose/editPose と同じ)。node はフラットでよい。
     std::string buildVRMAGltf(const std::vector<float>& times,
                               const std::vector<std::string>& boneNames,
-                              const std::vector<std::vector<float>>& quats) {
+                              const std::vector<std::vector<float>>& quats,
+                              const std::vector<float>& hipsPos) {
         using nlohmann::json;
         const int nKeys = static_cast<int>(times.size());
         const int nBones = static_cast<int>(boneNames.size());
 
-        // --- バイナリバッファ: [times][bone0 quats][bone1 quats]… ---
+        // hips ルートモーション(translation)を書くか。hipsPos が非空 & boneNames に "hips" があるとき。
+        int hipsBoneIdx = -1;
+        for (int b = 0; b < nBones; ++b) if (boneNames[b] == "hips") { hipsBoneIdx = b; break; }
+        const bool writeHips = (!hipsPos.empty() && hipsBoneIdx >= 0 && (int)hipsPos.size() == nKeys * 3);
+
+        // --- バイナリバッファ: [times][bone0 quats]…[hipsPos?] ---
         std::vector<unsigned char> buf;
         const int timesOfs = 0;
         appendFloats(buf, times);
         std::vector<int> quatOfs(nBones);
         for (int b = 0; b < nBones; ++b) { quatOfs[b] = static_cast<int>(buf.size()); appendFloats(buf, quats[b]); }
+        int hipsOfs = 0;
+        if (writeHips) { hipsOfs = static_cast<int>(buf.size()); appendFloats(buf, hipsPos); }
         const int totalLen = static_cast<int>(buf.size());
 
         // --- bufferViews / accessors ---
@@ -2042,10 +2050,16 @@ void main() {
         float tmin = nKeys ? times.front() : 0.f, tmax = nKeys ? times.back() : 0.f;
         accessors.push_back({{"bufferView", 0}, {"componentType", 5126}, {"count", nKeys},
                              {"type", "SCALAR"}, {"min", json::array({tmin})}, {"max", json::array({tmax})}});
-        // 各ボーン rotation accessor
+        // 各ボーン rotation accessor (acc 1..nBones)
         for (int b = 0; b < nBones; ++b) {
             bufferViews.push_back({{"buffer", 0}, {"byteOffset", quatOfs[b]}, {"byteLength", nKeys * 4 * 4}});
             accessors.push_back({{"bufferView", b + 1}, {"componentType", 5126}, {"count", nKeys}, {"type", "VEC4"}});
+        }
+        // hips translation accessor (acc nBones+1)
+        const int hipsAcc = nBones + 1;
+        if (writeHips) {
+            bufferViews.push_back({{"buffer", 0}, {"byteOffset", hipsOfs}, {"byteLength", nKeys * 3 * 4}});
+            accessors.push_back({{"bufferView", nBones + 1}, {"componentType", 5126}, {"count", nKeys}, {"type", "VEC3"}});
         }
 
         // --- nodes: root(0) + bone nodes(1..nBones) ---
@@ -2060,6 +2074,10 @@ void main() {
         for (int b = 0; b < nBones; ++b) {
             samplers.push_back({{"input", 0}, {"output", b + 1}, {"interpolation", "LINEAR"}});
             channels.push_back({{"sampler", b}, {"target", {{"node", b + 1}, {"path", "rotation"}}}});
+        }
+        if (writeHips) {   // hips ノードへ translation チャンネル追加(ルートモーション)
+            samplers.push_back({{"input", 0}, {"output", hipsAcc}, {"interpolation", "LINEAR"}});
+            channels.push_back({{"sampler", nBones}, {"target", {{"node", hipsBoneIdx + 1}, {"path", "translation"}}}});
         }
         json animation = {{"name", "pose_sequence"}, {"samplers", samplers}, {"channels", channels}};
 

@@ -2708,9 +2708,10 @@ static std::string ThreeAsciiNarrow(const ttstr &s)
 //   boneNames = [名,…](nBones) / times = [秒,…](nKeys) /
 //   quatsFlat = [ (key,bone,xyzw) 行優先の real, size = nKeys*nBones*4 ]
 // storageName = 出力先(bare 名で data/ 直下)。成功で true。
+// hipsPosV は空配列可(ルートモーション無し)。非空なら size=nKeys*3(hips rest からの xyz オフセット)。
 static bool VRMAnimationLoader_exportPoseSeq(ThreeWrapper<VRMAnimationLoader> *self,
                                              tTJSVariant bonesV, tTJSVariant timesV,
-                                             tTJSVariant quatsV, ttstr storageName)
+                                             tTJSVariant quatsV, tTJSVariant hipsV, ttstr storageName)
 {
 	if (bonesV.Type() != tvtObject || timesV.Type() != tvtObject || quatsV.Type() != tvtObject) return false;
 	ncbPropAccessor bn(bonesV.AsObjectNoAddRef());
@@ -2730,7 +2731,18 @@ static bool VRMAnimationLoader_exportPoseSeq(ThreeWrapper<VRMAnimationLoader> *s
 			for (int c = 0; c < 4; ++c)
 				quats[b][(size_t)k * 4 + c] = (float)qf.getRealValue(((k * nBones + b) * 4) + c);
 
-	std::string gltf = krkrvrm::buildVRMAGltf(times, boneNames, quats);
+	// hips ルートモーション(任意)。size==nKeys*3 のときだけ有効。
+	std::vector<float> hipsPos;
+	if (hipsV.Type() == tvtObject) {
+		ncbPropAccessor hp(hipsV.AsObjectNoAddRef());
+		tjs_int hn = hp.GetArrayCount();
+		if (hn == nKeys * 3) {
+			hipsPos.resize(hn);
+			for (tjs_int i = 0; i < hn; ++i) hipsPos[i] = (float)hp.getRealValue(i);
+		}
+	}
+
+	std::string gltf = krkrvrm::buildVRMAGltf(times, boneNames, quats, hipsPos);
 	return ThreeWriteStorageBytes(storageName, gltf.data(), gltf.size());
 }
 
@@ -2827,6 +2839,31 @@ static void VRM_applyPose(ThreeWrapper<VRM> *self, tTJSVariant poseV, float blen
 	}
 }
 
+// hips ルートモーション: 正規化 hips ノードの位置を rest からの (dx,dy,dz) オフセットへ。
+// (dx,dy,dz)=0 で rest。ポーズ編集/プレビューのライブ反映用(VRMA 再生は applyAnimation が担当)。
+static void VRM_applyHipsOffset(ThreeWrapper<VRM> *self, float dx, float dy, float dz)
+{
+	if (!self || !self->getObject()) return;
+	auto &vrm = *self->getObject();
+	if (!vrm.humanoid.hasHips()) return;
+	auto n = vrm.humanoid.getNormalizedBoneNode("hips");
+	if (!n) return;
+	auto rest = vrm.humanoid.hipsRestNormPos();
+	n->position.set(rest.x + dx, rest.y + dy, rest.z + dz);
+}
+// 現在の正規化 hips 位置の rest からのオフセット [dx,dy,dz](採取用)。
+static threepp::Vector3 VRM_getHipsOffset(ThreeWrapper<VRM> *self)
+{
+	threepp::Vector3 zero;
+	if (!self || !self->getObject()) return zero;
+	auto &vrm = *self->getObject();
+	if (!vrm.humanoid.hasHips()) return zero;
+	auto n = vrm.humanoid.getNormalizedBoneNode("hips");
+	if (!n) return zero;
+	auto rest = vrm.humanoid.hipsRestNormPos();
+	return threepp::Vector3(n->position.x - rest.x, n->position.y - rest.y, n->position.z - rest.z);
+}
+
 // クロスフェード版: blend<1 で現在姿勢から time の姿勢へ補間。
 static void VRM_applyAnimationBlend(ThreeWrapper<VRM> *self, ThreeWrapper<VRMAnimation> *anim, float time, float blend)
 {
@@ -2912,6 +2949,8 @@ NCB_METHOD_PROXY(resetNormalizedPose, VRM_resetNormalizedPose);
 NCB_METHOD_PROXY(applyAnimation, VRM_applyAnimation);// (vrmAnimation, time)
 NCB_METHOD_PROXY(applyAnimationBlend, VRM_applyAnimationBlend);// (vrmAnimation, time, blend) クロスフェード
 NCB_METHOD_PROXY(applyPose, VRM_applyPose);          // ([name,qx,qy,qz,qw,…], blend) ポーズ適用
+NCB_METHOD_PROXY(applyHipsOffset, VRM_applyHipsOffset);// (dx,dy,dz) hips を rest からのオフセットへ(ルートモーション)
+NCB_METHOD_PROXY(getHipsOffset, VRM_getHipsOffset);   // -> Vector3(rest からの hips オフセット)
 NCB_METHOD_PROXY(getMetaName, VRM_getMetaName);      // -> string
 NCB_METHOD_PROXY(getMetaVersion, VRM_getMetaVersion);
 NCB_METHOD_PROXY(getMetaLicenseUrl, VRM_getMetaLicenseUrl);
