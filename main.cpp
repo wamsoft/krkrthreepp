@@ -2756,7 +2756,10 @@ static void VRM_applyPose(ThreeWrapper<VRM> *self, tTJSVariant poseV, float blen
 	iTJSDispatch2 *arr = poseV.AsObjectNoAddRef();
 	if (!arr) return;
 	ncbPropAccessor a(arr);
-	tjs_int count = a.GetCount();
+	// ★配列長は "count" プロパティ(GetArrayCount)を見る。GetCount() は iTJSDispatch2 の
+	//   プロパティ数を返すため配列サイズと一致せず、後半要素が読めない(先頭数ボーンしか
+	//   適用されないバグの原因だった)。
+	tjs_int count = a.GetArrayCount();
 	auto &vrm = *self->getObject();
 	for (tjs_int i = 0; i + 4 < count; i += 5) {
 		ttstr nmw = a.getStrValue(i);

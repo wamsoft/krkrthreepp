@@ -341,19 +341,6 @@ class Tachie
         seqActive = false; restReturning = false;
         xfading = false;   // 即時反映(フェードしない)
     }
-    // ポーズ配列 [名,qx,qy,qz,qw,…] をボーン単位で applyPose する。
-    // ★VRM.applyPose に大きい配列を渡すと先頭ボーンしか反映されない(ncbPropAccessor が
-    //   配列後半を読めない)ため、5 要素ずつ分割して呼ぶ。一時配列を使い回して GC を避ける。
-    var _poseChunk = [ 0, 0, 0, 0, 0 ];
-    function applyPoseChunked(arr, blend)
-    {
-        if (arr === void) return;
-        for (var i = 0; i + 4 < arr.count; i += 5) {
-            _poseChunk[0] = arr[i];     _poseChunk[1] = arr[i + 1]; _poseChunk[2] = arr[i + 2];
-            _poseChunk[3] = arr[i + 3]; _poseChunk[4] = arr[i + 4];
-            vrm.applyPose(_poseChunk, blend);
-        }
-    }
 
     // --- ポーズ列モーション(Pose を時間で繋いで自動モーション化) ---
     // keys[i] = %[ "data"=>ポーズ配列 or void, "isRest"=>1(素立ち), "in"=>遷移秒, "hold"=>保持秒 ]
@@ -368,7 +355,7 @@ class Tachie
     function applyKeyBlend(key, b)
     {
         if (key.isRest) vrm.blendToRest(b);
-        else if (key.data !== void) applyPoseChunked(key.data, b);
+        else if (key.data !== void) vrm.applyPose(key.data, b);
     }
     function updatePoseSeq(dt)
     {
@@ -488,10 +475,10 @@ class Tachie
             if (xfading) {
                 xfadeT += dt;
                 var pb = dt / xfadeTau; if (pb > 1.0) pb = 1.0;
-                applyPoseChunked(poseData, pb);
+                vrm.applyPose(poseData, pb);
                 if (xfadeT >= xfadeDur) xfading = false;
             } else {
-                applyPoseChunked(poseData, 1.0);
+                vrm.applyPose(poseData, 1.0);
             }
         } else if (restReturning) {
             // 停止直後: 現在姿勢から素立ちへ寄せ、完了で確定して idle へ

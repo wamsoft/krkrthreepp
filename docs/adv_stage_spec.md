@@ -121,9 +121,10 @@ advsample の**作業モード「表情編集」**（左パネルを丸ごと差
   「素立ち」で rest へクロスフェード。
 - **保存/読込**: `(Array.saveStruct incontextof arr)(file)` / `Scripts.evalStorage(file)`。
 - パネル「ポーズ」行: 採取 / 適用 / 素立ち / 保存 / 読込。メタ定義 `poses` があれば読込。
-- **⚠ applyPose の分割適用**: `VRM.applyPose(arr,blend)` に**大きい配列を渡すと先頭5ボーン
-  (25要素)しか反映されない**(ncbPropAccessor が配列後半を読めない)。`Tachie.applyPoseChunked()`
-  が **5要素(1ボーン)ずつに分割**して呼ぶ。全ポーズ適用経路(update/poseseq)はこれ経由。
+- **applyPose の配列長バグ(修正済)**: `VRM_applyPose`(main.cpp)が配列長を
+  `ncbPropAccessor::GetCount()`(= iTJSDispatch2 のプロパティ数)で取っていたため配列後半が
+  読まれず**先頭数ボーンしか反映されなかった**。**`GetArrayCount()`(= `count` プロパティ参照)
+  に修正**して全ボーン反映されるようになった(ncbind_manual.md §17 に注意記載)。
 
 #### ポーズエディタ（簡易エディタ）＋ poses.json ✅実装済
 advsample の**作業モード「ポーズ」**（左パネル差し替え、[[project_resume_next]] 最新13の表情エディタと
