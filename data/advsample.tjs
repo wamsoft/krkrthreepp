@@ -21,6 +21,43 @@ Scripts.execStorage("tachie.tjs");
 
 // 状態のファイル保存用(Dictionary.saveStruct)。無くても動く(メモリ保存にフォールバック)。
 try { Plugins.link("saveStruct.dll"); } catch (e) { }
+// JSON 読み書き(Scripts.evalJSON/evalJSONStorage/saveJSON/toJSONString)。
+// 表情ライブラリ(faces.json)をブラウザ three-vrm エディタと共有する形式で保存する。
+try { Plugins.link("json.dll"); } catch (e) { }
+
+// ---------------------------------------------------------------------------
+//  表情編集(生モーフ簡易エディタ)用の curated モーフ定義
+// ---------------------------------------------------------------------------
+// VRoid の 57 生モーフ(Fcl_*)のうち、表情づくりで使う代表的なものをグループ化。
+// 「簡易モード」はこの curated セットをスライダで編集する(全 57 は詳細モードで)。
+// 各要素: [Fcl名, 表示ラベル]。id は "mo:" + Fcl名 でパネルとやりとりする。
+var FACE_MORPH_GROUPS = [
+    %[ "title" => "眉", "items" => [
+        [ "Fcl_BRW_Angry", "怒" ], [ "Fcl_BRW_Fun", "楽" ], [ "Fcl_BRW_Joy", "喜" ],
+        [ "Fcl_BRW_Sorrow", "哀" ], [ "Fcl_BRW_Surprised", "驚" ] ] ],
+    %[ "title" => "目", "items" => [
+        [ "Fcl_EYE_Close", "閉" ], [ "Fcl_EYE_Close_L", "閉L" ], [ "Fcl_EYE_Close_R", "閉R" ],
+        [ "Fcl_EYE_Joy", "笑" ], [ "Fcl_EYE_Sorrow", "哀" ], [ "Fcl_EYE_Surprised", "驚" ],
+        [ "Fcl_EYE_Spread", "見開" ] ] ],
+    %[ "title" => "口", "items" => [
+        [ "Fcl_MTH_A", "あ" ], [ "Fcl_MTH_I", "い" ], [ "Fcl_MTH_U", "う" ],
+        [ "Fcl_MTH_E", "え" ], [ "Fcl_MTH_O", "お" ], [ "Fcl_MTH_Fun", "楽" ],
+        [ "Fcl_MTH_Joy", "喜" ], [ "Fcl_MTH_Sorrow", "哀" ], [ "Fcl_MTH_Large", "大" ],
+        [ "Fcl_MTH_Small", "小" ] ] ],
+    %[ "title" => "頬", "items" => [
+        [ "Fcl_MTH_SkinFung", "ほお" ] ] ]
+];
+// 表情ライブラリの保存先(共有 JSON。ブラウザエディタと相互運用)。
+var FACE_LIB_FILE = "faces.json";
+
+// Dictionary を [key, val, key, val, …] の配列へ(TJS は for-in 不可なので
+// Array.assign(dict) で列挙する)。d が void なら空配列。
+function dictPairs(d)
+{
+    var a = [];
+    if (d !== void && d !== null) (a.assign incontextof a)(d);
+    return a;
+}
 
 // 3D 描画領域(中央ビューポート)のサイズ
 var SCREEN_W = 1280;
@@ -84,7 +121,7 @@ class ControlPanel extends Dialog
     // パネル全体のフォント倍率。top-level "font_scale"(engine対応)で
     // button/toggle/radio/label を一括拡大する。個別 size_scale は付けない
     // (付けると明示指定として優先され、この一括制御から外れる)。
-    var PANEL_FONT_SCALE = 1.3;   // 全ウィジェット倍率(top-level font_scale)。全11セクションを1080内に収める
+    var PANEL_FONT_SCALE = 1.25;  // 操作モードの全ウィジェット倍率(top-level font_scale)。作業切替行+全セクションを1080内に
     function btn(id, text)    // 単発ボタン(押すたびに動作)
     {
         return %[ "type" => "button", "id" => id, "text" => text, "close_on_click" => 0 ];
@@ -96,6 +133,14 @@ class ControlPanel extends Dialog
     function radio(id, text, sel)   // 排他選択(同 htile 内で自動排他・選択がハイライト)
     {
         return %[ "type" => "radio_button", "id" => id, "text" => text, "selected" => (sel ? 1 : 0) ];
+    }
+    // 生モーフ 1 本のスライダ行(ラベル名 + 0..1 スライダ)。id="mo:Fcl名"、
+    // 現在の編集値を initial に反映。値変化で onPanel("mo:...", 0..1)。
+    function moSlider(fcl, label)
+    {
+        return %[ "type" => "labeled_row", "label" => label, "label_width" => 66,
+                  "child" => %[ "type" => "slider", "id" => "mo:" + fcl,
+                                "initial" => app.editGetMorph(fcl) ] ];
     }
     // ボタン群を perRow 個ずつ折り返して複数の htile 行にする(左列の幅向け)
     function wrapButtons(widgets, perRow)
@@ -268,16 +313,75 @@ class ControlPanel extends Dialog
         ]);
     }
 
+    // 作業モード切替(パネル最上部に常設。選択で左パネルをまるごと差し替え)。
+    // 縦を節約するためタイトルバー無しの 1 行(操作/表情編集の排他ラジオ)+ 区切り。
+    function workspaceRow()
+    {
+        return [ %[ "type" => "htile", "children" => [
+                    radio("work_op",   "操作",     app.workMode == "op"),
+                    %[ "type" => "hspacer", "width" => 12 ],
+                    radio("work_face", "表情編集", app.workMode == "face") ] ],
+                 %[ "type" => "vspacer", "height" => 6 ],
+                 %[ "type" => "vsize", "height" => 2,
+                    "child" => %[ "type" => "box", "color" => [70, 80, 100, 150] ] ],
+                 %[ "type" => "vspacer", "height" => 8 ] ];
+    }
+
+    // 表情編集パネル(生モーフ簡易エディタ)。curated モーフをスライダで編集し
+    // キーワード付きで共有 JSON(faces.json)へ保存する。中央ビューにライブ反映。
+    function faceEditRows()
+    {
+        var parts = [ workspaceRow(), secOneRow("対象", targetRadios()) ];
+        // curated モーフグループごとにスライダ列
+        for (var g = 0; g < FACE_MORPH_GROUPS.count; g++) {
+            var grp = FACE_MORPH_GROUPS[g];
+            var kids = [];
+            for (var i = 0; i < grp.items.count; i++) {
+                kids.add(moSlider(grp.items[i][0], grp.items[i][1]));
+                kids.add(%[ "type" => "vspacer", "height" => 6 ]);
+            }
+            parts.add(grpBox(grp.title, kids));
+        }
+        // 表情名 + 保存/クリア
+        parts.add(grpBox("保存", [
+            %[ "type" => "labeled_row", "label" => "名前", "label_width" => 66,
+               "child" => %[ "type" => "input_box", "id" => "face_name",
+                             "placeholder" => "例: wink" ] ],
+            %[ "type" => "vspacer", "height" => 8 ],
+            %[ "type" => "htile", "children" => [
+                btn("face_save", "保存"), %[ "type" => "hspacer", "width" => 10 ],
+                btn("face_clear", "クリア") ] ] ]));
+        // 既存表情の読込(あれば)
+        var ids = app.faceIdList();
+        if (ids.count > 0) {
+            var lb = [];
+            for (var i = 0; i < ids.count; i++) lb.add(btn("lf:" + ids[i], ids[i]));
+            parts.add(sec("読込", lb, 3));
+        }
+        return catRows(parts);
+    }
+
     // 左列にコマンドパネルを縦積み。top_left で左上に寄せる(fit-to-content)。
+    // 作業モード(app.workMode)で中身をまるごと差し替える。
     function buildLayout()
     {
-        var rows = (app.mode == "space") ? spaceRows() : tachieRows();
+        var rows;
+        if (app.workMode == "face") rows = faceEditRows();
+        else {
+            var body = (app.mode == "space") ? spaceRows() : tachieRows();
+            // 操作モードも先頭に作業モード切替を置く
+            var parts = workspaceRow();
+            for (var i = 0; i < body.count; i++) parts.add(body[i]);
+            rows = parts;
+        }
+        // 表情編集はスライダが多く縦に伸びるので少し小さめのフォントで収める
+        var fs = (app.workMode == "face") ? 1.15 : PANEL_FONT_SCALE;
         return %[
             "size"       => [PANEL_W, WIN_H],
             "align"      => "top_left",
             "margin"     => 0,
             "background" => [18, 20, 30, 240],
-            "font_scale" => PANEL_FONT_SCALE,   // engine 対応: 全ウィジェット一括拡大
+            "font_scale" => fs,                 // engine 対応: 全ウィジェット一括拡大
             "input"      => %[ "arrow_focus_nav" => 1 ],
             "content"    => %[ "type" => "margin", "padding" => [14, 10, 14, 10],
                                "child" => %[ "type" => "vtile", "children" => rows ] ]
@@ -338,6 +442,14 @@ class ADVSample extends Window
     var timer, lastTick;
     var logLines;   // 情報欄の操作ログ(リング)
     var infoClock = 0.0;
+
+    // --- 作業モード(左パネルをまるごと差し替える軸。view の tachie/space とは直交) ---
+    // "op"  : 通常操作(対象/フレーム/表情/モーション/…)
+    // "face": 表情編集(生モーフ簡易エディタ。curated モーフをスライダ編集→JSON保存)
+    var workMode = "op";
+    var editMorphs;    // 編集中の生モーフ %[Fcl名 => weight(0..1)]
+    var editName = ""; // 編集中の表情名(キーワード)
+    var faceLib;       // 表情ライブラリ %[id => %[label, morphs:%[Fcl名=>w]]]
 
     // --- モード ---
     // "tachie": 現行(1キャラ=1レイヤ・各自カメラ) / "space": 単一カメラで空間に並べて
@@ -1004,6 +1116,120 @@ class ADVSample extends Window
         for (var i = 0; i < list.count; i++) setCharExpr(list[i], name);
     }
 
+    // ==================================================================
+    //  表情編集(生モーフ簡易エディタ)
+    // ==================================================================
+    // 作業モード切替。左パネルをまるごと差し替える(view の tachie/space とは直交)。
+    function setWorkMode(m)
+    {
+        if (m == workMode) return;
+        workMode = m;
+        if (m == "face") {
+            if (editMorphs === void) editMorphs = %[];
+            if (faceLib === void) loadFaceLib();
+            // 編集は顔がよく見えるよう対象を顔フレーミング + 目線/idle を止める
+            var list = targetList();
+            for (var i = 0; i < list.count; i++) {
+                list[i].setLookAtCamera(false);
+                list[i].setIdleEnabled(false);
+            }
+            applyFrame("face");
+            applyEditToTargets();
+        } else {
+            // 操作モードへ戻る: 生モーフ編集を解除して素の状態へ
+            var list = targetList();
+            for (var i = 0; i < list.count; i++) list[i].vrm.clearMorphs();
+        }
+        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
+    }
+    // 編集中の生モーフを対象キャラへライブ反映(0 のものは送らない)
+    function applyEditToTargets()
+    {
+        var pairs = dictPairs(editMorphs);
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) {
+            var t = list[i];
+            t.vrm.clearMorphs();
+            t.setEmotionSet("", []);   // VRM 表情も素に(生モーフだけで作る)
+            for (var j = 0; j < pairs.count; j += 2)
+                if (pairs[j + 1] > 0.0) t.vrm.setMorph(pairs[j], pairs[j + 1]);
+        }
+    }
+    // スライダ操作: 1 モーフの weight を更新してライブ反映
+    function editSetMorph(name, w)
+    {
+        if (editMorphs === void) editMorphs = %[];
+        editMorphs[name] = w;
+        applyEditToTargets();
+    }
+    function editGetMorph(name)
+    {
+        if (editMorphs === void || editMorphs[name] === void) return 0.0;
+        return editMorphs[name];
+    }
+    // すべてのスライダを 0 に(素立ちの顔へ)。パネルを組み直してスライダも戻す。
+    function editClear()
+    {
+        editMorphs = %[];
+        applyEditToTargets();
+        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
+    }
+    // --- 表情ライブラリ(共有 JSON: faces.json)---
+    // 形式: %[ "version"=>1, "faces"=>%[ id=>%[ "label"=>表示名, "morphs"=>%[Fcl名=>w] ] ] ]
+    function loadFaceLib()
+    {
+        faceLib = %[];
+        try {
+            // 読込は autopath 解決される既存ファイルパスで(getPlacedPath は存在時のみ有効)。
+            if (Storages.isExistentStorage(FACE_LIB_FILE)) {
+                var root = Scripts.evalJSONStorage(Storages.getPlacedPath(FACE_LIB_FILE), 1);
+                if (root !== void && root.faces !== void) faceLib = root.faces;
+            }
+        } catch (e) { Debug.message("faces.json 読込失敗: " + e.message); }
+    }
+    function saveFaceLib()
+    {
+        try {
+            var root = %[ "version" => 1, "faces" => faceLib ];
+            // 書込は bare 名で(getPlacedPath は未存在ファイルに空を返すため使えない)。
+            // saveStruct の *.txt と同じく data/ 直下に書かれる。utf8=true, indent=1(整形)。
+            Scripts.saveJSON(FACE_LIB_FILE, root, 1, 1);
+            Debug.message("faces.json 保存: " + faceLib.count + " 表情");
+        } catch (e) { Debug.message("faces.json 保存失敗: " + e.message); }
+    }
+    // 編集中の内容を editName のキーワードで保存(0 のモーフは省く)
+    function saveCurrentFace()
+    {
+        if (editName == "" || editName === void) { Debug.message("表情名を入力してください"); return; }
+        if (faceLib === void) loadFaceLib();
+        var morphs = %[];
+        var pairs = dictPairs(editMorphs);
+        for (var j = 0; j < pairs.count; j += 2) if (pairs[j + 1] > 0.0) morphs[pairs[j]] = pairs[j + 1];
+        faceLib[editName] = %[ "label" => editName, "morphs" => morphs ];
+        saveFaceLib();
+    }
+    // ライブラリの表情を編集スロットへ読み込む(スライダに反映するためパネル再構築)
+    function loadFaceIntoEdit(id)
+    {
+        if (faceLib === void) loadFaceLib();
+        var def = faceLib[id];
+        if (def === void) return;
+        editName = id;
+        editMorphs = %[];
+        var pairs = dictPairs(def.morphs);
+        for (var j = 0; j < pairs.count; j += 2) editMorphs[pairs[j]] = pairs[j + 1];
+        applyEditToTargets();
+        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
+    }
+    function faceIdList()
+    {
+        if (faceLib === void) loadFaceLib();
+        var pairs = dictPairs(faceLib);
+        var ids = [];
+        for (var j = 0; j < pairs.count; j += 2) ids.add(pairs[j]);
+        return ids;
+    }
+
     // --- 表情名の列挙(モデル実装から) ---
     var emoNameSet;   // 表情ボタン id 判定用
     var exprLabels = %[ "happy"=>"喜", "angry"=>"怒", "sad"=>"哀", "relaxed"=>"楽",
@@ -1109,10 +1335,21 @@ class ADVSample extends Window
         for (var i = 0; i < list.count; i++) list[i].resetCamera();
     }
 
-    // Elements パネルからの操作。val は toggle_button の bool 値(それ以外は void)。
+    // Elements パネルからの操作。val は toggle_button の bool 値 / slider の 0..1 /
+    // input_box の文字列(それ以外は void)。
     function onPanel(id, val)
     {
+        // 生モーフスライダ(id="mo:Fcl名")は連続発火するのでログに出さず先に処理
+        if (id.length >= 3 && id.substring(0, 3) == "mo:") { editSetMorph(id.substring(3), val + 0.0); return; }
         logLine(id);   // 情報欄の操作ログへ
+        // --- 作業モード切替(左パネルまるごと差し替え)---
+        if (id == "work_op")   { setWorkMode("op");   return; }
+        if (id == "work_face") { setWorkMode("face"); return; }
+        // --- 表情編集 ---
+        if (id == "face_name")  { editName = (val === void) ? "" : "" + val; return; }
+        if (id == "face_save")  { saveCurrentFace(); return; }
+        if (id == "face_clear") { editClear(); return; }
+        if (id.length >= 3 && id.substring(0, 3) == "lf:") { loadFaceIntoEdit(id.substring(3)); return; }
         // 表情ボタン(id=表情名)は動的なので switch より先に判定
         if (emoNameSet !== void && emoNameSet[id] !== void) { applyEmotion(id); return; }
         // モーションボタン(id=m_*)

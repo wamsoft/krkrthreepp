@@ -64,6 +64,30 @@ weight 指定する最下層。作者が用意した表情に無い表情（例:
   **morph テクスチャ方式**（全モーフを RGBA32F テクスチャに詰め `gl_VertexID`+`texelFetch` で
   走査）へ改修済み。旧来の「1メッシュ同時8モーフ」制限を撤廃した。
 
+#### 表情エディタ（生モーフ簡易エディタ）＋ faces.json ✅実装済
+advsample の**作業モード「表情編集」**（左パネルを丸ごと差し替え）で、curated モーフ
+（眉/目/口/頬）をスライダ編集し、中央ビューにライブ反映しながらキーワード付きで保存する。
+- **作業モード軸**: `app.workMode` = `"op"`(操作) / `"face"`(表情編集)。view の tachie/space とは
+  直交。パネル最上部の「操作 / 表情編集」ラジオで切替（`buildLayout` が中身を差し替え）。
+  face 進入時は対象を顔フレーミング＋idle/目線 off にする。
+- **共有 JSON（`data/faces.json`）**: ブラウザ three-vrm エディタと相互運用する形式。
+  ```json
+  { "version": 1,
+    "faces": {
+      "wink": { "label": "ウインク",
+                "morphs": { "Fcl_EYE_Close_L": 1.0, "Fcl_MTH_Fun": 0.7, "Fcl_BRW_Fun": 1.0 } }
+    } }
+  ```
+  - `faces.<id>.morphs`: `Fcl名 => weight(0..1)` の辞書（stage.tjs の `[名,w,…]` 配列とは別表現。
+    ブラウザ連携のため辞書型を採用）。0 のモーフは省いて保存。
+  - 読み書きは **json.dll**（`Scripts.evalJSONStorage` / `saveJSON`。書込は bare 名で data/ 直下）。
+- **API（advsample の ADVSample）**: `setWorkMode(m)` / `editSetMorph(name,w)` / `editClear()` /
+  `saveCurrentFace()` / `loadFaceIntoEdit(id)` / `faceIdList()` / `loadFaceLib()` / `saveFaceLib()`。
+  パネル id 規約: `mo:<Fcl名>`(スライダ) / `face_name`(名前) / `face_save` / `face_clear` /
+  `lf:<id>`(読込) / `work_op` `work_face`(作業モード)。
+- **TODO**: stage.tjs の合成表情から faces.json を参照（id 指定でロード）、詳細モード（全57モーフ）、
+  ブラウザ側 three-vrm エディタ（同 JSON を読み書き）、②の次＝ポーズ簡易エディタ。
+
 ### motions（VRMA モーション）✅実装済
 ```tjs
 %[ "id"=>"idle", "name"=>"待機", "file"=>"anim.vrma", "loop"=>1 ]
