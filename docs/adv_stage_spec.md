@@ -148,10 +148,22 @@ advsample の**作業モード「ポーズ」**（左パネル差し替え、[[p
   humanoid.humanBones` で bone→node、animation の rotation channel を bone ごとに 1 本。
   入力は平坦な並列配列: `boneNames`(nBones) / `times`(nKeys, 秒) / `quatsFlat`((key,bone,xyzw) 行優先)。
 - **ADVSample**: `exportPoseSeqVRMA(poseIds, step, outFile)` が poses.json のポーズ列を時刻 i*step に
-  並べて書き出す。パネル「書出」ボタン(id=`pose_export`)で全保存ポーズ→`poseseq.vrma`。
+  並べて書き出す。ポーズエディタの「書出」ボタン(id=`pose_export`)で全保存ポーズ→`poseseq.vrma`。
 - 往復検証済(export→loadStorage→playMotion で書き出し値を再現。t=末尾で該当ボーン quat 一致)。
-- **TODO**: 時間軸 UI(ポーズ列に個別の hold/trans 指定)、表情トラック同時書出、hips ルートモーション、
-  詳細モード(全ボーン)、対称編集(左右ミラー)、ブラウザ側 three-vrm エディタ。
+
+#### 時間軸 UI(シーケンス編集 = 作業モード「連番」)✅実装済
+保存済みポーズを手順として並べ、各手順に **保持(hold)/遷移(trans)秒**を指定して poseseq を組み、
+プレビュー再生 & VRMA 書き出しする。作業モードは 操作/表情/ポーズ/**連番** の4択に。
+- **状態**: `app.seq = [ %[pose=>id, hold=>秒, trans=>秒] ]` / `app.seqSel`(選択手順)。
+- **UI(`seqEditRows`)**: 手順一覧(id=`ss:<i>` 選択)/ 追加(id=`sq:<poseId>` 末尾追加)/ 選択手順の
+  保持・遷移スライダ(id=`sh`/`st`, 0..3秒)+ ▲▼(`seq_up`/`seq_down`)/削除(`seq_del`)/
+  再生(`seq_preview`)/停止(`seq_stop`)/全消去(`seq_clear`)/VRMA 書出(`seq_export`)。
+- **プレビュー**: `seqPreview()` が `Tachie.playPoseSeq(keys,loop)`(既存の poseseq 再生器)で対象に再生。
+- **書き出し**: `seqExportVRMA(outFile)` が各手順を「(前手順から trans 秒で遷移)→hold 秒保持」= 保持始/
+  保持終の 2 キーで並べ、C++ `exportPoseSeq` で焼き込む(タイミングは全て TJS 側でキーフレーム化、
+  C++ は汎用のまま)。3手順(hold0.8/trans0.4)で dur=3.2秒 を実機確認。
+- **TODO**: 表情トラック同時書出、hips ルートモーション、詳細モード(全ボーン)、対称編集(左右ミラー)、
+  ブラウザ側 three-vrm エディタ。
 
 ### scenes（名前付きシーン）✅実装済
 宣言的に各キャラの状態＋演出＋カメラを一括指定する（TyranoScript タグ相当）。

@@ -352,10 +352,12 @@ class ControlPanel extends Dialog
     {
         return [ %[ "type" => "htile", "children" => [
                     radio("work_op",   "操作",   app.workMode == "op"),
-                    %[ "type" => "hspacer", "width" => 10 ],
+                    %[ "type" => "hspacer", "width" => 8 ],
                     radio("work_face", "表情",   app.workMode == "face"),
-                    %[ "type" => "hspacer", "width" => 10 ],
-                    radio("work_pose", "ポーズ", app.workMode == "pose") ] ],
+                    %[ "type" => "hspacer", "width" => 8 ],
+                    radio("work_pose", "ポーズ", app.workMode == "pose"),
+                    %[ "type" => "hspacer", "width" => 8 ],
+                    radio("work_seq",  "連番",   app.workMode == "seq") ] ],
                  %[ "type" => "vspacer", "height" => 6 ],
                  %[ "type" => "vsize", "height" => 2,
                     "child" => %[ "type" => "box", "color" => [70, 80, 100, 150] ] ],
@@ -449,6 +451,57 @@ class ControlPanel extends Dialog
         return catRows(parts);
     }
 
+    // シーケンス(時間軸)編集パネル: ポーズ列を手順として並べ、各手順に hold/trans を
+    // 指定してプレビュー / VRMA 書き出しする。
+    function seqEditRows()
+    {
+        var parts = [ workspaceRow(), secOneRow("対象", targetRadios()) ];
+        var seq = app.seq;
+        // 手順一覧(選択で強調。ラベルは「i:ポーズ名」)
+        if (seq !== void && seq.count > 0) {
+            var steps = [];
+            for (var i = 0; i < seq.count; i++) {
+                var lab = "" + (i + 1) + ":" + seq[i].pose;
+                if (i == app.seqSel) steps.add(radio("ss:" + i, lab, 1));
+                else                 steps.add(btn("ss:" + i, lab));
+            }
+            parts.add(sec("手順", steps, 2));
+        }
+        // 手順を追加(保存済みポーズを末尾へ)
+        var ids = app.poseIdList();
+        if (ids.count > 0) {
+            var addb = [];
+            for (var i = 0; i < ids.count; i++) addb.add(btn("sq:" + ids[i], ids[i]));
+            parts.add(sec("追加", addb, 3));
+        }
+        // 選択手順の hold/trans + 並べ替え/削除
+        if (seq !== void && app.seqSel >= 0 && app.seqSel < seq.count) {
+            var s = seq[app.seqSel];
+            parts.add(grpBox("手順 " + (app.seqSel + 1) + " [" + s.pose + "]", [
+                secTimeSlider("sh", "保持", s.hold), %[ "type" => "vspacer", "height" => 6 ],
+                secTimeSlider("st", "遷移", s.trans), %[ "type" => "vspacer", "height" => 8 ],
+                %[ "type" => "htile", "children" => [
+                    btn("seq_up", "▲"), %[ "type" => "hspacer", "width" => 8 ],
+                    btn("seq_down", "▼"), %[ "type" => "hspacer", "width" => 8 ],
+                    btn("seq_del", "削除") ] ] ]));
+        }
+        // 操作
+        parts.add(grpBox("操作", [ %[ "type" => "htile", "children" => [
+                    btn("seq_preview", "再生"), %[ "type" => "hspacer", "width" => 8 ],
+                    btn("seq_stop", "停止"), %[ "type" => "hspacer", "width" => 8 ],
+                    btn("seq_clear", "全消去") ] ],
+                 %[ "type" => "vspacer", "height" => 8 ],
+                 btn("seq_export", "VRMA 書出") ]));
+        return catRows(parts);
+    }
+    // 時間スライダ(0..3 秒 を 0..1 にマップ。id="sh"/"st")
+    function secTimeSlider(id, label, sec)
+    {
+        var pos = sec / 3.0; if (pos < 0.0) pos = 0.0; if (pos > 1.0) pos = 1.0;
+        return %[ "type" => "labeled_row", "label" => label, "label_width" => 52,
+                  "child" => %[ "type" => "slider", "id" => id, "initial" => pos ] ];
+    }
+
     // 左列にコマンドパネルを縦積み。top_left で左上に寄せる(fit-to-content)。
     // 作業モード(app.workMode)で中身をまるごと差し替える。
     function buildLayout()
@@ -456,6 +509,7 @@ class ControlPanel extends Dialog
         var rows;
         if (app.workMode == "face") rows = faceEditRows();
         else if (app.workMode == "pose") rows = poseEditRows();
+        else if (app.workMode == "seq")  rows = seqEditRows();
         else {
             var body = (app.mode == "space") ? spaceRows() : tachieRows();
             // 操作モードも先頭に作業モード切替を置く
@@ -464,7 +518,7 @@ class ControlPanel extends Dialog
             rows = parts;
         }
         // 編集モードはスライダ等が多く縦に伸びるので少し小さめのフォントで収める
-        var fs = (app.workMode == "face" || app.workMode == "pose") ? 1.15 : PANEL_FONT_SCALE;
+        var fs = (app.workMode == "op") ? PANEL_FONT_SCALE : 1.15;
         return %[
             "size"       => [PANEL_W, WIN_H],
             "align"      => "top_left",
@@ -1241,6 +1295,12 @@ class ADVSample extends Window
             applyFrame("knee");
             if (editPose === void) captureEditPose();   // 初回は現在姿勢を採取(リビルドは末尾で一度)
             else applyEditPoseLive();
+        } else if (m == "seq") {
+            if (poseLib === void) loadPoseLib();
+            // 全身が見えるよう + idle を止める(プレビュー再生が上書きされないよう)
+            var list = targetList();
+            for (var i = 0; i < list.count; i++) list[i].setIdleEnabled(false);
+            applyFrame("knee");
         }
         if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
@@ -1481,6 +1541,120 @@ class ADVSample extends Window
         return ok;
     }
 
+    // ==================================================================
+    //  シーケンス編集(時間軸: ポーズ列 + 各手順の hold/trans → プレビュー / VRMA)
+    // ==================================================================
+    // seq = [ %[pose=>id, hold=>保持秒, trans=>遷移秒] ]。seqSel = 選択中の手順 index。
+    var seq;
+    var seqSel = -1;
+    function seqEnsure() { if (seq === void) seq = []; }
+    // poseLib[id].bones(%[bone=>[qx,qy,qz,qw]])→ [name,qx,qy,qz,qw,…] フラット
+    function poseFlatFromLib(id)
+    {
+        if (poseLib === void) loadPoseLib();
+        var def = poseLib[id];
+        if (def === void || def.bones === void) return void;
+        var arr = []; var pr = dictPairs(def.bones);
+        for (var j = 0; j < pr.count; j += 2) {
+            var q = pr[j + 1];
+            arr.add(pr[j]); arr.add(q[0]); arr.add(q[1]); arr.add(q[2]); arr.add(q[3]);
+        }
+        return arr;
+    }
+    function seqRebuildPanel() { if (panel !== void && panelWanted) { panel.close(); panel.open(); } }
+    function seqAddPose(id)
+    {
+        seqEnsure();
+        seq.add(%[ "pose" => id, "hold" => 0.8, "trans" => 0.4 ]);
+        seqSel = seq.count - 1;
+        seqRebuildPanel();
+    }
+    function seqSelectStep(i) { seqSel = i; seqRebuildPanel(); }
+    function seqDelStep()
+    {
+        if (seq === void || seqSel < 0 || seqSel >= seq.count) return;
+        seq.erase(seqSel);
+        if (seqSel >= seq.count) seqSel = seq.count - 1;
+        seqRebuildPanel();
+    }
+    function seqMoveStep(dir)
+    {
+        if (seq === void || seqSel < 0) return;
+        var ni = seqSel + dir;
+        if (ni < 0 || ni >= seq.count) return;
+        var tmp = seq[seqSel]; seq[seqSel] = seq[ni]; seq[ni] = tmp;
+        seqSel = ni;
+        seqRebuildPanel();
+    }
+    function seqClear() { seq = []; seqSel = -1; seqStop(); seqRebuildPanel(); }
+    // 選択手順の hold/trans をスライダから更新(ライブ、リビルドしない)
+    function seqSetHold(sec)  { if (seq !== void && seqSel >= 0 && seqSel < seq.count) seq[seqSel].hold  = sec; }
+    function seqSetTrans(sec) { if (seq !== void && seqSel >= 0 && seqSel < seq.count) seq[seqSel].trans = sec; }
+    // プレビュー: playPoseSeq 用の keys に変換して対象で再生(ループ)
+    function seqPreview()
+    {
+        seqEnsure();
+        if (seq.count == 0) return;
+        var keys = [];
+        for (var i = 0; i < seq.count; i++) {
+            var s = seq[i];
+            var d = poseFlatFromLib(s.pose);
+            var k = %[ "in" => s.trans, "hold" => s.hold ];
+            if (d === void) k["isRest"] = 1; else k["data"] = d;
+            keys.add(k);
+        }
+        var list = targetList();
+        for (var i = 0; i < list.count; i++) list[i].playPoseSeq(keys, 1);
+    }
+    function seqStop() { var list = targetList(); for (var i = 0; i < list.count; i++) list[i].stopMotion(); }
+    // 1 キー分(時刻 t + boneOrder 順の quat)を times/quats へ追記
+    function seqAppendKey(times, quats, t, m, boneOrder)
+    {
+        times.add(t);
+        for (var b = 0; b < boneOrder.count; b++) {
+            var q = m[boneOrder[b]];
+            if (q === void) q = [ 0.0, 0.0, 0.0, 1.0 ];
+            quats.add(q[0]); quats.add(q[1]); quats.add(q[2]); quats.add(q[3]);
+        }
+    }
+    // シーケンスを hold/trans のタイミングで VRMA へ焼き込む。
+    // 各手順は「(前手順から trans 秒で遷移)→ そのポーズを hold 秒保持」= 2 キー(保持始/保持終)で表現。
+    function seqExportVRMA(outFile)
+    {
+        seqEnsure();
+        if (seq.count == 0) { Debug.message("シーケンスが空です"); return false; }
+        if (poseLib === void) loadPoseLib();
+        // ボーンの和集合 + 各手順の name->quat マップ
+        var boneOrder = []; var seen = %[]; var maps = [];
+        for (var i = 0; i < seq.count; i++) {
+            var def = poseLib[seq[i].pose];
+            var m = %[];
+            if (def !== void && def.bones !== void) {
+                var pr = dictPairs(def.bones);
+                for (var j = 0; j < pr.count; j += 2) {
+                    m[pr[j]] = pr[j + 1];
+                    if (seen[pr[j]] === void) { seen[pr[j]] = 1; boneOrder.add(pr[j]); }
+                }
+            }
+            maps.add(m);
+        }
+        if (boneOrder.count == 0) return false;
+        // キーフレーム(保持始/保持終の2枚ずつ。手順間の隙間=遷移として LINEAR 補間される)
+        var times = []; var quats = []; var cursor = 0.0;
+        for (var i = 0; i < seq.count; i++) {
+            if (i > 0) cursor += seq[i].trans;   // 先頭以外は前手順から遷移
+            seqAppendKey(times, quats, cursor, maps[i], boneOrder);
+            cursor += seq[i].hold;
+            seqAppendKey(times, quats, cursor, maps[i], boneOrder);
+        }
+        var ld = new Threepp.VRMAnimationLoader();
+        var ok = ld.exportPoseSeq(boneOrder, times, quats, outFile);
+        Debug.message("シーケンス書出 " + (ok ? "成功" : "失敗") + ": " + outFile
+                      + " (" + seq.count + "手順/" + times.count + "キー/" + boneOrder.count + "ボーン, "
+                      + cursor + "秒)");
+        return ok;
+    }
+
     // --- 表情名の列挙(モデル実装から) ---
     var emoNameSet;   // 表情ボタン id 判定用
     var exprLabels = %[ "happy"=>"喜", "angry"=>"怒", "sad"=>"哀", "relaxed"=>"楽",
@@ -1598,11 +1772,24 @@ class ADVSample extends Window
             editSetBoneRot((ax == "x") ? 0 : ((ax == "y") ? 1 : 2), deg);
             return;
         }
+        if (id == "sh") { seqSetHold((val + 0.0) * 3.0);  return; }   // シーケンス保持秒スライダ
+        if (id == "st") { seqSetTrans((val + 0.0) * 3.0); return; }   // シーケンス遷移秒スライダ
         logLine(id);   // 情報欄の操作ログへ
         // --- 作業モード切替(左パネルまるごと差し替え)---
         if (id == "work_op")   { setWorkMode("op");   return; }
         if (id == "work_face") { setWorkMode("face"); return; }
         if (id == "work_pose") { setWorkMode("pose"); return; }
+        if (id == "work_seq")  { setWorkMode("seq");  return; }
+        // --- シーケンス(時間軸)編集 ---
+        if (id == "seq_preview") { seqPreview();  return; }
+        if (id == "seq_stop")    { seqStop();     return; }
+        if (id == "seq_clear")   { seqClear();    return; }
+        if (id == "seq_del")     { seqDelStep();  return; }
+        if (id == "seq_up")      { seqMoveStep(-1); return; }
+        if (id == "seq_down")    { seqMoveStep(1);  return; }
+        if (id == "seq_export")  { seqExportVRMA("poseseq.vrma"); return; }
+        if (id.length >= 3 && id.substring(0, 3) == "ss:") { seqSelectStep((int)id.substring(3)); return; }
+        if (id.length >= 3 && id.substring(0, 3) == "sq:") { seqAddPose(id.substring(3)); return; }
         // --- 表情編集 ---
         if (id == "face_name")  { editName = (val === void) ? "" : "" + val; return; }
         if (id == "face_save")  { saveCurrentFace(); return; }
