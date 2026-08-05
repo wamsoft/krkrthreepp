@@ -1446,11 +1446,19 @@ class ADVSample extends Window
         captureEditPose();
         if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
-    // 素立ち(全ボーン回転なし=単位クオータニオン + hips オフセット 0)を基準にする
+    // 素立ち(モデルの自然な A-pose)を基準にする。
+    // identity 正規化は正準 T-pose なので、Tachie.restPose() で腕を下ろした A-pose を作って採取する。
     function poseBaseRest()
     {
+        var list = targetList();
+        if (list.count == 0) return;
+        var t = list[0];
+        t.vrm.resetNormalizedPose();   // 正規化を identity(T-pose)へ
+        t.restPose();                  // 腕を体側へ下ろして自然な A-pose に
         editPose = %[];
-        for (var i = 0; i < POSE_BONES.count; i++) editPose[POSE_BONES[i][0]] = [ 0.0, 0.0, 0.0, 1.0 ];
+        var flat = t.vrm.capturePose();
+        for (var j = 0; j < flat.count; j += 5)
+            editPose[flat[j]] = [ flat[j + 1], flat[j + 2], flat[j + 3], flat[j + 4] ];
         editHips = [ 0.0, 0.0, 0.0 ];
         applyEditPoseLive();
         if (panel !== void && panelWanted) { panel.close(); panel.open(); }
