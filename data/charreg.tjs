@@ -1,0 +1,160 @@
+/**
+ * charreg.tjs — キャラクターレジストリ
+ *
+ * 整備済みキャラを「キャラ毎フォルダ」(data/chars/<id>/)で管理する。
+ * Live2D の per-char zip 相当(将来 zip 化)。吉里吉里はフォルダ検索が弱いので
+ * リソースは明示相対パス "chars/<id>/…" で読む。
+ *
+ *   chars/registry.json         登録一覧 + スロット割当
+ *     %[ version, slots:[左id,右id], chars:[ %[id,name,dir], … ] ]
+ *   chars/<id>/char.json        キャラ定義(1体分)
+ *     %[ version, id, name, vrm(ストレージパス), frontZ,
+ *        defaultExpr, defaultFrame, voice(予約), tags(予約) ]
+ *   chars/<id>/faces.json 等    将来: キャラ専用の表情/ポーズ/モーション置き場
+ *
+ * Scripts.saveJSON は未存在サブフォルダを自動生成して書けるので、登録 UI から
+ * フォルダごと作れる(実機確認済)。json.dll 必須(advsample.tjs が link)。
+ */
+class CharRegistry
+{
+    var REG_FILE = "chars/registry.json";
+
+    var chars;   // 登録一覧 [%[id,name,dir], …]
+    var slots;   // 画面スロット割当 [左のid, 右のid]
+
+    function CharRegistry()
+    {
+        chars = [];
+        slots = ["", ""];
+    }
+
+    // --- JSON I/O 小物 -------------------------------------------------
+    // 相対パス(chars/…)の JSON を読む。無ければ void。
+    function readJSON(name)
+    {
+        if (!Storages.isExistentStorage(name)) return void;
+        var p = Storages.getPlacedPath(name);
+        if (p == "") p = name;   // サブパスが autopath 解決されない場合はそのまま
+        return Scripts.evalJSONStorage(p, 1);
+    }
+    // 書込は相対 bare パスで(getPlacedPath は未存在ファイルに空を返すため使えない)。
+    function writeJSON(name, val)
+    {
+        Scripts.saveJSON(name, val, 1, 1);   // utf8 / indent
+    }
+
+    // --- レジストリ ----------------------------------------------------
+    // 読込。無ければ seedChars(stage.tjs characters 形式の配列)から生成して保存する。
+    // 戻り値: true=読込 / false=seed から新規作成
+    function load(seedChars)
+    {
+        var root = void;
+        try { root = readJSON(REG_FILE); } catch (e) {
+            Debug.message("registry.json 読込失敗: " + e.message);
+        }
+        if (root !== void && root.chars !== void) {
+            chars = root.chars;
+            if (root.slots !== void && root.slots.count >= 2) slots = root.slots;
+            // スロットが空/不明 id なら先頭から埋める
+            for (var i = 0; i < 2; i++)
+                if (slots[i] == "" || find(slots[i]) === void)
+                    slots[i] = (chars.count > i) ? chars[i].id : (chars.count > 0 ? chars[0].id : "");
+            return true;
+        }
+        seed(seedChars);
+        return false;
+    }
+    function save()
+    {
+        try {
+            writeJSON(REG_FILE, %[ "version" => 1, "slots" => slots, "chars" => chars ]);
+        } catch (e) { Debug.message("registry.json 保存失敗: " + e.message); }
+    }
+    // stage.tjs の characters(id/name/vrm/frontZ)を初期登録に変換する。
+    // 既存の vrm ファイルはコピーせず、ストレージパス参照のまま char.json に記録する。
+    function seed(seedChars)
+    {
+        chars = [];
+        slots = ["", ""];
+        if (seedChars === void) { save(); return; }
+        for (var i = 0; i < seedChars.count; i++) {
+            var c = seedChars[i];
+            var def = makeDef(c.id, c.name, c.vrm + ".vrm", c.frontZ);
+            addEntry(def);
+            saveCharDef(def);
+            if (i < 2) slots[i] = c.id;
+        }
+        save();
+        Debug.message("CharRegistry: seed " + chars.count + " 体で新規作成");
+    }
+
+    function find(id)
+    {
+        for (var i = 0; i < chars.count; i++) if (chars[i].id == id) return chars[i];
+        return void;
+    }
+    function idList()
+    {
+        var ids = [];
+        for (var i = 0; i < chars.count; i++) ids.add(chars[i].id);
+        return ids;
+    }
+    function dirFor(id) { return "chars/" + id; }
+
+    // --- キャラ定義(char.json) ----------------------------------------
+    function makeDef(id, name, vrmPath, frontZ)
+    {
+        return %[
+            "version"      => 1,
+            "id"           => id,
+            "name"         => name,
+            "vrm"          => vrmPath,      // ストレージパス("model.vrm" / "chars/<id>/x.vrm")
+            "frontZ"       => (frontZ === void) ? 1 : frontZ,
+            "defaultExpr"  => "neutral",    // 登場時の既定表情
+            "defaultFrame" => "waist",      // 登場時の既定フレーミング
+            "voice"        => %[],          // 予約: 声・リップ設定(lipGain 等)
+            "tags"         => []            // 予約: 分類タグ
+        ];
+    }
+    function loadCharDef(id)
+    {
+        try { return readJSON(dirFor(id) + "/char.json"); } catch (e) {
+            Debug.message("char.json 読込失敗(" + id + "): " + e.message);
+            return void;
+        }
+    }
+    function saveCharDef(def)
+    {
+        try { writeJSON(dirFor(def.id) + "/char.json", def); } catch (e) {
+            Debug.message("char.json 保存失敗(" + def.id + "): " + e.message);
+        }
+    }
+    function addEntry(def)
+    {
+        var e = find(def.id);
+        if (e === void) chars.add(%[ "id" => def.id, "name" => def.name, "dir" => dirFor(def.id) ]);
+        else e.name = def.name;
+    }
+
+    // --- 新規登録(登録 UI から) ---------------------------------------
+    // vrmPath はストレージパス(".vrm" 無しなら補う)。存在しなければ "" を返す。
+    // 成功でフォルダ+char.json を作りレジストリへ追加、id を返す。
+    function register(id, name, vrmPath, frontZ)
+    {
+        if (id == "" || id === void) return "";
+        if (vrmPath == "" || vrmPath === void) return "";
+        if (vrmPath.length < 4 || vrmPath.substring(vrmPath.length - 4) != ".vrm")
+            vrmPath += ".vrm";
+        if (!Storages.isExistentStorage(vrmPath)) {
+            Debug.message("CharRegistry: VRM が見つかりません: " + vrmPath);
+            return "";
+        }
+        if (name == "" || name === void) name = id;
+        var def = makeDef(id, name, vrmPath, frontZ);
+        saveCharDef(def);
+        addEntry(def);
+        save();
+        Debug.message("CharRegistry: 登録 " + id + " (" + name + ") vrm=" + vrmPath);
+        return id;
+    }
+}

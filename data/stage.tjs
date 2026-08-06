@@ -4,15 +4,17 @@
  * advsample.tjs が execStorage して global.stageDef を読む。JSON プラグインに
  * 依存しない TJS 辞書。将来の複数キャラ定義・宣言的 ADV 連携もこの器を拡張する。
  *
- * characters: 左右に並べるキャラ (今は2体固定)。
+ * characters: キャラレジストリ(chars/registry.json)が無いときの seed 元。
+ *   初回起動時に charreg.tjs がこの定義から chars/<id>/char.json を生成する。
+ *   以降のキャラ読込・スロット割当はレジストリ起点(作業モード「キャラ」で管理)。
  *   id/name/vrm(ファイル名)/frontZ(+1=VRM1.0 正面 / -1=VRM0.x)
  * motions: 配置した VRMA。パネルから再生する。
  *   id/name/file(vrmaファイル名)/loop(1=ループ / 0=一度再生して保持=ポーズ)
  */
 global.stageDef = %[
     "characters" => [
-        %[ "id" => "left",  "name" => "モデル",   "vrm" => "model",                "frontZ" => 1 ],
-        %[ "id" => "right", "name" => "アバター", "vrm" => "AvatarSample_A_VRM1_0", "frontZ" => 1 ]
+        %[ "id" => "model",  "name" => "モデル",   "vrm" => "model",                "frontZ" => 1 ],
+        %[ "id" => "avatar", "name" => "アバター", "vrm" => "AvatarSample_A_VRM1_0", "frontZ" => 1 ]
     ],
     // 合成表情: 複数の VRM 表情を weight つきで束ね、1つの名前で一括指定する。
     // set は [表情名, weight, 表情名, weight, …] のフラット配列。
@@ -49,20 +51,20 @@ global.stageDef = %[
     "scenes" => [
         %[ "id" => "reset", "name" => "標準",
            "camera" => %[ "mode"=>"tachie", "frame"=>"waist", "reset"=>1 ],
-           "chars" => %[ "left"  => %[ "expr"=>"neutral", "motion"=>"none", "gaze"=>"off" ],
-                         "right" => %[ "expr"=>"neutral", "motion"=>"none", "gaze"=>"off" ] ] ],
+           "chars" => %[ "model"  => %[ "expr"=>"neutral", "motion"=>"none", "gaze"=>"off" ],
+                         "avatar" => %[ "expr"=>"neutral", "motion"=>"none", "gaze"=>"off" ] ] ],
         %[ "id" => "talk", "name" => "会話",
            "camera" => %[ "frame"=>"bust" ],   // 会話は寄る(胸上)
-           "chars" => %[ "left"  => %[ "expr"=>"happy",   "motion"=>"idle", "gaze"=>"camera" ],
-                         "right" => %[ "expr"=>"relaxed", "motion"=>"left" ] ] ],
+           "chars" => %[ "model"  => %[ "expr"=>"happy",   "motion"=>"idle", "gaze"=>"camera" ],
+                         "avatar" => %[ "expr"=>"relaxed", "motion"=>"left" ] ] ],
         %[ "id" => "surprise", "name" => "驚き",
            "camera" => %[ "frame"=>"face" ],   // 驚きは顔アップ
-           "chars" => %[ "left"  => %[ "expr"=>"surprised", "motion"=>"behind", "fx"=>"fadein" ],
-                         "right" => %[ "expr"=>"surprised", "motion"=>"none",   "fx"=>"fadein" ] ] ],
+           "chars" => %[ "model"  => %[ "expr"=>"surprised", "motion"=>"behind", "fx"=>"fadein" ],
+                         "avatar" => %[ "expr"=>"surprised", "motion"=>"none",   "fx"=>"fadein" ] ] ],
         // イベント例: 空間モードへ切替え、望遠で寄り、左右からスライド登場。
         %[ "id" => "event", "name" => "イベント",
            "camera" => %[ "mode"=>"space", "reset"=>1, "fov"=>26 ],
-           "chars" => %[ "left"  => %[ "expr"=>"grin",  "gaze"=>"camera", "fx"=>"slidein" ],
-                         "right" => %[ "expr"=>"shock", "fx"=>"slidein" ] ] ]
+           "chars" => %[ "model"  => %[ "expr"=>"grin",  "gaze"=>"camera", "fx"=>"slidein" ],
+                         "avatar" => %[ "expr"=>"shock", "fx"=>"slidein" ] ] ]
     ]
 ];

@@ -132,12 +132,17 @@ class Tachie
         owner.add(dest);
     }
 
-    // VRM を読み込み、指定位置へ配置してフレーミングする
+    // VRM を読み込み、指定位置へ配置してフレーミングする。
+    // vrmName は bare 名("model")でもストレージパス("model.vrm"/"chars/x/y.vrm")でもよい。
     function load(vrmName, frontZ, x, y)
     {
         this.frontZ = frontZ;
+        var path = vrmName;
+        if (path.length < 4 || path.substring(path.length - 4) != ".vrm") path += ".vrm";
+        var placed = Storages.getPlacedPath(path);
+        if (placed == "") placed = path;   // サブパスが autopath 解決されない場合はそのまま
         var loader = new Threepp.VRMLoader();
-        vrm = loader.loadStorage(Storages.getPlacedPath(vrmName + ".vrm"));
+        vrm = loader.loadStorage(placed);
         if (vrm === void) {
             Debug.message("Tachie: VRM load failed: " + vrmName);
             return false;
@@ -152,6 +157,26 @@ class Tachie
         blinkInterval = 2.4 + (blinkSeed % 20) / 10.0;
         frame(preset);
         return true;
+    }
+
+    // 現在の VRM を破棄して差し替えに備える(キャラ管理のスロット割当用)。
+    // モーション/ポーズ/表情/リップの状態も素へ戻す。
+    function unload()
+    {
+        stopLipSync();
+        lipW = [0.0, 0.0, 0.0, 0.0, 0.0];
+        motionAnim = void; motionPlaying = false; motionId = "";
+        poseData = void; poseHips = void;
+        seqActive = false; restReturning = false; xfading = false;
+        emotion = ""; emoSet = []; emoW = 0.0; prevSet = []; prevW = 0.0;
+        seqCurExpr = "";
+        blinkPhase = -1; blinkClock = 0.0;
+        if (vrm !== void) {
+            var s = vrm.getScene();
+            if (s !== void) s.removeFromParent();   // 立ち絵/空間どちらの親からも外れる
+            invalidate vrm;
+            vrm = void;
+        }
     }
 
     // 素立ちポーズ: T字ポーズの腕を体側へ下ろす。

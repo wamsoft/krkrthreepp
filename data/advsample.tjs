@@ -18,6 +18,7 @@
 
 Scripts.execStorage("vrmframing.tjs");
 Scripts.execStorage("tachie.tjs");
+Scripts.execStorage("charreg.tjs");
 
 // 状態のファイル保存用(Dictionary.saveStruct)。無くても動く(メモリ保存にフォールバック)。
 try { Plugins.link("saveStruct.dll"); } catch (e) { }
@@ -347,7 +348,8 @@ class ControlPanel extends Dialog
     }
 
     // 作業モード切替(パネル最上部に常設。選択で左パネルをまるごと差し替え)。
-    // 縦を節約するためタイトルバー無しの 1 行(操作/表情編集の排他ラジオ)+ 区切り。
+    // 5 モードは 1 行に収まらない(見切れたラジオは反応しない)ので 2 行に分ける。
+    // 排他表示は毎回 app.workMode から選択状態を組み直すので行を跨いでも問題ない。
     function workspaceRow()
     {
         return [ %[ "type" => "htile", "children" => [
@@ -355,9 +357,12 @@ class ControlPanel extends Dialog
                     %[ "type" => "hspacer", "width" => 8 ],
                     radio("work_face", "表情",   app.workMode == "face"),
                     %[ "type" => "hspacer", "width" => 8 ],
-                    radio("work_pose", "ポーズ", app.workMode == "pose"),
+                    radio("work_pose", "ポーズ", app.workMode == "pose") ] ],
+                 %[ "type" => "vspacer", "height" => 4 ],
+                 %[ "type" => "htile", "children" => [
+                    radio("work_seq",  "連番",   app.workMode == "seq"),
                     %[ "type" => "hspacer", "width" => 8 ],
-                    radio("work_seq",  "連番",   app.workMode == "seq") ] ],
+                    radio("work_char", "キャラ", app.workMode == "char") ] ],
                  %[ "type" => "vspacer", "height" => 6 ],
                  %[ "type" => "vsize", "height" => 2,
                     "child" => %[ "type" => "box", "color" => [70, 80, 100, 150] ] ],
@@ -523,6 +528,51 @@ class ControlPanel extends Dialog
                  btn("seq_export", "VRMA 書出") ]));
         return catRows(parts);
     }
+    // キャラ管理パネル: レジストリ一覧(選択)→スロット割当 / 新規登録フォーム。
+    function charEditRows()
+    {
+        var parts = [ workspaceRow() ];
+        // 登録済み一覧(選択で強調)。表示は「名前(id)」。
+        var ids = app.charReg.idList();
+        if (ids.count > 0) {
+            var kids = [];
+            for (var i = 0; i < ids.count; i++) {
+                var e = app.charReg.find(ids[i]);
+                var lab = e.name + "(" + ids[i] + ")";
+                if (ids[i] == app.charSel) kids.add(radio("cs:" + ids[i], lab, 1));
+                else                       kids.add(btn("cs:" + ids[i], lab));
+            }
+            parts.add(sec("登録キャラ", kids, 2));
+        }
+        // 現在の割当を見出しに出しつつ、選択キャラをスロットへ割当
+        var sl = app.charReg.slots;
+        parts.add(grpBox("割当 [左:" + sl[0] + " 右:" + sl[1] + "]", [
+            %[ "type" => "htile", "children" => [
+                btn("char_asn_l", "左へ"), %[ "type" => "hspacer", "width" => 10 ],
+                btn("char_asn_r", "右へ") ] ] ]));
+        // 新規登録フォーム(id / 表示名 / VRM ファイル / 正面)
+        parts.add(grpBox("新規登録", [
+            %[ "type" => "labeled_row", "label" => "id", "label_width" => 66,
+               "child" => %[ "type" => "input_box", "id" => "reg_id",
+                             "placeholder" => "例: mychar" ] ],
+            %[ "type" => "vspacer", "height" => 6 ],
+            %[ "type" => "labeled_row", "label" => "名前", "label_width" => 66,
+               "child" => %[ "type" => "input_box", "id" => "reg_name",
+                             "placeholder" => "表示名(省略=id)" ] ],
+            %[ "type" => "vspacer", "height" => 6 ],
+            %[ "type" => "labeled_row", "label" => "VRM", "label_width" => 66,
+               "child" => %[ "type" => "input_box", "id" => "reg_vrm",
+                             "placeholder" => "例: seed(.vrm省略可)" ] ],
+            %[ "type" => "vspacer", "height" => 8 ],
+            %[ "type" => "htile", "children" => [
+                radio("reg_fz_p", "正面+Z(1.0系)", app.regFrontZ > 0),
+                %[ "type" => "hspacer", "width" => 10 ],
+                radio("reg_fz_n", "-Z", app.regFrontZ < 0) ] ],
+            %[ "type" => "vspacer", "height" => 8 ],
+            btn("char_reg", "登録") ]));
+        return catRows(parts);
+    }
+
     // 時間スライダ(0..3 秒 を 0..1 にマップ。id="sh"/"st")
     function secTimeSlider(id, label, sec)
     {
@@ -539,6 +589,7 @@ class ControlPanel extends Dialog
         if (app.workMode == "face") rows = faceEditRows();
         else if (app.workMode == "pose") rows = poseEditRows();
         else if (app.workMode == "seq")  rows = seqEditRows();
+        else if (app.workMode == "char") rows = charEditRows();
         else {
             var body = (app.mode == "space") ? spaceRows() : tachieRows();
             // 操作モードも先頭に作業モード切替を置く
@@ -629,6 +680,12 @@ class ADVSample extends Window
     var editBone = "head"; // 回転スライダの対象ボーン
     var poseName = "";     // 編集中のポーズ名(キーワード)
     var poseLib;           // ポーズライブラリ %[id => %[label, bones:%[…], hips:[dx,dy,dz]]]
+    // キャラ管理(レジストリ)
+    var charReg;           // CharRegistry(chars/registry.json)
+    var slotDefs;          // 各スロットに割当中の char.json 定義 [左, 右]
+    var charSel = "";      // キャラ管理パネルで選択中の id
+    var regId = "", regName = "", regVrm = "";   // 新規登録フォームの入力値
+    var regFrontZ = 1;                            // 新規登録の正面(+1/-1)
 
     // --- モード ---
     // "tachie": 現行(1キャラ=1レイヤ・各自カメラ) / "space": 単一カメラで空間に並べて
@@ -706,19 +763,28 @@ class ADVSample extends Window
         framer = new VRMFraming();
 
         // 立ち絵2体を左右に。1キャラ=1レイヤで setPos 配置。
-        // 舞台メタ定義(キャラ/モーション)を読む
+        // 舞台メタ定義(モーション/表情/シーン)を読む
         Scripts.execStorage("stage.tjs");
         stageDef = global.stageDef;
         motionCache = %[];
         buildMotionMap();
 
-        // メタ定義のキャラを左右に生成
+        // キャラクターレジストリ(chars/registry.json)。無ければ stage.tjs の
+        // characters を seed に新規作成する。以降キャラの読込はレジストリ起点。
+        charReg = new CharRegistry();
+        charReg.load(stageDef.characters);
+        slotDefs = [void, void];
+
+        // スロット割当(registry.slots)のキャラを左右に生成
         tachies = [];
         var xs = [LEFT_X, RIGHT_X];
-        var chars = stageDef.characters;
-        for (var i = 0; i < chars.count && i < 2; i++) {
+        for (var i = 0; i < 2; i++) {
             var t = new Tachie(this, adaptor, renderer, framer, back, TACHIE_W, TACHIE_H);
-            t.load(chars[i].vrm, chars[i].frontZ, xs[i], 0);
+            var def = charReg.loadCharDef(charReg.slots[i]);
+            if (def !== void) {
+                t.load(def.vrm, def.frontZ, xs[i], 0);
+                slotDefs[i] = def;
+            }
             tachies.add(t);
         }
 
@@ -1331,6 +1397,9 @@ class ADVSample extends Window
             var list = targetList();
             for (var i = 0; i < list.count; i++) list[i].setIdleEnabled(false);
             applyFrame("knee");
+        } else if (m == "char") {
+            // キャラ管理: 未選択なら左スロットのキャラを選択状態に
+            if (charSel == "" && charReg !== void) charSel = charReg.slots[0];
         }
         if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
@@ -1852,6 +1921,58 @@ class ADVSample extends Window
         for (var i = 0; i < list.count; i++) list[i].resetCamera();
     }
 
+    // ==================================================================
+    //  キャラ管理(レジストリ: chars/registry.json + chars/<id>/char.json)
+    // ==================================================================
+    function selectChar(id)
+    {
+        charSel = id;
+        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
+    }
+    // レジストリのキャラをスロット(0=左, 1=右)へ割り当てる(VRM を差し替える)。
+    function assignSlot(slot, id)
+    {
+        if (id == "" || id === void) { Debug.message("キャラを選択してください"); return; }
+        if (charReg.slots[slot] == id) return;   // 変更なし
+        var def = charReg.loadCharDef(id);
+        if (def === void) { Debug.message("char.json が読めません: " + id); return; }
+        var t = tachies[slot];
+        var ox = t.offX, oz = t.offZ;
+        t.unload();
+        if (!t.load(def.vrm, def.frontZ, (slot == 0) ? LEFT_X : RIGHT_X, 0)) {
+            slotDefs[slot] = void;
+            return;
+        }
+        if (mode == "space") {
+            // 空間モード中: 新しい VRM シーンを空間へ移設し、配置を引き継ぐ
+            spaceScene.add(t.vrm.getScene());
+            t.spaceSet(ox, oz);
+            t.dest.visible = false;
+        } else if (def.defaultFrame !== void) {
+            t.frame(def.defaultFrame);   // 既定フレーミング(char.json)
+        }
+        if (def.defaultExpr !== void && def.defaultExpr != "neutral" && def.defaultExpr != "")
+            setCharExpr(t, def.defaultExpr);   // 既定表情(char.json)
+        slotDefs[slot] = def;
+        charReg.slots[slot] = id;
+        charReg.save();
+        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
+    }
+    // 新規登録フォームの内容でフォルダ+char.json を作りレジストリへ追加する。
+    function registerCharAction()
+    {
+        var id = charReg.register(regId, regName, regVrm, regFrontZ);
+        if (id == "") { Debug.message("登録失敗: id と VRM ファイル名を確認してください"); return; }
+        charSel = id;
+        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
+    }
+    // スロットに割当中のキャラ表示名(インスペクタ用)
+    function slotName(i)
+    {
+        if (slotDefs !== void && slotDefs[i] !== void) return slotDefs[i].name;
+        return (i == 0) ? "左" : "右";
+    }
+
     // Elements パネルからの操作。val は toggle_button の bool 値 / slider の 0..1 /
     // input_box の文字列(それ以外は void)。
     function onPanel(id, val)
@@ -1878,6 +1999,17 @@ class ADVSample extends Window
         if (id == "work_face") { setWorkMode("face"); return; }
         if (id == "work_pose") { setWorkMode("pose"); return; }
         if (id == "work_seq")  { setWorkMode("seq");  return; }
+        if (id == "work_char") { setWorkMode("char"); return; }
+        // --- キャラ管理(レジストリ) ---
+        if (id.length >= 3 && id.substring(0, 3) == "cs:") { selectChar(id.substring(3)); return; }
+        if (id == "char_asn_l") { assignSlot(0, charSel); return; }
+        if (id == "char_asn_r") { assignSlot(1, charSel); return; }
+        if (id == "reg_id")   { regId   = (val === void) ? "" : "" + val; return; }
+        if (id == "reg_name") { regName = (val === void) ? "" : "" + val; return; }
+        if (id == "reg_vrm")  { regVrm  = (val === void) ? "" : "" + val; return; }
+        if (id == "reg_fz_p") { regFrontZ =  1; return; }
+        if (id == "reg_fz_n") { regFrontZ = -1; return; }
+        if (id == "char_reg") { registerCharAction(); return; }
         // --- シーケンス(時間軸)編集 ---
         if (id == "seq_preview") { seqPreview();  return; }
         if (id == "seq_stop")    { seqStop();     return; }
@@ -2026,7 +2158,7 @@ class ADVSample extends Window
             // 見出し(選択キャラは緑丸+明色、非選択は暗色)
             L.fillRect(0, y - 4, INSP_W, 30, on ? 0xFF1E2A24 : 0xFF191c24);
             L.font.height = 17;
-            L.drawText(x, y, (on ? "● " : "○ ") + stageDef.characters[i].name,
+            L.drawText(x, y, (on ? "● " : "○ ") + slotName(i),
                        on ? sel : off, 255, true);
             y += 34;
             L.font.height = 14;

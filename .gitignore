@@ -16,6 +16,9 @@ data/*.vrma
 data/out.png
 data/shot.png
 
+# キャラクターレジストリ(実行時生成。作業モード「キャラ」が管理する)
+data/chars/
+
 # 32bit 実行時ランタイム (テスト起動用にコピーして置くだけ。追跡しない)
 krkrZ.exe
 libEGL.dll
