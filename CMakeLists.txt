@@ -40,6 +40,7 @@ krkrz_plugin(krkr_threepp
         ${CMAKE_CURRENT_SOURCE_DIR}/vrm
         ${CMAKE_CURRENT_SOURCE_DIR}/external/VRM/include
         ${CMAKE_CURRENT_SOURCE_DIR}/threepp/src/external/nlohmann
+        ${CMAKE_CURRENT_SOURCE_DIR}/threepp/src/external/glad
     DEFINITIONS
         USE_VRMC_VRM_1_0
     LIBRARIES

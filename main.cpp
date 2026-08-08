@@ -6,6 +6,7 @@
 #include "ncbind.hpp"
 #include "LayerExBase.hpp"
 #include "vrm/VRM.hpp"
+#include <glad/glad.h>   // onEndScene のホスト向け GL ステート復帰で使用
 #include <vector>
 #include <memory>
 #include <cstdint>
@@ -2606,6 +2607,19 @@ static void GLRendererOnEndScene(ThreeWrapper<GLRenderer> *self)
 	// MSAA 有効時: 内部マルチサンプル FBO をホストの捕捉先 FBO へ resolve(blit)する。
 	// 無効時は no-op。
 	if (self && self->getObject()) self->getObject()->endFrame();
+
+	// ホスト (吉里吉里 Canvas / OGLDrawDevice / GLESAdaptor) が期待する GL ステートへ戻す。
+	// threepp は描画中に depth/cull/scissor 等を有効化し VAO を bind したままにするため、
+	// このまま返すと後続の Canvas.drawTexture (レイヤ合成) が depth 棄却や VAO 汚染で
+	// 壊れる。Canvas::BeginDrawing 相当の状態 (test 類 off / VAO 0) に復帰させる。
+	glDisable(GL_DEPTH_TEST);
+	glDepthMask(GL_TRUE);
+	glDisable(GL_STENCIL_TEST);
+	glDisable(GL_SCISSOR_TEST);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_BLEND);
+	glBindVertexArray(0);
+	glActiveTexture(GL_TEXTURE0);
 }
 
 NCB_REGISTER_THREE_SUBCLASS(GLRenderer)
