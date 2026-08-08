@@ -170,12 +170,17 @@ class WebUIBridge
 
 (function() {
     if (typeof global.WebServer == "undefined") return;
+    // ブラウザ UI 本体 (data/ui/ 以下) を /ui/ で配信 (json.dll 非依存)
+    WebServer.serveStatic("/ui/", "ui/");
+    // /app/ ブリッジは JSON I/O が要る。未リンクなら自力でリンクを試みる
+    // (advsample 以外のビューアモード起動では advsample.tjs のリンクを通らないため)。
     if (typeof Scripts.toJSONString == "undefined") {
-        Debug.message("webui: json.dll がありません (Scripts.toJSONString 不在)");
+        try { Plugins.link("json.dll"); } catch (e) { }
+    }
+    if (typeof Scripts.toJSONString == "undefined") {
+        Debug.message("webui: json.dll がリンクできません → /ui/ のみ登録 (/app/ 無効)");
         return;
     }
-    // ブラウザ UI 本体 (data/ui/ 以下) を /ui/ で配信
-    WebServer.serveStatic("/ui/", "ui/");
     // ハンドラ登録 (webui インスタンスの handle 閉包。objthis=webui でメンバ解決)
     global.webui = new WebUIBridge();
     WebServer.register("/app/", webui.handler);

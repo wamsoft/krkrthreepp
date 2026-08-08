@@ -2255,5 +2255,4 @@ global.app = new ADVSample();
 global.win = app;
 app.visible = true;
 
-// ブラウザ編集 UI (-replweb 付き engine のみ)。/ui/ と /app/ を WebServer へ公開。
-if (typeof global.WebServer != "undefined") Scripts.execStorage("webui.tjs");
+// ブラウザ編集 UI (webui.tjs) の登録は startup.tjs 側で行う (ビューアモード共通)。

@@ -338,3 +338,8 @@ if (System.getArgument("-sample") !== void) {
     var win = new VRMViewer();
     win.visible = true;
 }
+
+// ブラウザ編集 UI (-replweb 付き engine のみ)。/ui/ と /app/ を WebServer へ公開。
+// advsample 以外 (ビューアモード) でも /ui/ は配信される (app 未起動時は
+// ブラウザ側に「アプリ未起動」と表示され、/app/ 操作系は 503 を返す)。
+if (typeof global.WebServer != "undefined") Scripts.execStorage("webui.tjs");
