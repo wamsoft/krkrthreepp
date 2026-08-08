@@ -1269,6 +1269,19 @@ template <class T> static void ThreeObjRotateZ(ThreeWrapper<T> *self, float a) {
 template <class T> static void ThreeObjTranslateX(ThreeWrapper<T> *self, float d) { if (self && self->getObject()) self->getObject()->translateX(d); }
 template <class T> static void ThreeObjTranslateY(ThreeWrapper<T> *self, float d) { if (self && self->getObject()) self->getObject()->translateY(d); }
 template <class T> static void ThreeObjTranslateZ(ThreeWrapper<T> *self, float d) { if (self && self->getObject()) self->getObject()->translateZ(d); }
+// 自身と全子孫の castShadow/receiveShadow を一括設定する。
+// GLTFLoader で読んだモデル (Group ツリー) は配下メッシュに個別設定する手段が
+// TJS 側に無いため、影の受け渡しにはこれを使う (例: 地面タイル (false,true)、
+// 配置プロップ (true,true))。
+template <class T> static void ThreeObjSetShadowRecursive(ThreeWrapper<T> *self, bool cast, bool receive)
+{
+	if (self && self->getObject()) {
+		self->getObject()->traverse([&](Object3D &o) {
+			o.castShadow = cast;
+			o.receiveShadow = receive;
+		});
+	}
+}
 // position/rotation/scale の getter は値コピー(RO)なので .set() では実体に反映されない。
 // 実体を変更するには下の setter メソッドを使う (setPosition/setScale/setRotation)。
 template <class T> static void ThreeObjSetPosition(ThreeWrapper<T> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->position.set(x, y, z); }
@@ -1370,6 +1383,7 @@ template <class T> static void ThreeLightSetShadowOrthoBounds(ThreeWrapper<T> *s
 	NCB_METHOD_PROXY(translateX, ThreeObjTranslateX<ThreeClass>); \
 	NCB_METHOD_PROXY(translateY, ThreeObjTranslateY<ThreeClass>); \
 	NCB_METHOD_PROXY(translateZ, ThreeObjTranslateZ<ThreeClass>); \
+	NCB_METHOD_PROXY(setShadowRecursive, ThreeObjSetShadowRecursive<ThreeClass>); \
 	NCB_METHOD_PROXY(setPosition, ThreeObjSetPosition<ThreeClass>); \
 	NCB_METHOD_PROXY(setScale, ThreeObjSetScale<ThreeClass>); \
 	NCB_METHOD_PROXY(setRotation, ThreeObjSetRotation<ThreeClass>); \
