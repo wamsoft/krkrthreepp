@@ -18,17 +18,18 @@ class WebUIBridge
 {
     function WebUIBridge() {}
 
-    // ---- 状態 JSON (表情編集タブに必要な一式) ----
+    // ---- 状態 JSON (各編集タブに必要な一式) ----
     function buildState()
     {
         var st = %[];
         if (typeof global.app == "undefined") { st.ready = false; return st; }
         st.ready = true;
         st.workMode = app.workMode;
+
+        // --- 表情編集 ---
         st.editName = (app.editName === void) ? "" : app.editName;
         st.morphs = (app.editMorphs === void) ? %[] : app.editMorphs;
         st.faces = app.faceIdList();
-        // curated モーフグループ (advsample.tjs のグローバル定義)
         var groups = [];
         for (var g = 0; g < FACE_MORPH_GROUPS.count; g++) {
             var src = FACE_MORPH_GROUPS[g];
@@ -38,6 +39,33 @@ class WebUIBridge
             groups.add(%[ "title" => src.title, "items" => items ]);
         }
         st.groups = groups;
+
+        // --- ポーズ編集 ---
+        var pb = [];
+        for (var i = 0; i < POSE_BONES.count; i++)
+            pb.add(%[ "name" => POSE_BONES[i][0], "label" => POSE_BONES[i][1] ]);
+        st.pose = %[
+            "bones" => pb,
+            "editBone" => app.editBone,
+            "euler" => app.editBoneEuler(),   // 選択ボーンの [rx,ry,rz] (度)
+            "hips" => [ app.editHips[0], app.editHips[1], app.editHips[2] ],
+            "poses" => app.poseIdList(),
+            "poseName" => (app.poseName === void) ? "" : app.poseName
+        ];
+
+        // --- キャラ管理 ---
+        if (app.charReg !== void) {
+            var ids = app.charReg.idList();
+            var list = [];
+            for (var i = 0; i < ids.count; i++) {
+                var e = app.charReg.find(ids[i]);
+                list.add(%[ "id" => ids[i],
+                            "name" => (e !== void && e.name !== void) ? e.name : ids[i] ]);
+            }
+            st.chars = %[ "list" => list, "slots" => app.charReg.slots,
+                          "sel" => app.charSel,
+                          "slotNames" => [ app.slotName(0), app.slotName(1) ] ];
+        }
         return st;
     }
     function stateJson() { return Scripts.toJSONString(buildState()); }
@@ -59,6 +87,8 @@ class WebUIBridge
             push();
             return "{\"ok\":true}";
         }
+
+        // --- 表情編集 ---
         if (path == "/app/face/morph") {        // {name:"Fcl_…", w:0..1} スライダライブ反映
             app.editSetMorph(arg.name, +arg.w);
             return "{\"ok\":true}";             // 連打されるので push しない (操作元が真実)
@@ -79,6 +109,61 @@ class WebUIBridge
             push();
             return "{\"ok\":true}";
         }
+
+        // --- ポーズ編集 ---
+        if (path == "/app/pose/base") {         // {kind:"capture"|"rest"} 基準姿勢を採取
+            if (arg.kind == "rest") app.poseBaseRest();
+            else app.poseBaseCapture();
+            push();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/pose/bone") {         // {name:"head"…} 編集対象ボーン切替
+            app.editSelectBone(arg.name);
+            push();                             // euler が変わるので配信
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/pose/rot") {          // {axis:0-2, deg:-180..180} 回転ライブ反映
+            app.editSetBoneRot(+arg.axis, +arg.deg);
+            return "{\"ok\":true}";             // スライダ連打のため push しない
+        }
+        if (path == "/app/pose/hips") {         // {axis:0-2, m:-0.5..0.5} hips 移動
+            app.editSetHips(+arg.axis, +arg.m);
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/pose/save") {         // {id:"ポーズ名"}
+            app.poseName = arg.id;
+            app.saveCurrentPose();
+            push();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/pose/load") {         // {id:"ポーズ名"}
+            app.loadPoseIntoEdit(arg.id);
+            push();
+            return "{\"ok\":true}";
+        }
+
+        // --- キャラ管理 ---
+        if (path == "/app/char/select") {       // {id}
+            app.selectChar(arg.id);
+            push();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/char/assign") {       // {slot:0/1, id?} id 省略時は選択中
+            var id = (arg.id !== void && arg.id != "") ? arg.id : app.charSel;
+            app.assignSlot(+arg.slot, id);
+            push();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/char/register") {     // {id,name,vrm,frontZ:1/-1}
+            app.regId = (arg.id === void) ? "" : arg.id;
+            app.regName = (arg.name === void) ? "" : arg.name;
+            app.regVrm = (arg.vrm === void) ? "" : arg.vrm;
+            app.regFrontZ = (+arg.frontZ < 0) ? -1 : 1;
+            app.registerCharAction();
+            push();
+            return "{\"ok\":true}";
+        }
+
         return %[ "status" => 404, "body" => "{\"error\":\"unknown: " + path + "\"}" ];
     }
 }
