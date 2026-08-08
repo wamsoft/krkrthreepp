@@ -31,7 +31,7 @@ if(BUILD_VRM_SMOKE_TEST)
     target_link_libraries(vrm_smoke PRIVATE threepp)
 endif()
 
-krkrz_plugin(krkr_threepp
+krkrz_plugin(krkrthreepp
     NCBIND
     SOURCES
         main.cpp

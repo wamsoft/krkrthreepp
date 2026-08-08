@@ -9,8 +9,6 @@ TJS2 側の擬似コード API は [`../manual.tjs`](../manual.tjs)、ビルド/
 | ファイル | 内容 |
 |---|---|
 | [`vrm_support_status.md`](vrm_support_status.md) | **VRM 対応状況の詳細一覧**(実装済み/部分/未対応)。VRM 関連はまずここを見る |
-| [`webui.md`](webui.md) | **ブラウザ編集 UI のアーキテクチャ**(WebServer 連携/ルート一覧/state スキーマ/拡張手引き) |
-| [`adv_stage_spec.md`](adv_stage_spec.md) | ADV サンプルの stage.tjs データ仕様 |
 | [`vrm_springbone_collider_notes.md`](vrm_springbone_collider_notes.md) | 揺れ物コライダーと「髪が服に埋まる」現象の調査記録。他実装との比較用 |
 
 ## 歴史的資料 (`history/`)

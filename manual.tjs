@@ -574,7 +574,7 @@ class Threepp {
 		function updateMatrixWorld(force); // ワールド行列を更新
 
 		/**
-		 * サブツリーを JSON 文字列で一括ダンプ (ブラウザ編集 UI のシーンツリー表示用)。
+		 * サブツリーを JSON 文字列で一括ダンプ (外部インスペクタのシーンツリー表示用)。
 		 * 1 ノード = {id,name,type,visible,pos:[x,y,z],children:[…]}
 		 * @return JSON 文字列
 		 */
@@ -2990,7 +2990,7 @@ function textureFromLayer(layer);
  *
  * // --- 初期化 ---
  * Plugins.link("krkrgles.dll");
- * Plugins.link("krkr_threepp.dll");
+ * Plugins.link("krkrthreepp.dll");
  *
  * var adaptor = new GLESAdaptor(window);          // GLES コンテキスト提供元 (別プラグイン)
  * adaptor.setScreenSize(800, 800);

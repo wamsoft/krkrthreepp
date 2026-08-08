@@ -5816,7 +5816,7 @@ ThreeWebApi_handle(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, 
 	nlohmann::json j;
 	if (path == "/api/three/ping") {
 		j["ok"] = true;
-		j["plugin"] = "krkr_threepp";
+		j["plugin"] = "krkrthreepp";
 	} else {
 		j["error"] = std::string("unknown api: ") + path;
 	}

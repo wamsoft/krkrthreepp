@@ -56,10 +56,8 @@ The plugin has four layers:
 - `layerExBase.hpp` — Base class for integrating threepp rendering into Kirikiri's layer system (image buffer access)
 - `manual.tjs` — Pseudo-code API documentation for TJS2 script developers
 - `README.md` — Japanese documentation with class listing and usage examples
-- `data/webui.tjs` + `data/ui/index.html` — ブラウザ編集 UI (エンジンの `-replweb` サーバ +
-  TJS クラス `WebServer` に乗る)。構成・ルート・拡張手引きは [`docs/webui.md`](docs/webui.md)
-- `data/advsample.tjs` — ADV サンプル本体 (表示専用 1280x720。編集/インスペクタ/REPL は
-  ブラウザ側)。`main.cpp` の `ThreeWebApi` がプラグイン自身の `/api/three/` を公開
+- `data/startup.tjs` / `data/basic.tjs` — threepp 描画の最小デモ (テクスチャ付き回転キューブ / フラグ付き
+  スモークテスト。VRM 抜き。`GLRenderer` → `GLESAdaptor.capture` → dest レイヤ合成の確認用)
 
 ## Current Status
 
@@ -80,14 +78,6 @@ VRMA アニメ(+hips ルートモーション)・揺れ物(springBone, center �
 **MToon**(lit/shade・輪郭線・matcap・normalMap・UVアニメ) を実装。three-vrm / vrm-specification を
 参照に実装・検証。**機能ごとの詳細な対応状況は [`docs/vrm_support_status.md`](docs/vrm_support_status.md)**。
 未対応の主なもの: materialColorBind / VRMA 顔トラック / FirstPerson / scene ライティング(固定ライト)。
-
-### ブラウザ編集 UI (2026-08)
-エンジンの `-replweb` サーバ拡張 (TJS クラス `WebServer` = ハンドラ登録/静的配信/SSE) の上に、
-編集 UI (操作/表情/ポーズ/連番/キャラ + インスペクター + 操作ログ + REPL) をブラウザへ実装。
-**Elements 版編集パネルは撤去済み**で、本体ウィンドウは 3D 表示専用。起動は
-`-sample -replweb=8899 -webui` (アプリモードのブラウザが自動で開く)。
-アーキテクチャ・ルート一覧・拡張手引き・ハマりどころは [`docs/webui.md`](docs/webui.md)、
-エンジン側 `WebServer` 仕様は krkrz core `doc/REPL.md` を参照。
 
 ### リポジトリ
 - 親 (`.`): VRM 実装 + ncbind バインド (`main.cpp`)。

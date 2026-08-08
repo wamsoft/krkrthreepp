@@ -10,7 +10,7 @@
  */
 
 Plugins.link("krkrgles.dll");
-Plugins.link("../build/x64-windows/Release/krkr_threepp.dll");
+Plugins.link("../build/x64-windows/Release/krkrthreepp.dll");
 
 var SCREEN_W = 800;
 var SCREEN_H = 800;

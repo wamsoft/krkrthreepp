@@ -1,239 +1,129 @@
 /**
- * krkr_threepp / VRM ビューア 動作確認用サンプル
+ * krkrthreepp 最小デモ — テクスチャ付き回転キューブ
  *
- * 使い方:
- *   1. プロジェクトルートに krkrZ.exe (x86) と ANGLE の libEGL.dll / libGLESv2.dll を置く
- *   2. krkrgles.dll (../../gles) と krkr_threepp.dll (../build) を x86 でビルドしておく
- *   3. このフォルダ (data) をプロジェクトにして krkrZ.exe -readencoding=UTF-8 で起動する
- *      (このスクリプトは UTF-8 なので -readencoding の指定が必要)
+ * プラグイン (krkrthreepp.dll) が threepp 描画パイプライン
+ * (GLRenderer → GLESAdaptor.capture → dest レイヤ合成) で
+ * 実際にピクセルを出せることを、VRM 抜きの最小構成で確認するサンプル。
+ * チェッカーテクスチャを Layer から生成してキューブに貼り、毎フレーム回す。
  *
- *   起動オプション:
- *     -shot=out  … 60 フレーム進めた結果を PNG 保存して終了する (自動確認用)
- *                  吉里吉里は値から拡張子を落とすので拡張子は付けない
- *     -vrm=名前  … data/<名前>.vrm を読む (既定: model)
- *     -vrma=名前 … data/<名前>.vrma を読んで再生する (既定: anim。none で無効)
+ * 起動 (このフォルダ data を krkrz64 に渡す。UTF-8 なので -readencoding 必須):
+ *   krkrz64.exe <この data の絶対パス> -readencoding=UTF-8
  *
- * 操作:
- *   ← / →      … カメラを左右に回す (VRM0.x は正面が逆なので反対側から見る)
- *   ↑ / ↓      … カメラを上下に回す
- *   Z / X      … ズームイン / ズームアウト
- *   Space      … アニメーションを頭から再生し直す
- *   E          … 表情(expression)を順番に切り替える
- *   O          … override デモ (happy+blink+aa ⇔ blink単体 をトグル)
- *   Enter      … 現在の画面を shot.png へ保存
+ * オプション:
+ *   -shot=out … 60 フレーム後に out.png を保存して終了 (自動確認用。拡張子は付けない)
+ *   -lit      … MeshBasicMaterial(unlit) の代わりに MeshStandardMaterial + ライトで描く
+ *
+ * より詳しいフラグ付きスモークテストは data/basic.tjs を参照。
  */
 
 // --- プラグイン ------------------------------------------------------------
-// OpenGL ES コンテキストの提供元 (旧 gles.dll)
-Plugins.link("krkrgles.dll");
-Plugins.link("../build/x64-windows/Release/krkr_threepp.dll");
+Plugins.link("krkrgles.dll");   // OpenGL ES コンテキスト提供元 (GLESAdaptor)
 
-var SCREEN_W = 800;
-var SCREEN_H = 800;
+// krkrthreepp.dll: 開発ビルド (build 配下) → exe 隣 (plugin64) の順に探してリンク
+var THREEPP_DLL_CANDIDATES = [
+    "../build/x64-windows/Release/krkrthreepp.dll",
+    "../build/x86-windows/Release/krkrthreepp.dll",
+    "krkrthreepp.dll"
+];
+var linked = false;
+for (var i = 0; i < THREEPP_DLL_CANDIDATES.count; i++) {
+    try { Plugins.link(THREEPP_DLL_CANDIDATES[i]); linked = true;
+          Debug.message("krkrthreepp linked: " + THREEPP_DLL_CANDIDATES[i]); break; } catch (e) {}
+}
+if (!linked) throw new Exception("krkrthreepp.dll をリンクできません");
 
-class VRMViewer extends Window
+var SCREEN_W = 512;
+var SCREEN_H = 512;
+
+class CubeDemo extends Window
 {
-    var adaptor;    // GLESAdaptor (OpenGL ES コンテキスト提供元)
-    var renderer;   // Threepp.GLRenderer
-    var scene;      // Threepp.Scene
-    var camera;     // Threepp.PerspectiveCamera
-    var vrm;        // Threepp.VRM
-    var anim;       // Threepp.VRMAnimation (無いこともある)
-    var animDur;    // アニメの長さ(秒)
+    var adaptor, renderer, scene, camera, mesh;
+    var back, dest, timer, shotName, frameCount = 0;
 
-    var back;       // 背景レイヤ
-    var dest;       // 3D 描画結果を受けるレイヤ
-    var timer;
-    var lastTick;
-    var animTime  = 0.0;
-    var frameCount = 0;
-    var shotName;
-
-    // カメラ軌道パラメータ (ターゲットを中心に回る)
-    var camYaw   = 0.0;      // 0 = +Z 側から見る (VRM1.0 の正面)
-    var camPitch = 0.0;
-    var camDist  = 2.4;
-    var targetY  = 0.9;      // 見る高さ (おおよそ胸〜顔)
-
-    // 表情切り替え用
-    var exprNames = ["happy", "angry", "sad", "relaxed", "surprised",
-                     "aa", "ih", "ou", "ee", "oh", "blink"];
-    var exprIndex = -1;
-
-    function VRMViewer()
+    function CubeDemo()
     {
         super.Window();
-        caption = "krkr_threepp VRM viewer";
+        caption = "krkrthreepp — textured cube";
         setInnerSize(SCREEN_W, SCREEN_H);
 
-        // 背景 (位置が分かるようにグラデーション + 床線)
+        // 背景 (暗い単色。3D が乗れば分かる)
         back = new Layer(this, null);
         back.setImageSize(SCREEN_W, SCREEN_H);
         back.setSize(SCREEN_W, SCREEN_H);
-        back.setPos(0, 0);
-        drawBackground(back);
+        back.fillRect(0, 0, SCREEN_W, SCREEN_H, 0xff102030);
         back.visible = true;
         add(back);
 
-        // 3D 描画結果を受けるレイヤ。
-        // krkrgles の読み戻しはα値を保持しないため加算合成で重ねる。
+        // 3D 描画結果を通常アルファ合成する先
         dest = new Layer(this, back);
         dest.setImageSize(SCREEN_W, SCREEN_H);
         dest.setSize(SCREEN_W, SCREEN_H);
-        dest.setPos(0, 0);
-        dest.type = ltAlpha;   // 3D結果(α込み)を背景へ通常アルファ合成
+        dest.type = ltAlpha;
         dest.visible = true;
         add(dest);
 
-        // --- GLES コンテキストの用意 ---------------------------------
+        // GLES コンテキスト
         adaptor = new GLESAdaptor(this);
         adaptor.setScreenSize(SCREEN_W, SCREEN_H);
         adaptor.unpremultiply = true;   // MSAA の premultiplied 縁を straight-alpha へ戻す
         adaptor.makeCurrent();
 
-        // --- threepp の初期化 ----------------------------------------
-        // 生成時のコンテキストがそのまま使われるので makeCurrent 後に生成する
         renderer = new Threepp.GLRenderer(adaptor, SCREEN_W, SCREEN_H);
         renderer.setClearColor(0x000000, 0.0);
-        Debug.message("GLRenderer constructed OK");
-
-        // -noloop: 描画ループ(capture)を一切開始しない。GLRenderer 構築だけで
-        // crash するか(=initGlad/構築時 GL 呼び出しが原因か)を切り分ける。
-        if (System.getArgument("-noloop") !== void) {
-            Debug.message("noloop mode: renderer built, no capture loop");
-            return;
-        }
 
         scene  = new Threepp.Scene();
-        camera = new Threepp.PerspectiveCamera(35, SCREEN_W / SCREEN_H, 0.1, 100);
+        camera = new Threepp.PerspectiveCamera(50, SCREEN_W / SCREEN_H, 0.1, 100);
+        camera.setPosition(0, 0, 3);
+        camera.lookAt(0, 0, 0);
 
-        // ライト (three-vrm の標準的な構成に近い)
-        var dir = new Threepp.DirectionalLight(0xffffff, 1.4);
-        dir.setPosition(1, 1, 1);
-        scene.add(dir);
-        var amb = new Threepp.AmbientLight(0xffffff, 0.6);
-        scene.add(amb);
-
-        // --- VRM 読み込み --------------------------------------------
-        // -novrm: VRM を読まず空シーンだけ描く (GLES/glad 結線の切り分け用)
-        if (System.getArgument("-novrm") !== void) {
-            Debug.message("novrm mode: render empty scene only");
-            updateCamera();
-            lastTick = System.getTickCount();
-            shotName = System.getArgument("-shot");
-            if (shotName !== void) shotName += ".png";
-            timer = new Timer(this, "onFrame");
-            timer.interval = 16;
-            timer.enabled = true;
-            add(timer);
-            return;
-        }
-
-        var vrmName = System.getArgument("-vrm");
-        if (vrmName === void) vrmName = "model";
-        // 吉里吉里のストレージ(アーカイブ/暗号化対応)から読む。プラグイン側で
-        // TVPCreateStream で開き、バイト列を threepp のメモリロードへ渡す。
-        // getPlacedPath で確実に解決してからストレージ名を渡す。
-        var vrmStorage = Storages.getPlacedPath(vrmName + ".vrm");
-        // 注: TJS では `new X().method()` の連鎖で例外になることがあるため
-        // ローダは一旦変数に受けてから load を呼ぶ。
-        var vrmLoader = new Threepp.VRMLoader();
-        vrm = vrmLoader.loadStorage(vrmStorage);
-        if (vrm === void) {
-            Debug.message("VRM load failed: " + vrmStorage);
-            System.exit(1);
-        }
-        if (System.getArgument("-noadd") === void) scene.add(vrm.getScene());
-        if (System.getArgument("-nometa") === void)
-            Debug.message("VRM: name=" + vrm.getMetaName()
-                          + " bones=" + vrm.getBoneCount()
-                          + " expressions=" + vrm.getExpressionCount());
-
-        // --- VRMA (アニメーション) -----------------------------------
-        var vrmaName = System.getArgument("-vrma");
-        if (vrmaName === void) vrmaName = "anim";
-        if (vrmaName != "none") {
-            var vaLoader = new Threepp.VRMAnimationLoader();
-            anim = vaLoader.loadStorage(Storages.getPlacedPath(vrmaName + ".vrma"));
-            if (anim !== void) {
-                animDur = anim.getDuration();
-                Debug.message("VRMA loaded: " + vrmaName + ".vrma  duration="
-                              + animDur + "s  tracks=" + anim.getBoneTrackCount());
-            } else {
-                Debug.message("VRMA load failed (skip): " + vrmaName + ".vrma");
+        // チェッカーテクスチャを Layer に描いて threepp テクスチャ化
+        // (プライマリレイヤは LayerManager 競合を起こすため既存レイヤの子として作る)
+        var texLayer = new Layer(this, back);
+        texLayer.setImageSize(64, 64);
+        texLayer.setSize(64, 64);
+        texLayer.visible = false;
+        for (var ty = 0; ty < 8; ty++)
+            for (var tx = 0; tx < 8; tx++) {
+                var c = (((tx + ty) & 1) != 0) ? 0xffff8020 : 0xff2050ff;
+                texLayer.fillRect(tx * 8, ty * 8, 8, 8, c);
             }
+        var tex = textureFromLayer(texLayer);
+        invalidate texLayer;   // 画素はテクスチャへコピー済み
+
+        var geom = new Threepp.BoxGeometry(1, 1, 1);
+        var mat;
+        if (System.getArgument("-lit") !== void) {
+            mat = new Threepp.MeshStandardMaterial();
+            mat.color = 0xffffff;
+            mat.setMap(tex);
+            var dir = new Threepp.DirectionalLight(0xffffff, 1.0);
+            dir.setPosition(2, 3, 4); scene.add(dir);
+            scene.add(new Threepp.AmbientLight(0xffffff, 0.4));
+        } else {
+            mat = new Threepp.MeshBasicMaterial();
+            mat.color = 0xffffff;              // 白 = テクスチャ色をそのまま出す
+            mat.setMap(tex);
         }
+        mesh = new Threepp.Mesh(geom, mat);
+        scene.add(mesh);
 
-        updateCamera();
-
-        lastTick = System.getTickCount();
         shotName = System.getArgument("-shot");
         if (shotName !== void) shotName += ".png";
 
-        if (System.getArgument("-noframe") !== void) {
-            Debug.message("noframe: VRM loaded, render loop skipped");
-            return;
-        }
         timer = new Timer(this, "onFrame");
         timer.interval = 16;
         timer.enabled = true;
         add(timer);
     }
 
-    // 吉里吉里のストレージ名 → threepp が open できる OS ファイルパスへ解決
-    function localPath(name)
-    {
-        return Storages.getLocalName(Storages.getPlacedPath(name));
-    }
-
-    // 縦グラデ背景 + 中心の縦線
-    function drawBackground(layer)
-    {
-        for (var y = 0; y < SCREEN_H; y++) {
-            var t = y / SCREEN_H;
-            var r = (int)(0x20 + 0x30 * t);
-            var g = (int)(0x28 + 0x38 * t);
-            var b = (int)(0x38 + 0x48 * t);
-            layer.fillRect(0, y, SCREEN_W, 1, 0xFF000000 + (r << 16) + (g << 8) + b);
-        }
-        layer.fillRect(SCREEN_W / 2, 0, 1, SCREEN_H, 0x30FFFFFF);
-    }
-
-    // 軌道パラメータからカメラ位置を更新する
-    function updateCamera()
-    {
-        var cy = Math.cos(camPitch);
-        var px = camDist * Math.sin(camYaw) * cy;
-        var py = targetY + camDist * Math.sin(camPitch);
-        var pz = camDist * Math.cos(camYaw) * cy;
-        camera.setPosition(px, py, pz);
-        camera.lookAt(0, targetY, 0);
-    }
-
     function onFrame()
     {
-        var now  = System.getTickCount();
-        var tick = now - lastTick;
-        lastTick = now;
-        if (tick > 100) tick = 100;   // 停止していた場合に飛びすぎないように
+        if (mesh !== void) { mesh.rotateY(0.02); mesh.rotateX(0.01); }
 
-        // --- 更新 ----------------------------------------------------
-        if (anim !== void && animDur > 0) {
-            animTime += tick / 1000.0;
-            if (animTime > animDur) animTime -= animDur;
-            vrm.applyAnimation(anim, animTime);
-        }
-        if (vrm !== void && System.getArgument("-noupdate") === void) vrm.update(tick / 1000.0);   // rig/表情/視線/揺れを反映(dt秒)
-
-        // --- 描画 ----------------------------------------------------
-        // capture のコールバックは GLESAdaptor のコンテキストで実行されるため、
-        // このクラスのメンバは見えない。必要なものは param 経由で渡す。
         adaptor.capture(dest, onRender, this, 0x00000000);
         dest.update();
-
         frameCount++;
 
-        // -shot=xxx 指定時: 60 フレーム進めた絵を保存して終了する
         if (shotName !== void && frameCount >= 60) {
             timer.enabled = false;
             saveShot(shotName);
@@ -243,8 +133,6 @@ class VRMViewer extends Window
 
     function onRender(w, h, self)
     {
-        // -norender: GL 呼び出しを一切せず、GLRenderer 構築のみで crash するか切り分ける
-        if (System.getArgument("-norender") !== void) return;
         self.renderer.onBeginScene(w, h);
         self.renderer.render(self.scene, self.camera);
         self.renderer.onEndScene();
@@ -252,7 +140,6 @@ class VRMViewer extends Window
 
     function saveShot(name)
     {
-        // 背景と合成した見た目で保存する
         var shot = new Layer(this, back);
         shot.visible = false;
         shot.setImageSize(SCREEN_W, SCREEN_H);
@@ -264,82 +151,15 @@ class VRMViewer extends Window
         Debug.message("saved: " + name);
     }
 
-    function onKeyDown(key, shift)
-    {
-        switch (key) {
-        case VK_LEFT:   camYaw   -= 0.15; updateCamera(); break;
-        case VK_RIGHT:  camYaw   += 0.15; updateCamera(); break;
-        case VK_UP:     camPitch += 0.10; if (camPitch >  1.4) camPitch =  1.4; updateCamera(); break;
-        case VK_DOWN:   camPitch -= 0.10; if (camPitch < -1.4) camPitch = -1.4; updateCamera(); break;
-        case VK_Z:      camDist  /= 1.1;  if (camDist  <  0.4) camDist  =  0.4; updateCamera(); break;
-        case VK_X:      camDist  *= 1.1;  if (camDist  > 20.0) camDist  = 20.0; updateCamera(); break;
-        case VK_SPACE:  animTime  = 0.0; break;
-        case VK_E:      cycleExpression(); break;
-        case VK_O:      overrideDemo(); break;
-        case VK_RETURN: saveShot("shot.png"); break;
-        default:
-            super.onKeyDown(key, shift);
-            return;
-        }
-    }
-
-    // 表情を順に当てる (前の表情は 0 に戻す)
-    function cycleExpression()
-    {
-        if (exprIndex >= 0)
-            vrm.setExpression(exprNames[exprIndex], 0.0);
-        exprIndex++;
-        if (exprIndex >= exprNames.count) exprIndex = 0;
-        vrm.setExpression(exprNames[exprIndex], 1.0);
-        Debug.message("expression: " + exprNames[exprIndex]);
-    }
-
-    // override デモ: happy(overrideBlink/Mouth=block)+blink+aa を同時に掛ける。
-    // override が効いていれば blink/aa は抑制され、happy の笑顔だけが出る。
-    // 押すたびに [override有効] と [blink単体] を切り替えて違いを見る。
-    var overrideOn = false;
-    function overrideDemo()
-    {
-        if (exprIndex >= 0) { vrm.setExpression(exprNames[exprIndex], 0.0); exprIndex = -1; }
-        vrm.setExpression("happy", 0.0);
-        vrm.setExpression("blink", 0.0);
-        vrm.setExpression("aa",    0.0);
-        overrideOn = !overrideOn;
-        if (overrideOn) {
-            // happy が blink/mouth を block するので、笑顔のまま(目は happy の細目)
-            vrm.setExpression("happy", 1.0);
-            vrm.setExpression("blink", 1.0);
-            vrm.setExpression("aa",    1.0);
-            Debug.message("override demo: happy+blink+aa (blink/aa は override で抑制されるはず)");
-        } else {
-            // 比較用: blink 単体 (目が閉じる)
-            vrm.setExpression("blink", 1.0);
-            Debug.message("override demo: blink 単体 (目が閉じる)");
-        }
-    }
-
     function finalize()
     {
         if (timer !== void) timer.enabled = false;
-        // 破棄順序: threepp オブジェクト → adaptor
-        invalidate anim     if anim     !== void;
-        invalidate vrm      if vrm      !== void;
+        invalidate mesh     if mesh     !== void;
         invalidate renderer if renderer !== void;
         invalidate adaptor  if adaptor  !== void;
         super.finalize(...);
     }
 }
 
-// -sample: 16:9 ADV 風サンプル(立ち絵2体 + Elements パネル)を起動する。
-// 無指定なら従来の単体 VRM ビューア。
-if (System.getArgument("-sample") !== void) {
-    Scripts.execStorage("advsample.tjs");
-} else {
-    var win = new VRMViewer();
-    win.visible = true;
-}
-
-// ブラウザ編集 UI (-replweb 付き engine のみ)。/ui/ と /app/ を WebServer へ公開。
-// advsample 以外 (ビューアモード) でも /ui/ は配信される (app 未起動時は
-// ブラウザ側に「アプリ未起動」と表示され、/app/ 操作系は 503 を返す)。
-if (typeof global.WebServer != "undefined") Scripts.execStorage("webui.tjs");
+var win = new CubeDemo();
+win.visible = true;

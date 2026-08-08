@@ -2133,7 +2133,7 @@ void main() {
 
         // --- ルート glTF ---
         json gltf;
-        gltf["asset"] = {{"version", "2.0"}, {"generator", "krkr_threepp VRMA exporter"}};
+        gltf["asset"] = {{"version", "2.0"}, {"generator", "krkrthreepp VRMA exporter"}};
         gltf["extensionsUsed"] = json::array({"VRMC_vrm_animation"});
         gltf["extensions"]["VRMC_vrm_animation"] = vrmaExt;
         gltf["scene"] = 0;
