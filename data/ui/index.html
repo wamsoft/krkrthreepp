@@ -202,6 +202,82 @@
       function(it){ post('/app/pose/load', {id:it.id}); }));
   }
 
+  // ---- 連番(シーケンス)ペイン ----
+  function renderSeq(){
+    var q = state.seq || {steps:[], sel:-1, emotes:[]};
+    var gbS = groupBox('手順');
+    if (q.steps.length){
+      gbS.rows.appendChild(chipList(
+        q.steps.map(function(s,i){ return {label:(i+1)+':'+s.pose + (s.expr?'('+s.expr+')':''), i:i}; }),
+        function(it){ return it.i === q.sel; },
+        function(it){ post('/app/seq/select', {i:it.i}); }));
+    } else {
+      gbS.rows.appendChild(el('div','hint','手順がありません。下の保存済みポーズを追加してください。'));
+    }
+    main.appendChild(gbS.box);
+
+    var poses = (state.pose && state.pose.poses) || [];
+    var gbA = groupBox('追加 (保存済みポーズ → 末尾へ)');
+    if (poses.length){
+      gbA.rows.appendChild(chipList(
+        poses.map(function(id){ return {label:id, id:id}; }),
+        function(){ return false; },
+        function(it){ post('/app/seq/add', {id:it.id}); }));
+    } else {
+      gbA.rows.appendChild(el('div','hint','保存済みポーズがありません (ポーズタブで保存してください)。'));
+    }
+    main.appendChild(gbA.box);
+
+    if (q.sel >= 0 && q.sel < q.steps.length){
+      var s = q.steps[q.sel];
+      var gbE = groupBox('手順 ' + (q.sel+1) + ' [' + s.pose + ']');
+      gbE.rows.appendChild(sliderRow('保持 [秒]', 0, 3, 0.05, s.hold,
+        function(v){ return v.toFixed(2); },
+        function(v){ s.hold = v; sendThrottled('sh', '/app/seq/hold', {sec:v}); }));
+      gbE.rows.appendChild(sliderRow('遷移 [秒]', 0, 3, 0.05, s.trans,
+        function(v){ return v.toFixed(2); },
+        function(v){ s.trans = v; sendThrottled('st', '/app/seq/trans', {sec:v}); }));
+      var ops = el('div','ops');
+      [['▲ 前へ',-1],['▼ 後へ',1]].forEach(function(m){
+        var b = el('button','sub',m[0]);
+        b.onclick = function(){ post('/app/seq/move', {dir:m[1]}); };
+        ops.appendChild(b);
+      });
+      var del = el('button','sub','削除');
+      del.onclick = function(){ post('/app/seq/del'); };
+      ops.appendChild(del);
+      gbE.rows.appendChild(ops);
+      var eb = [{label:'無し', name:'none', cur: s.expr === ''}];
+      (q.emotes||[]).forEach(function(e){
+        eb.push({label:e.label, name:e.name, cur: s.expr === e.name});
+      });
+      var gbX = groupBox('表情 (この手順の間だけ適用)');
+      gbX.rows.appendChild(chipList(eb,
+        function(it){ return it.cur; },
+        function(it){ post('/app/seq/expr', {name:it.name}); }));
+      main.appendChild(gbE.box);
+      main.appendChild(gbX.box);
+    }
+
+    var gbO = groupBox('操作');
+    var ops2 = el('div','ops');
+    [['再生','/app/seq/preview','act'],['停止','/app/seq/stop','sub'],
+     ['全消去','/app/seq/clear','sub']].forEach(function(m){
+      var b = el('button', m[2], m[0]);
+      b.onclick = function(){ post(m[1]); };
+      ops2.appendChild(b);
+    });
+    gbO.rows.appendChild(ops2);
+    var ops3 = el('div','ops');
+    var fileIn = el('input'); fileIn.type='text';
+    fileIn.placeholder='出力ファイル'; fileIn.value='poseseq.vrma';
+    var exp = el('button','act','VRMA 書出');
+    exp.onclick = function(){ post('/app/seq/export', {file:fileIn.value.trim()}); };
+    ops3.appendChild(fileIn); ops3.appendChild(exp);
+    gbO.rows.appendChild(ops3);
+    main.appendChild(gbO.box);
+  }
+
   // ---- キャラペイン ----
   function renderChar(){
     var c = state.chars;
@@ -264,10 +340,11 @@
     main.innerHTML = '';
     if (state.workMode === 'face') renderFace();
     else if (state.workMode === 'pose') renderPose();
+    else if (state.workMode === 'seq') renderSeq();
     else if (state.workMode === 'char') renderChar();
     else main.appendChild(el('div','hint',
       'この作業モード (' + state.workMode + ') はゲーム画面の Elements パネルで操作してください。' +
-      '表情 / ポーズ / キャラ はこの画面から編集できます。'));
+      '表情 / ポーズ / 連番 / キャラ はこの画面から編集できます。'));
   }
 
   function refresh(){

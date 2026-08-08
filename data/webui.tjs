@@ -53,6 +53,21 @@ class WebUIBridge
             "poseName" => (app.poseName === void) ? "" : app.poseName
         ];
 
+        // --- 連番(シーケンス) ---
+        var steps = [];
+        if (app.seq !== void) {
+            for (var i = 0; i < app.seq.count; i++) {
+                var s = app.seq[i];
+                steps.add(%[ "pose" => s.pose, "hold" => s.hold, "trans" => s.trans,
+                             "expr" => (s.expr === void) ? "" : s.expr ]);
+            }
+        }
+        var emo = [];
+        var en = app.emotionNames();
+        for (var i = 0; i < en.count; i++)
+            emo.add(%[ "name" => en[i], "label" => app.exprLabel(en[i]) ]);
+        st.seq = %[ "steps" => steps, "sel" => app.seqSel, "emotes" => emo ];
+
         // --- キャラ管理 ---
         if (app.charReg !== void) {
             var ids = app.charReg.idList();
@@ -140,6 +155,59 @@ class WebUIBridge
             app.loadPoseIntoEdit(arg.id);
             push();
             return "{\"ok\":true}";
+        }
+
+        // --- 連番(シーケンス) ---
+        if (path == "/app/seq/add") {           // {id:"ポーズ名"} 手順を末尾へ追加
+            app.seqAddPose(arg.id);
+            push();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/seq/select") {        // {i:index}
+            app.seqSelectStep(+arg.i);
+            push();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/seq/hold") {          // {sec:0..3} 選択手順の保持秒 (スライダ)
+            app.seqSetHold(+arg.sec);
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/seq/trans") {         // {sec:0..3} 選択手順の遷移秒 (スライダ)
+            app.seqSetTrans(+arg.sec);
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/seq/expr") {          // {name:"happy"…/"none"} 選択手順の表情
+            app.seqSetExpr(arg.name);
+            push();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/seq/move") {          // {dir:-1/1} 選択手順を並べ替え
+            app.seqMoveStep(+arg.dir);
+            push();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/seq/del") {           // 選択手順を削除
+            app.seqDelStep();
+            push();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/seq/clear") {         // 全消去 (再生も停止)
+            app.seqClear();
+            push();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/seq/preview") {       // ループ再生
+            app.seqPreview();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/seq/stop") {          // 停止
+            app.seqStop();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/seq/export") {        // {file?:"poseseq.vrma"} VRMA 書出
+            var f = (arg.file !== void && arg.file != "") ? arg.file : "poseseq.vrma";
+            var ok = app.seqExportVRMA(f);
+            return "{\"ok\":" + (ok ? "true" : "false") + ",\"file\":\"" + f + "\"}";
         }
 
         // --- キャラ管理 ---
