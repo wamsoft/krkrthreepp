@@ -12,7 +12,7 @@
  *   右  : インスペクター(選択対象キャラの状態を強調表示)
  *   下  : ログ/情報コンソール(タイトル・状態・キーヒント・操作ログ)
  *
- * 各種動作(フレーミング/表情/モーション/まばたき/リップ等)は左パネルで操作。
+ * 各種動作(フレーミング/表情/モーション/まばたき/リップ等)はブラウザ編集UI (/ui/) で操作。
  * REPL/Agent 用グローバル: global.app (ADVSample), global.win(=app 別名)。
  */
 
@@ -96,25 +96,21 @@ function quatToEuler(qx, qy, qz, qw)
 // 3D 描画領域(中央ビューポート)のサイズ
 var SCREEN_W = 1280;
 var SCREEN_H = 720;
-// ウィンドウ全体。編集 IDE 風の 4 ペイン構成:
-//   左  : コマンド/対象選択(Elements 操作パネル・オーバーレイ)
-//   中央: 3D ビューポート(1280x720)
-//   右  : インスペクター(選択対象の状態表示)
-//   下  : ログ/情報コンソール(中央ビューの下)
+// ウィンドウ全体。3 ペイン構成 (編集 UI はブラウザ側 /ui/ に移行済み):
+//   左〜中央: 3D ビューポート(1280x720)
+//   右      : インスペクター(選択対象の状態表示)
+//   下      : ログ/情報コンソール(ビューポートの下)
 var WIN_W = 1920;
 var WIN_H = 1080;
-var LEFT_W   = 380;                 // 左列=コマンドパネル幅(Elements の実寸に合わせる)
-var RIGHT_W  = WIN_W - LEFT_W - SCREEN_W;  // = 260 (右=インスペクター)
-var RENDER_X = LEFT_W;              // 中央ビューは左列の右隣
+var RENDER_X = 0;                   // ビューポートは左端から
 var RENDER_Y = 0;
-var PANEL_W  = LEFT_W;              // Elements パネル幅(上限)
-// 右: インスペクター(右列フル高)
-var INSP_X   = LEFT_W + SCREEN_W;   // = 1660
+// 右: インスペクター(ビューポートの右、フル高)
+var INSP_X   = SCREEN_W;            // = 1280
 var INSP_Y   = 0;
-var INSP_W   = RIGHT_W;             // 260
+var INSP_W   = WIN_W - SCREEN_W;    // = 640
 var INSP_H   = WIN_H;               // 1080
-// 下: ログ/情報コンソール(中央ビューの真下)
-var LOG_X    = LEFT_W;              // 中央の下
+// 下: ログ/情報コンソール(ビューポートの真下)
+var LOG_X    = 0;
 var LOG_Y    = SCREEN_H;            // 720
 var LOG_W    = SCREEN_W;            // 1280
 var LOG_H    = WIN_H - SCREEN_H;    // 360
@@ -132,491 +128,6 @@ var RIGHT_X = 590;
 // 空間モードのカメラ画角。狭い(望遠)ほど投影が平行に近づき、寄せても左右の
 // キャラが外向きに歪みにくい。
 var SPACE_FOV = 20;
-
-// ---------------------------------------------------------------------------
-//  Elements 操作パネル (常駐・非モーダル)
-// ---------------------------------------------------------------------------
-class ControlPanel extends Dialog
-{
-    var app;
-
-    function ControlPanel(app)
-    {
-        super.Dialog();
-        this.app = app;
-    }
-
-    function onAction(id, payload)
-    {
-        app.onPanel(id, payload);   // payload: toggle=bool / radio=true / button=void
-    }
-
-    // --- レイアウト部品 -----------------------------------------------
-    // パネル全体のフォント倍率。top-level "font_scale"(engine対応)で
-    // button/toggle/radio/label を一括拡大する。個別 size_scale は付けない
-    // (付けると明示指定として優先され、この一括制御から外れる)。
-    var PANEL_FONT_SCALE = 1.25;  // 操作モードの全ウィジェット倍率(top-level font_scale)。作業切替行+全セクションを1080内に
-    function btn(id, text)    // 単発ボタン(押すたびに動作)
-    {
-        return %[ "type" => "button", "id" => id, "text" => text, "close_on_click" => 0 ];
-    }
-    function toggle(id, text, on)   // ON/OFF トグル(押下状態が見える)
-    {
-        return %[ "type" => "toggle_button", "id" => id, "text" => text, "value" => (on ? 1 : 0) ];
-    }
-    function radio(id, text, sel)   // 排他選択(同 htile 内で自動排他・選択がハイライト)
-    {
-        return %[ "type" => "radio_button", "id" => id, "text" => text, "selected" => (sel ? 1 : 0) ];
-    }
-    // 生モーフ 1 本のスライダ行(ラベル名 + 0..1 スライダ)。id="mo:Fcl名"、
-    // 現在の編集値を initial に反映。値変化で onPanel("mo:...", 0..1)。
-    function moSlider(fcl, label)
-    {
-        return %[ "type" => "labeled_row", "label" => label, "label_width" => 66,
-                  "child" => %[ "type" => "slider", "id" => "mo:" + fcl,
-                                "initial" => app.editGetMorph(fcl) ] ];
-    }
-    // ボタン群を perRow 個ずつ折り返して複数の htile 行にする(左列の幅向け)
-    function wrapButtons(widgets, perRow)
-    {
-        var rows = []; var row = [];
-        for (var i = 0; i < widgets.count; i++) {
-            row.add(widgets[i]);
-            row.add(%[ "type" => "hspacer", "width" => 10 ]);
-            if (((i + 1) % perRow) == 0) {
-                rows.add(%[ "type" => "htile", "children" => row ]);
-                rows.add(%[ "type" => "vspacer", "height" => 8 ]);
-                row = [];
-            }
-        }
-        if (row.count > 0) rows.add(%[ "type" => "htile", "children" => row ]);
-        return rows;
-    }
-    // セクション見出し + 中身。この build では単体 label が vtile/htile 中で潰れて
-    // 描画されないため、確実に見出しが出る group を「タイトルバー」として使う。
-    // group は layer(heading, content, frame) の z 重ねで content の最小高へ
-    // クランプするため、中身を group に入れると heading が重なる。そこで
-    // group には固定高の box だけを入れてタイトルバー化し、ボタン群はその下に
-    // 兄弟として並べる(兄弟間の vspacer は効く)。IDE 風の枠付き見出しになる。
-    function secBar(title)
-    {
-        return %[ "type" => "group", "title" => title, "label_size" => 1.15,
-                  "child" => %[ "type" => "vsize", "height" => 26,
-                                "child" => %[ "type" => "box", "color" => [40, 48, 66, 150] ] ] ];
-    }
-    function grpBox(title, kids)
-    {
-        var out = [ secBar(title), %[ "type" => "vspacer", "height" => 5 ] ];
-        for (var i = 0; i < kids.count; i++) out.add(kids[i]);
-        out.add(%[ "type" => "vspacer", "height" => 6 ]);
-        return out;
-    }
-    // セクション(見出し + 折り返しボタン群)を vtile children 配列で返す
-    function sec(title, widgets, perRow)
-    {
-        return grpBox(title, wrapButtons(widgets, perRow));
-    }
-    // 排他が要る group(ラジオ)は 1 htile に収める(見出し + 1 行)
-    function secOneRow(title, widgets)
-    {
-        var kids = [];
-        for (var i = 0; i < widgets.count; i++) {
-            kids.add(widgets[i]);
-            kids.add(%[ "type" => "hspacer", "width" => 12 ]);
-        }
-        return grpBox(title, [ %[ "type" => "htile", "children" => kids ] ]);
-    }
-    // セクション配列(配列の配列)をフラットな vtile children に
-    function catRows(parts)
-    {
-        var out = [];
-        for (var i = 0; i < parts.count; i++) {
-            var p = parts[i];
-            for (var j = 0; j < p.count; j++) out.add(p[j]);
-        }
-        return out;
-    }
-
-    // 表情ボタンはモデル実装の表情名から生成(id=表情名)。先頭に 標準(neutral)。
-    function exprBtns()
-    {
-        var kids = [ btn("neutral", "標準") ];
-        // 合成表情(メタ定義)
-        var ex = app.stageDef.expressions;
-        if (ex !== void) for (var i = 0; i < ex.count; i++) kids.add(btn(ex[i].id, ex[i].name));
-        // VRM 単一表情(モデル実装)
-        var names = app.emotionNames();
-        for (var i = 0; i < names.count; i++)
-            kids.add(btn(names[i], app.exprLabel(names[i])));
-        return kids;
-    }
-    // モーションボタンはメタ定義から生成(id=m_*)。末尾に 停止。
-    function motionBtns()
-    {
-        var kids = [];
-        var ms = app.stageDef.motions;
-        for (var i = 0; i < ms.count; i++) kids.add(btn("m_" + ms[i].id, ms[i].name));
-        kids.add(btn("m_stop", "停止"));
-        return kids;
-    }
-    // シーンボタン(id=sc_*)。末尾に 保存/復元。
-    function sceneBtns()
-    {
-        var kids = [];
-        var sc = app.stageDef.scenes;
-        if (sc !== void) for (var i = 0; i < sc.count; i++) kids.add(btn("sc_" + sc[i].id, sc[i].name));
-        kids.add(btn("state_save", "保存"));
-        kids.add(btn("state_load", "復元"));
-        return kids;
-    }
-    function camBtns()
-    {
-        return [ btn("cam_left","◀"), btn("cam_right","▶"), btn("cam_up","▲"),
-                 btn("cam_down","▼"), btn("cam_in","寄る"), btn("cam_out","引く"),
-                 btn("cam_reset","正面") ];
-    }
-    // 空間モードのカメラ段(旋回/ズーム + 画角)。画角を別セクションにせず統合。
-    function camFovBtns()
-    {
-        var a = camBtns();
-        a.add(btn("fov_tele", "望遠"));
-        a.add(btn("fov_wide", "広角"));
-        return a;
-    }
-    function targetRadios()
-    {
-        return [ radio("t_left","左", app.target==0), radio("t_right","右", app.target==1),
-                 radio("t_both","両方", app.target==2) ];
-    }
-    function modeRadios()
-    {
-        return [ radio("mode_tachie","立ち絵", app.mode=="tachie"),
-                 radio("mode_space","空間", app.mode=="space") ];
-    }
-    // ON/OFF トグルは全キャラ共通(tachies[0] の状態を代表表示)。末尾に隠すボタン。
-    function togglesRow()
-    {
-        var t0 = app.tachies[0];
-        return [ toggle("blink_set","まばたき", t0.blinkEnabled),
-                 toggle("look_set","カメラ目線", t0.lookAtCamera),
-                 toggle("idle_set","idle", t0.idleEnabled),
-                 toggle("gaze_set","視線ターゲット", app.gazeActive),
-                 btn("hide","隠す(Tab)") ];
-    }
-
-    // 立ち絵モードのパネル(左列 640 幅・折り返し縦積み)
-    function tachieRows()
-    {
-        return catRows([
-            secOneRow("対象", targetRadios()),
-            sec("フレーム", [ btn("f_full","全身"), btn("f_knee","膝上"), btn("f_waist","腰上"),
-                           btn("f_bust","胸上"), btn("f_face","顔") ], 3),
-            sec("表情", exprBtns(), 3),
-            sec("モーション", motionBtns(), 3),
-            sec("ポーズ", [ btn("pose_cap","採取"), btn("pose_apply","適用"), btn("pose_clear","素立ち"),
-                         btn("pose_save","保存"), btn("pose_load","読込") ], 3),
-            sec("シーン", sceneBtns(), 3),
-            sec("演出・音声", [ btn("fx_fadein","フェードイン"), btn("fx_fadeout","フェードアウト"),
-                       btn("fx_slidein","スライド登場"), btn("lip_play","発話(音声)"),
-                       btn("lip_stop","停止") ], 2),
-            sec("カメラ", camBtns(), 4),
-            sec("切替", togglesRow(), 2),
-            secOneRow("モード", modeRadios())
-        ]);
-    }
-
-    // 空間モードのパネル (フレーム指定は無効。位置・画角・カメラ中心)
-    function spaceRows()
-    {
-        return catRows([
-            secOneRow("対象", targetRadios()),
-            sec("表情", exprBtns(), 3),
-            sec("モーション", motionBtns(), 3),
-            sec("ポーズ", [ btn("pose_cap","採取"), btn("pose_apply","適用"), btn("pose_clear","素立ち"),
-                         btn("pose_save","保存"), btn("pose_load","読込") ], 3),
-            sec("シーン", sceneBtns(), 3),
-            sec("位置", [ btn("pos_left","← 左"), btn("pos_right","右 →"), btn("pos_fwd","前(近)"),
-                       btn("pos_back","後(遠)"), btn("pos_reset","並べ直す") ], 3),
-            sec("カメラ・画角", camFovBtns(), 4),
-            secOneRow("操作", [ radio("camm_orbit","回り込み", app.sCamMode=="orbit"),
-                             radio("camm_move","平行移動", app.sCamMode=="move") ]),
-            secOneRow("背景", [ radio("bg_fixed","舞台に固定", !app.bgFollow),
-                             radio("bg_follow","カメラ追従", app.bgFollow) ]),
-            sec("切替", togglesRow(), 2),
-            secOneRow("モード", modeRadios())
-        ]);
-    }
-
-    // 作業モード切替(パネル最上部に常設。選択で左パネルをまるごと差し替え)。
-    // 5 モードは 1 行に収まらない(見切れたラジオは反応しない)ので 2 行に分ける。
-    // 排他表示は毎回 app.workMode から選択状態を組み直すので行を跨いでも問題ない。
-    function workspaceRow()
-    {
-        return [ %[ "type" => "htile", "children" => [
-                    radio("work_op",   "操作",   app.workMode == "op"),
-                    %[ "type" => "hspacer", "width" => 8 ],
-                    radio("work_face", "表情",   app.workMode == "face"),
-                    %[ "type" => "hspacer", "width" => 8 ],
-                    radio("work_pose", "ポーズ", app.workMode == "pose") ] ],
-                 %[ "type" => "vspacer", "height" => 4 ],
-                 %[ "type" => "htile", "children" => [
-                    radio("work_seq",  "連番",   app.workMode == "seq"),
-                    %[ "type" => "hspacer", "width" => 8 ],
-                    radio("work_char", "キャラ", app.workMode == "char") ] ],
-                 %[ "type" => "vspacer", "height" => 6 ],
-                 %[ "type" => "vsize", "height" => 2,
-                    "child" => %[ "type" => "box", "color" => [70, 80, 100, 150] ] ],
-                 %[ "type" => "vspacer", "height" => 8 ] ];
-    }
-
-    // 表情編集パネル(生モーフ簡易エディタ)。curated モーフをスライダで編集し
-    // キーワード付きで共有 JSON(faces.json)へ保存する。中央ビューにライブ反映。
-    function faceEditRows()
-    {
-        var parts = [ workspaceRow(), secOneRow("対象", targetRadios()) ];
-        // curated モーフグループごとにスライダ列
-        for (var g = 0; g < FACE_MORPH_GROUPS.count; g++) {
-            var grp = FACE_MORPH_GROUPS[g];
-            var kids = [];
-            for (var i = 0; i < grp.items.count; i++) {
-                kids.add(moSlider(grp.items[i][0], grp.items[i][1]));
-                kids.add(%[ "type" => "vspacer", "height" => 6 ]);
-            }
-            parts.add(grpBox(grp.title, kids));
-        }
-        // 表情名 + 保存/クリア
-        parts.add(grpBox("保存", [
-            %[ "type" => "labeled_row", "label" => "名前", "label_width" => 66,
-               "child" => %[ "type" => "input_box", "id" => "face_name",
-                             "placeholder" => "例: wink" ] ],
-            %[ "type" => "vspacer", "height" => 8 ],
-            %[ "type" => "htile", "children" => [
-                btn("face_save", "保存"), %[ "type" => "hspacer", "width" => 10 ],
-                btn("face_clear", "クリア") ] ] ]));
-        // 既存表情の読込(あれば)
-        var ids = app.faceIdList();
-        if (ids.count > 0) {
-            var lb = [];
-            for (var i = 0; i < ids.count; i++) lb.add(btn("lf:" + ids[i], ids[i]));
-            parts.add(sec("読込", lb, 3));
-        }
-        return catRows(parts);
-    }
-
-    // 回転スライダ 1 軸(-180..180 度 を 0..1 にマップ。id="rot:x/y/z")。
-    // 現在の選択ボーンのオイラー角を initial に反映。
-    function rotSlider(axis, label, deg)
-    {
-        var pos = (deg + 180.0) / 360.0;
-        if (pos < 0.0) pos = 0.0;
-        if (pos > 1.0) pos = 1.0;
-        return %[ "type" => "labeled_row", "label" => label, "label_width" => 40,
-                  "child" => %[ "type" => "slider", "id" => "rot:" + axis, "initial" => pos ] ];
-    }
-    // hips 移動スライダ 1 軸(-0.5..0.5 m を 0..1 にマップ。id="hp:x/y/z")。
-    var HIPS_RANGE = 0.5;   // ±0.5m
-    function hipsSlider(axis, label, meter)
-    {
-        var pos = (meter + HIPS_RANGE) / (HIPS_RANGE * 2.0);
-        if (pos < 0.0) pos = 0.0;
-        if (pos > 1.0) pos = 1.0;
-        return %[ "type" => "labeled_row", "label" => label, "label_width" => 40,
-                  "child" => %[ "type" => "slider", "id" => "hp:" + axis, "initial" => pos ] ];
-    }
-    // ポーズ編集パネル(採取/素立ちから関節回転をスライダ編集→JSON保存)。
-    function poseEditRows()
-    {
-        var parts = [ workspaceRow(), secOneRow("対象", targetRadios()) ];
-        // 基準ポーズ
-        parts.add(grpBox("基準", [ %[ "type" => "htile", "children" => [
-                    btn("pose_base_cap", "採取"), %[ "type" => "hspacer", "width" => 10 ],
-                    btn("pose_base_rest", "素立ち") ] ] ]));
-        // 関節選択(curated ボーンを 3 列で。選択中を強調表示)
-        var bb = [];
-        for (var i = 0; i < POSE_BONES.count; i++) {
-            var bn = POSE_BONES[i][0];
-            if (bn == app.editBone) bb.add(radio("pb:" + bn, POSE_BONES[i][1], 1));
-            else                    bb.add(btn("pb:" + bn, POSE_BONES[i][1]));
-        }
-        parts.add(sec("関節", bb, 3));
-        // 選択ボーンの回転スライダ(X/Y/Z)
-        var e = app.editBoneEuler();
-        parts.add(grpBox("回転 [" + app.editBone + "]", [
-            rotSlider("x", "X", e[0]), %[ "type" => "vspacer", "height" => 6 ],
-            rotSlider("y", "Y", e[1]), %[ "type" => "vspacer", "height" => 6 ],
-            rotSlider("z", "Z", e[2]) ]));
-        // hips(腰)選択時は移動(ルートモーション)スライダも(ジャンプ/しゃがみ/前後移動)
-        if (app.editBone == "hips") {
-            var h = app.editHips;
-            parts.add(grpBox("移動 [hips]", [
-                hipsSlider("x", "X", h[0]), %[ "type" => "vspacer", "height" => 6 ],
-                hipsSlider("y", "Y", h[1]), %[ "type" => "vspacer", "height" => 6 ],
-                hipsSlider("z", "Z", h[2]) ]));
-        }
-        // ポーズ名 + 保存/クリア
-        parts.add(grpBox("保存", [
-            %[ "type" => "labeled_row", "label" => "名前", "label_width" => 66,
-               "child" => %[ "type" => "input_box", "id" => "pose_name",
-                             "placeholder" => "例: wave" ] ],
-            %[ "type" => "vspacer", "height" => 8 ],
-            %[ "type" => "htile", "children" => [
-                btn("pose_save2", "保存"), %[ "type" => "hspacer", "width" => 10 ],
-                btn("pose_base_rest", "クリア") ] ] ]));
-        // 既存ポーズの読込 + VRMA 書き出し(あれば)
-        var ids = app.poseIdList();
-        if (ids.count > 0) {
-            var lb = [];
-            for (var i = 0; i < ids.count; i++) lb.add(btn("lp:" + ids[i], ids[i]));
-            parts.add(sec("読込", lb, 3));
-            // 保存済みポーズ列を1本の VRMA モーションへ書き出す(poseseq→VRMA)
-            parts.add(grpBox("書出", [ btn("pose_export", "全ポーズ→VRMA") ]));
-        }
-        return catRows(parts);
-    }
-
-    // シーケンス(時間軸)編集パネル: ポーズ列を手順として並べ、各手順に hold/trans を
-    // 指定してプレビュー / VRMA 書き出しする。
-    function seqEditRows()
-    {
-        var parts = [ workspaceRow(), secOneRow("対象", targetRadios()) ];
-        var seq = app.seq;
-        // 手順一覧(選択で強調。ラベルは「i:ポーズ名」)
-        if (seq !== void && seq.count > 0) {
-            var steps = [];
-            for (var i = 0; i < seq.count; i++) {
-                var lab = "" + (i + 1) + ":" + seq[i].pose;
-                if (i == app.seqSel) steps.add(radio("ss:" + i, lab, 1));
-                else                 steps.add(btn("ss:" + i, lab));
-            }
-            parts.add(sec("手順", steps, 2));
-        }
-        // 手順を追加(保存済みポーズを末尾へ)
-        var ids = app.poseIdList();
-        if (ids.count > 0) {
-            var addb = [];
-            for (var i = 0; i < ids.count; i++) addb.add(btn("sq:" + ids[i], ids[i]));
-            parts.add(sec("追加", addb, 3));
-        }
-        // 選択手順の hold/trans + 並べ替え/削除
-        if (seq !== void && app.seqSel >= 0 && app.seqSel < seq.count) {
-            var s = seq[app.seqSel];
-            parts.add(grpBox("手順 " + (app.seqSel + 1) + " [" + s.pose + "]", [
-                secTimeSlider("sh", "保持", s.hold), %[ "type" => "vspacer", "height" => 6 ],
-                secTimeSlider("st", "遷移", s.trans), %[ "type" => "vspacer", "height" => 8 ],
-                %[ "type" => "htile", "children" => [
-                    btn("seq_up", "▲"), %[ "type" => "hspacer", "width" => 8 ],
-                    btn("seq_down", "▼"), %[ "type" => "hspacer", "width" => 8 ],
-                    btn("seq_del", "削除") ] ] ]));
-            // 表情(VRM 表情。無し + モデルの感情/ビセーム)。選択中を強調。
-            var cur = (s.expr !== void) ? s.expr : "";
-            var eb = [];
-            if (cur == "") eb.add(radio("se:none", "無し", 1)); else eb.add(btn("se:none", "無し"));
-            var enames = app.emotionNames();
-            for (var i = 0; i < enames.count; i++) {
-                var nm = enames[i];
-                if (nm == cur) eb.add(radio("se:" + nm, app.exprLabel(nm), 1));
-                else           eb.add(btn("se:" + nm, app.exprLabel(nm)));
-            }
-            parts.add(sec("表情", eb, 3));
-        }
-        // 操作
-        parts.add(grpBox("操作", [ %[ "type" => "htile", "children" => [
-                    btn("seq_preview", "再生"), %[ "type" => "hspacer", "width" => 8 ],
-                    btn("seq_stop", "停止"), %[ "type" => "hspacer", "width" => 8 ],
-                    btn("seq_clear", "全消去") ] ],
-                 %[ "type" => "vspacer", "height" => 8 ],
-                 btn("seq_export", "VRMA 書出") ]));
-        return catRows(parts);
-    }
-    // キャラ管理パネル: レジストリ一覧(選択)→スロット割当 / 新規登録フォーム。
-    function charEditRows()
-    {
-        var parts = [ workspaceRow() ];
-        // 登録済み一覧(選択で強調)。表示は「名前(id)」。
-        var ids = app.charReg.idList();
-        if (ids.count > 0) {
-            var kids = [];
-            for (var i = 0; i < ids.count; i++) {
-                var e = app.charReg.find(ids[i]);
-                var lab = e.name + "(" + ids[i] + ")";
-                if (ids[i] == app.charSel) kids.add(radio("cs:" + ids[i], lab, 1));
-                else                       kids.add(btn("cs:" + ids[i], lab));
-            }
-            parts.add(sec("登録キャラ", kids, 2));
-        }
-        // 現在の割当を見出しに出しつつ、選択キャラをスロットへ割当
-        var sl = app.charReg.slots;
-        parts.add(grpBox("割当 [左:" + sl[0] + " 右:" + sl[1] + "]", [
-            %[ "type" => "htile", "children" => [
-                btn("char_asn_l", "左へ"), %[ "type" => "hspacer", "width" => 10 ],
-                btn("char_asn_r", "右へ") ] ] ]));
-        // 新規登録フォーム(id / 表示名 / VRM ファイル / 正面)
-        parts.add(grpBox("新規登録", [
-            %[ "type" => "labeled_row", "label" => "id", "label_width" => 66,
-               "child" => %[ "type" => "input_box", "id" => "reg_id",
-                             "placeholder" => "例: mychar" ] ],
-            %[ "type" => "vspacer", "height" => 6 ],
-            %[ "type" => "labeled_row", "label" => "名前", "label_width" => 66,
-               "child" => %[ "type" => "input_box", "id" => "reg_name",
-                             "placeholder" => "表示名(省略=id)" ] ],
-            %[ "type" => "vspacer", "height" => 6 ],
-            %[ "type" => "labeled_row", "label" => "VRM", "label_width" => 66,
-               "child" => %[ "type" => "input_box", "id" => "reg_vrm",
-                             "placeholder" => "例: seed(.vrm省略可)" ] ],
-            %[ "type" => "vspacer", "height" => 8 ],
-            %[ "type" => "htile", "children" => [
-                radio("reg_fz_p", "正面+Z(1.0系)", app.regFrontZ > 0),
-                %[ "type" => "hspacer", "width" => 10 ],
-                radio("reg_fz_n", "-Z", app.regFrontZ < 0) ] ],
-            %[ "type" => "vspacer", "height" => 8 ],
-            btn("char_reg", "登録") ]));
-        return catRows(parts);
-    }
-
-    // 時間スライダ(0..3 秒 を 0..1 にマップ。id="sh"/"st")
-    function secTimeSlider(id, label, sec)
-    {
-        var pos = sec / 3.0; if (pos < 0.0) pos = 0.0; if (pos > 1.0) pos = 1.0;
-        return %[ "type" => "labeled_row", "label" => label, "label_width" => 52,
-                  "child" => %[ "type" => "slider", "id" => id, "initial" => pos ] ];
-    }
-
-    // 左列にコマンドパネルを縦積み。top_left で左上に寄せる(fit-to-content)。
-    // 作業モード(app.workMode)で中身をまるごと差し替える。
-    function buildLayout()
-    {
-        var rows;
-        if (app.workMode == "face") rows = faceEditRows();
-        else if (app.workMode == "pose") rows = poseEditRows();
-        else if (app.workMode == "seq")  rows = seqEditRows();
-        else if (app.workMode == "char") rows = charEditRows();
-        else {
-            var body = (app.mode == "space") ? spaceRows() : tachieRows();
-            // 操作モードも先頭に作業モード切替を置く
-            var parts = workspaceRow();
-            for (var i = 0; i < body.count; i++) parts.add(body[i]);
-            rows = parts;
-        }
-        // 編集モードはスライダ等が多く縦に伸びるので少し小さめのフォントで収める
-        var fs = (app.workMode == "op") ? PANEL_FONT_SCALE : 1.15;
-        return %[
-            "size"       => [PANEL_W, WIN_H],
-            "align"      => "top_left",
-            "margin"     => 0,
-            "background" => [18, 20, 30, 240],
-            "font_scale" => fs,                 // engine 対応: 全ウィジェット一括拡大
-            "input"      => %[ "arrow_focus_nav" => 1 ],
-            "content"    => %[ "type" => "margin", "padding" => [14, 10, 14, 10],
-                               "child" => %[ "type" => "vtile", "children" => rows ] ]
-        ];
-    }
-
-    function open()
-    {
-        // 非モーダル常駐。grabFocus=false でゲーム側キー入力を奪わない。
-        return showDict(buildLayout(), false);
-    }
-}
 
 // ---------------------------------------------------------------------------
 //  視線ターゲット用のドラッグ可能レイヤ (最前面・全面ヒット)
@@ -661,12 +172,11 @@ class ADVSample extends Window
     var tachies;    // Tachie 配列 [左, 右]
     var target = 2; // 操作対象 0:左 1:右 2:両方
 
-    var panel;      // ControlPanel
     var timer, lastTick;
     var logLines;   // 情報欄の操作ログ(リング)
     var infoClock = 0.0;
 
-    // --- 作業モード(左パネルをまるごと差し替える軸。view の tachie/space とは直交) ---
+    // --- 作業モード(ブラウザ編集UIのペイン切替軸。view の tachie/space とは直交) ---
     // "op"  : 通常操作(対象/フレーム/表情/モーション/…)
     // "face": 表情編集(生モーフ簡易エディタ。curated モーフをスライダ編集→JSON保存)
     // "pose": ポーズ編集(採取/素立ちから関節回転をスライダ編集→JSON保存)
@@ -791,10 +301,6 @@ class ADVSample extends Window
         // 既定フレーミング(腰上。頭は全部出て足は隠れる ADV 立ち絵構図)
         applyFrame("waist");
 
-        // 操作パネル(常駐。DrawDevice 準備前は onContinuousHandler で再試行)
-        panel = new ControlPanel(this);
-        if (panel.open()) panelReady = true;
-
         // 描画ループ
         lastTick = System.getTickCount();
         timer = new Timer(this, "onFrame");
@@ -803,25 +309,13 @@ class ADVSample extends Window
         add(timer);
     }
 
-    // 起動直後は overlay renderer 未登録で showDict が false のことがあるので
-    // 成功するまで onContinuousHandler で再試行する。
-    var panelReady  = false;  // 初回 open 成功済み(DrawDevice 準備完了)
-    var panelWanted = true;   // 表示したい状態(Tab で切替 / 隠すボタンで false)
-
-    // 起動直後は DrawDevice 未登録で open が false のことがあるので、初回だけ
-    // 成功するまで再試行する(以後の表示制御は Tab / 隠すボタン)。
-    function onContinuousHandler(tick)
-    {
-        if (!panelReady && panelWanted && panel !== void) {
-            if (panel.open()) panelReady = true;
-        }
-    }
-
-    // Tab でパネル表示/非表示。矢印でカメラ旋回、Z/X でズーム(操作対象に適用)。
+    // Tab でブラウザ編集 UI を開く。矢印でカメラ旋回、Z/X でズーム(操作対象に適用)。
     function onKeyDown(key, shift)
     {
         switch (key) {
-        case VK_TAB:   togglePanel(); return;
+        case VK_TAB:
+            if (typeof global.webui != "undefined") webui.openBrowser();
+            return;
         case VK_LEFT:  cameraOrbit(-0.12, 0.0);  return;
         case VK_RIGHT: cameraOrbit( 0.12, 0.0);  return;
         case VK_UP:    cameraOrbit( 0.0,  0.08); return;
@@ -831,13 +325,6 @@ class ADVSample extends Window
         case VK_R:     cameraReset();            return;
         }
         super.onKeyDown(key, shift);
-    }
-    function togglePanel()
-    {
-        if (panel === void) return;
-        panelWanted = !panelWanted;
-        if (panelWanted) { if (panel.open()) panelReady = true; }
-        else panel.close();
     }
 
     function drawBackground(layer)
@@ -1004,7 +491,6 @@ class ADVSample extends Window
         }
         mode = m;
         // モードごとに操作パネルを組み替える
-        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
 
     // 空間カメラの画角(望遠/広角)を変える
@@ -1364,7 +850,7 @@ class ADVSample extends Window
     // ==================================================================
     //  表情編集(生モーフ簡易エディタ)
     // ==================================================================
-    // 作業モード切替。左パネルをまるごと差し替える(view の tachie/space とは直交)。
+    // 作業モード切替(ブラウザ編集UIのペインが追従。view の tachie/space とは直交)。
     function setWorkMode(m)
     {
         if (m == workMode) return;
@@ -1401,7 +887,6 @@ class ADVSample extends Window
             // キャラ管理: 未選択なら左スロットのキャラを選択状態に
             if (charSel == "" && charReg !== void) charSel = charReg.slots[0];
         }
-        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
     // 編集中の生モーフを対象キャラへライブ反映(0 のものは送らない)
     function applyEditToTargets()
@@ -1433,7 +918,6 @@ class ADVSample extends Window
     {
         editMorphs = %[];
         applyEditToTargets();
-        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
     // --- 表情ライブラリ(共有 JSON: faces.json)---
     // 形式: %[ "version"=>1, "faces"=>%[ id=>%[ "label"=>表示名, "morphs"=>%[Fcl名=>w] ] ] ]
@@ -1480,7 +964,6 @@ class ADVSample extends Window
         var pairs = dictPairs(def.morphs);
         for (var j = 0; j < pairs.count; j += 2) editMorphs[pairs[j]] = pairs[j + 1];
         applyEditToTargets();
-        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
     function faceIdList()
     {
@@ -1524,7 +1007,6 @@ class ADVSample extends Window
     function poseBaseCapture()
     {
         captureEditPose();
-        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
     // 素立ち(モデルの自然な A-pose)を基準にする。
     // identity 正規化は正準 T-pose なので、Tachie.restPose() で腕を下ろした A-pose を作って採取する。
@@ -1541,7 +1023,6 @@ class ADVSample extends Window
             editPose[flat[j]] = [ flat[j + 1], flat[j + 2], flat[j + 3], flat[j + 4] ];
         editHips = [ 0.0, 0.0, 0.0 ];
         applyEditPoseLive();
-        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
     // hips ルートモーション オフセット 1 軸(0=x/1=y/2=z)をメートル値で設定しライブ反映
     function editSetHips(axis, meter)
@@ -1560,7 +1041,6 @@ class ADVSample extends Window
     function editSelectBone(name)
     {
         editBone = name;
-        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
     // 選択ボーンの 1 軸(0=x/1=y/2=z)の角度を deg にしてライブ反映
     function editSetBoneRot(axis, deg)
@@ -1615,7 +1095,6 @@ class ADVSample extends Window
         for (var j = 0; j < pairs.count; j += 2) { var q = pairs[j + 1]; editPose[pairs[j]] = [ q[0], q[1], q[2], q[3] ]; }
         editHips = (def.hips !== void) ? [ def.hips[0], def.hips[1], def.hips[2] ] : [ 0.0, 0.0, 0.0 ];
         applyEditPoseLive();
-        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
     function poseIdList()
     {
@@ -1693,7 +1172,7 @@ class ADVSample extends Window
         }
         return arr;
     }
-    function seqRebuildPanel() { if (panel !== void && panelWanted) { panel.close(); panel.open(); } }
+    function seqRebuildPanel() {}   // Elements パネル撤去済 (ブラウザ UI は SSE push で同期)
     function seqAddPose(id)
     {
         seqEnsure();
@@ -1927,7 +1406,6 @@ class ADVSample extends Window
     function selectChar(id)
     {
         charSel = id;
-        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
     // レジストリのキャラをスロット(0=左, 1=右)へ割り当てる(VRM を差し替える)。
     function assignSlot(slot, id)
@@ -1956,7 +1434,6 @@ class ADVSample extends Window
         slotDefs[slot] = def;
         charReg.slots[slot] = id;
         charReg.save();
-        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
     // 新規登録フォームの内容でフォルダ+char.json を作りレジストリへ追加する。
     function registerCharAction()
@@ -1964,7 +1441,6 @@ class ADVSample extends Window
         var id = charReg.register(regId, regName, regVrm, regFrontZ);
         if (id == "") { Debug.message("登録失敗: id と VRM ファイル名を確認してください"); return; }
         charSel = id;
-        if (panel !== void && panelWanted) { panel.close(); panel.open(); }
     }
     // スロットに割当中のキャラ表示名(インスペクタ用)
     function slotName(i)
@@ -1994,7 +1470,7 @@ class ADVSample extends Window
         if (id == "sh") { seqSetHold((val + 0.0) * 3.0);  return; }   // シーケンス保持秒スライダ
         if (id == "st") { seqSetTrans((val + 0.0) * 3.0); return; }   // シーケンス遷移秒スライダ
         logLine(id);   // 情報欄の操作ログへ
-        // --- 作業モード切替(左パネルまるごと差し替え)---
+        // --- 作業モード切替 ---
         if (id == "work_op")   { setWorkMode("op");   return; }
         if (id == "work_face") { setWorkMode("face"); return; }
         if (id == "work_pose") { setWorkMode("pose"); return; }
@@ -2098,7 +1574,6 @@ class ADVSample extends Window
         case "mode_tachie":  setMode("tachie"); break;
         case "mode_space":   setMode("space");  break;
 
-        case "hide":         panelWanted = false; if (panel !== void) panel.close(); break;
         }
     }
 
@@ -2210,9 +1685,9 @@ class ADVSample extends Window
         L.drawText(x, y, "対象:" + (target==0?"左":(target==1?"右":"両方"))
                        + "   FPS:" + (int)fps, dim, 255, true); y += 32;
         L.font.height = 14;
-        var hints = [ "Tab: パネル表示/非表示",
+        var hints = [ "Tab: ブラウザ編集UIを開く",
                       "矢印: カメラ旋回   Z/X: ズーム   R: 正面",
-                      "左パネルで対象・表情・モーション等を操作" ];
+                      "編集はブラウザUI(Tab か -webui で開く)から" ];
         for (var i = 0; i < hints.count; i++) { L.drawText(x, y, hints[i], dim, 255, true); y += 24; }
         // 右: 操作ログ(最新が下、収まる分だけ)
         var lx = 560, ly = 18, llh = 22;
@@ -2235,7 +1710,6 @@ class ADVSample extends Window
     function finalize()
     {
         if (timer !== void) timer.enabled = false;
-        if (panel !== void) { panel.close() if panel.active; }
         for (var i = 0; i < tachies.count; i++) invalidate tachies[i];
         invalidate renderer if renderer !== void;
         invalidate adaptor  if adaptor  !== void;
