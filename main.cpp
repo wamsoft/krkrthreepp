@@ -6,6 +6,7 @@
 #include "ncbind.hpp"
 #include "LayerExBase.hpp"
 #include "vrm/VRM.hpp"
+#include <nlohmann/json.hpp>   // Web API 用 JSON ダンプ (treeJson / expressionListJson 等)
 #include <glad/glad.h>   // onEndScene のホスト向け GL ステート復帰で使用
 #include <vector>
 #include <memory>
@@ -1147,6 +1148,57 @@ static void Object3D_translateY(ThreeWrapper<Object3D> *self, float distance) { 
 static void Object3D_translateZ(ThreeWrapper<Object3D> *self, float distance) { if (self && self->getObject()) self->getObject()->translateZ(distance); }
 static void Object3D_translateOnAxis(ThreeWrapper<Object3D> *self, const Vector3& axis, float distance) { if (self && self->getObject()) self->getObject()->translateOnAxis(axis, distance); }
 
+// UTF-8 → ttstr 変換 (JSON ダンプ返却用)。std::string の既定コンバータは
+// ASCII 限定 (バイト単位 widening) なので、日本語を含みうる JSON はこれで返す。
+static ttstr ThreeUtf8ToTtstr(const std::string &u8)
+{
+	std::basic_string<tjs_char> out;
+	out.reserve(u8.size());
+	size_t i = 0, n = u8.size();
+	while (i < n) {
+		unsigned char c = (unsigned char)u8[i];
+		unsigned int cp = 0xFFFD;
+		size_t len = 1;
+		if (c < 0x80) { cp = c; }
+		else if ((c & 0xE0) == 0xC0 && i + 1 < n) { cp = ((c & 0x1F) << 6) | (u8[i+1] & 0x3F); len = 2; }
+		else if ((c & 0xF0) == 0xE0 && i + 2 < n) { cp = ((c & 0x0F) << 12) | ((u8[i+1] & 0x3F) << 6) | (u8[i+2] & 0x3F); len = 3; }
+		else if ((c & 0xF8) == 0xF0 && i + 3 < n) { cp = ((c & 0x07) << 18) | ((u8[i+1] & 0x3F) << 12) | ((u8[i+2] & 0x3F) << 6) | (u8[i+3] & 0x3F); len = 4; }
+		if (cp >= 0x10000 && sizeof(tjs_char) == 2) {
+			cp -= 0x10000;
+			out += (tjs_char)(0xD800 | (cp >> 10));
+			out += (tjs_char)(0xDC00 | (cp & 0x3FF));
+		} else {
+			out += (tjs_char)cp;
+		}
+		i += len;
+	}
+	return ttstr(out.c_str());
+}
+
+// サブツリーを JSON 文字列で一括ダンプ (ブラウザ UI のシーンツリー表示用)。
+// 1 ノード = {id,name,type,visible,pos:[x,y,z],children:[…]}
+static void Object3D_treeJsonRec(const Object3D* node, nlohmann::json& out) {
+	out["id"] = node->id;
+	out["name"] = node->name;
+	out["type"] = node->type();
+	out["visible"] = node->visible;
+	out["pos"] = { node->position.x, node->position.y, node->position.z };
+	nlohmann::json children = nlohmann::json::array();
+	for (const auto* c : node->children) {
+		if (!c) continue;
+		nlohmann::json cj;
+		Object3D_treeJsonRec(c, cj);
+		children.push_back(std::move(cj));
+	}
+	out["children"] = std::move(children);
+}
+static ttstr Object3D_treeJson(ThreeWrapper<Object3D> *self) {
+	if (!self || !self->getObject()) return ttstr(TJS_W("null"));
+	nlohmann::json j;
+	Object3D_treeJsonRec(self->getObject().get(), j);
+	return ThreeUtf8ToTtstr(j.dump());
+}
+
 // Object3D のプロキシ取得関数
 static ttstr Object3DGetType(ThreeWrapper<Object3D> *self) {
 	if (self && self->getObject()) {
@@ -1409,6 +1461,7 @@ THREE_OBJECT3D_MEMBERS();
 NCB_METHOD_PROXY(rotateOnAxis, Object3D_rotateOnAxis);
 NCB_METHOD_PROXY(rotateOnWorldAxis, Object3D_rotateOnWorldAxis);
 NCB_METHOD_PROXY(translateOnAxis, Object3D_translateOnAxis);
+NCB_METHOD_PROXY(treeJson, Object3D_treeJson);  // サブツリー JSON ダンプ (Web UI 用)
 };
 
 // ======================================================================
@@ -2848,6 +2901,27 @@ static std::string VRM_getExpressionName(ThreeWrapper<VRM> *self, int i) {
 	}
 	return std::string();
 }
+// 表情一覧を JSON 文字列で一括取得 ([{name,weight},…])。ブラウザ UI 用に
+// 1 呼び出しで済ませる (getExpressionName の N 往復回避)。
+static ttstr VRM_expressionListJson(ThreeWrapper<VRM> *self) {
+	nlohmann::json arr = nlohmann::json::array();
+	if (self && self->getObject()) {
+		auto& mgr = self->getObject()->expressionManager;
+		for (const auto& name : mgr.names())
+			arr.push_back({ {"name", name}, {"weight", mgr.getValue(name)} });
+	}
+	return ThreeUtf8ToTtstr(arr.dump());
+}
+// 生モーフ名一覧を JSON 文字列で一括取得 (["Fcl_ALL_Neutral",…])。
+static ttstr VRM_morphListJson(ThreeWrapper<VRM> *self) {
+	nlohmann::json arr = nlohmann::json::array();
+	if (self && self->getObject()) {
+		auto* vrm = self->getObject().get();
+		int n = (int)vrm->morphCount();
+		for (int i = 0; i < n; ++i) arr.push_back(vrm->morphName((std::size_t)i));
+	}
+	return ThreeUtf8ToTtstr(arr.dump());
+}
 static void  VRM_update(ThreeWrapper<VRM> *self, float dt)                                { if (self && self->getObject()) self->getObject()->update(dt); }
 static void  VRM_setColliderScale(ThreeWrapper<VRM> *self, float s)                       { if (self && self->getObject()) self->getObject()->setColliderScale(s); }
 static float VRM_getColliderScale(ThreeWrapper<VRM> *self)                                { return (self && self->getObject()) ? self->getObject()->getColliderScale() : 1.f; }
@@ -2985,6 +3059,8 @@ NCB_METHOD_PROXY(setExpression, VRM_setExpression);  // (name, weight)
 NCB_METHOD_PROXY(getExpression, VRM_getExpression);  // (name) -> float
 NCB_METHOD_PROXY(getExpressionCount, VRM_getExpressionCount);
 NCB_METHOD_PROXY(getExpressionName, VRM_getExpressionName);  // (i) -> 表情名
+NCB_METHOD_PROXY(expressionListJson, VRM_expressionListJson);// -> [{name,weight},…] JSON (Web UI 用)
+NCB_METHOD_PROXY(morphListJson, VRM_morphListJson);          // -> [名前,…] JSON (Web UI 用)
 NCB_METHOD_PROXY(setMorph, VRM_setMorph);            // (name, weight) 生モーフ直接指定
 NCB_METHOD_PROXY(clearMorphs, VRM_clearMorphs);      // 生モーフ全解除
 NCB_METHOD_PROXY(getMorphCount, VRM_getMorphCount);  // -> モーフ数
@@ -5711,6 +5787,84 @@ NCB_REGISTER_CLASS(Threepp)
 	ENUM(CatmullRomCurve3::CurveType::chordal);
 	ENUM(CatmullRomCurve3::CurveType::catmullrom);
 }
+
+// ======================================================================
+// ThreeWebApi — WebServer (-replweb) へのネイティブハンドラ提供 (Web UI 基盤)
+// ======================================================================
+// プラグイン自身が webrepl サーバへ API を追加公開する経路。リンク時に
+// WebServer.register("/api/three/", handler) を TJS 経由で配線する
+// (WebServer の無い engine では何もしない)。handler は本クラスの handle
+// (ネイティブ実装、メインスレッドで呼ばれる) で、req.path で下位ルートへ
+// 振り分ける。アプリ状態に依存する API (キャラ/表情操作等) は TJS 側で
+// 別プレフィックスに登録し、VRM.expressionListJson / Object3D.treeJson 等の
+// ネイティブ JSON ダンプを併用する想定。
+
+struct ThreeWebApi {
+	ThreeWebApi() {}
+};
+
+// handler(req) — req = %[method, path, query, body, bytes]。戻り値は
+// WebServer の規約どおり (文字列=200 JSON / 辞書=%[status,mime,body] / 整数=status)。
+static tjs_error TJS_INTF_METHOD
+ThreeWebApi_handle(tTJSVariant *result, tjs_int numparams, tTJSVariant **param, ThreeWebApi *self)
+{
+	if (!self) return TJS_E_NATIVECLASSCRASH;
+	if (numparams < 1 || param[0]->Type() != tvtObject) return TJS_E_INVALIDPARAM;
+	ncbPropAccessor req(*param[0]);
+	std::string path = ThreeAsciiNarrow(req.getStrValue(TJS_W("path")));
+
+	nlohmann::json j;
+	if (path == "/api/three/ping") {
+		j["ok"] = true;
+		j["plugin"] = "krkr_threepp";
+	} else {
+		j["error"] = std::string("unknown api: ") + path;
+	}
+	if (result) *result = tTJSVariant(ThreeUtf8ToTtstr(j.dump()));
+	return TJS_S_OK;
+}
+
+NCB_REGISTER_CLASS(ThreeWebApi)
+{
+	NCB_CONSTRUCTOR(());
+	NCB_METHOD_RAW_CALLBACK(handle, ThreeWebApi_handle, 0);
+}
+
+// WebServer があればネイティブハンドラを配線 (POST_REGIST = 全クラス登録後)。
+static void registerThreeppWebApi()
+{
+	try {
+		tTJSVariant dummy;
+		TVPExecuteExpression(ttstr(TJS_W(
+			"(function(){"
+			" if (typeof global.WebServer == \"undefined\") return 0;"
+			" var api = new ThreeWebApi();"
+			" WebServer.register(\"/api/three/\", api.handle);"
+			" global.__threeppWebApi = api;"  // 生存保持 (unlink 時に解放)
+			" return 1;"
+			"})()")), &dummy);
+	} catch (...) {
+		// WebServer 無し等は黙ってスキップ (旧 engine 互換)
+	}
+}
+NCB_POST_REGIST_CALLBACK(registerThreeppWebApi);
+
+// unlink 時にハンドラを解除 (登録クロージャがプラグインの実体を参照するため、
+// クラス破棄より前 = PRE_UNREGIST で必ず手放す)。
+static void unregisterThreeppWebApi()
+{
+	try {
+		tTJSVariant dummy;
+		TVPExecuteExpression(ttstr(TJS_W(
+			"(function(){"
+			" if (typeof global.WebServer == \"undefined\") return 0;"
+			" WebServer.unregister(\"/api/three/\");"
+			" global.__threeppWebApi = void;"
+			" return 1;"
+			"})()")), &dummy);
+	} catch (...) {}
+}
+NCB_PRE_UNREGIST_CALLBACK(unregisterThreeppWebApi);
 
 // ----------------------------------- 起動・開放処理
 

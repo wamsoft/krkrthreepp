@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>threepp 編集UI</title>
+<style>
+  :root { color-scheme: dark; }
+  html,body { margin:0; background:#1e1e1e; color:#d4d4d4;
+    font-family:"Segoe UI","Yu Gothic UI",Meiryo,sans-serif; font-size:14px; }
+  #bar { display:flex; align-items:center; gap:10px; padding:8px 12px;
+    background:#252526; border-bottom:1px solid #333; position:sticky; top:0; }
+  #bar b { color:#4ec9b0; }
+  #bar .mode { display:flex; gap:4px; }
+  #bar .mode button { background:#333; color:#ccc; border:0; padding:4px 12px;
+    border-radius:3px; cursor:pointer; }
+  #bar .mode button.on { background:#0e639c; color:#fff; }
+  #status { margin-left:auto; font-size:12px; color:#808080; }
+  #main { padding:12px 16px; max-width:760px; }
+  .group { margin:0 0 14px; border:1px solid #3c3c3c; border-radius:4px; }
+  .group h3 { margin:0; padding:4px 10px; font-size:13px; background:#2d2d30;
+    color:#9ad8ff; border-bottom:1px solid #3c3c3c; }
+  .rows { padding:6px 10px; }
+  .row { display:flex; align-items:center; gap:8px; padding:2px 0; }
+  .row label { width:9em; color:#c2ccda; white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; }
+  .row input[type=range] { flex:1; }
+  .row .val { width:3em; text-align:right; color:#88ecae; font-variant-numeric:tabular-nums; }
+  #libops { display:flex; align-items:center; gap:8px; margin:10px 0; flex-wrap:wrap; }
+  #libops input { background:#1e1e1e; color:#d4d4d4; border:1px solid #3c3c3c;
+    padding:4px 8px; border-radius:3px; }
+  button.act { background:#0e639c; color:#fff; border:0; padding:5px 14px;
+    border-radius:3px; cursor:pointer; }
+  button.act:hover { background:#1177bb; }
+  button.sub { background:#3c3c3c; color:#ccc; border:0; padding:5px 10px;
+    border-radius:3px; cursor:pointer; }
+  #faces { display:flex; gap:6px; flex-wrap:wrap; }
+  #faces button { background:#2d2d30; color:#dcdcaa; border:1px solid #3c3c3c;
+    padding:4px 10px; border-radius:3px; cursor:pointer; }
+  #faces button:hover { border-color:#0e639c; }
+  #notready { padding:24px; color:#f48771; display:none; }
+</style></head>
+<body>
+<div id="bar">
+  <b>threepp 編集UI</b>
+  <div class="mode" id="modes"></div>
+  <span id="status">connecting...</span>
+</div>
+<div id="notready">アプリ (advsample) が未起動です。</div>
+<div id="main">
+  <div id="libops">
+    <input id="facename" placeholder="表情名 (保存キー)">
+    <button class="act" id="save">保存</button>
+    <button class="sub" id="clear">クリア</button>
+  </div>
+  <div id="faces"></div>
+  <div id="groups"></div>
+</div>
+<script>
+(function(){
+  var MODES = [["op","操作"],["face","表情"],["pose","ポーズ"],["seq","連番"],["char","キャラ"]];
+  var statusEl = document.getElementById('status');
+  var dragging = false;      // スライダ操作中は SSE 由来の再描画を抑止
+  var state = null;
+
+  function post(path, obj){
+    return fetch(path, {method:'POST', body: obj ? JSON.stringify(obj) : ''})
+      .catch(function(){ statusEl.textContent = 'request failed'; });
+  }
+
+  // ---- スライダ送信の throttle (trailing 付き 50ms) ----
+  var pend = {}, timer = null;
+  function sendMorph(name, w){
+    pend[name] = w;
+    if (timer) return;
+    timer = setTimeout(function(){
+      timer = null;
+      var batch = pend; pend = {};
+      Object.keys(batch).forEach(function(k){ post('/app/face/morph', {name:k, w:batch[k]}); });
+    }, 50);
+  }
+
+  function render(){
+    if (!state) return;
+    document.getElementById('notready').style.display = state.ready ? 'none' : 'block';
+    document.getElementById('main').style.display = state.ready ? 'block' : 'none';
+    // 作業モード
+    var modes = document.getElementById('modes');
+    modes.innerHTML = '';
+    MODES.forEach(function(m){
+      var b = document.createElement('button');
+      b.textContent = m[1];
+      if (state.workMode === m[0]) b.className = 'on';
+      b.onclick = function(){ post('/app/workmode', {mode:m[0]}); };
+      modes.appendChild(b);
+    });
+    if (!state.ready) return;
+    document.getElementById('facename').value = state.editName || '';
+    // 表情ライブラリ
+    var faces = document.getElementById('faces');
+    faces.innerHTML = '';
+    (state.faces || []).forEach(function(id){
+      var b = document.createElement('button');
+      b.textContent = id;
+      b.onclick = function(){ post('/app/face/load', {id:id}); };
+      faces.appendChild(b);
+    });
+    // モーフグループ + スライダ
+    var groups = document.getElementById('groups');
+    groups.innerHTML = '';
+    (state.groups || []).forEach(function(g){
+      var box = document.createElement('div'); box.className = 'group';
+      var h = document.createElement('h3'); h.textContent = g.title; box.appendChild(h);
+      var rows = document.createElement('div'); rows.className = 'rows';
+      g.items.forEach(function(it){
+        var w = (state.morphs && state.morphs[it.name]) || 0;
+        var row = document.createElement('div'); row.className = 'row';
+        var lab = document.createElement('label');
+        lab.textContent = it.label + ' (' + it.name.replace(/^Fcl_/,'') + ')';
+        var rng = document.createElement('input');
+        rng.type = 'range'; rng.min = 0; rng.max = 1; rng.step = 0.01; rng.value = w;
+        var val = document.createElement('span'); val.className = 'val';
+        val.textContent = (+w).toFixed(2);
+        rng.addEventListener('input', function(){
+          val.textContent = (+rng.value).toFixed(2);
+          sendMorph(it.name, +rng.value);
+        });
+        rng.addEventListener('pointerdown', function(){ dragging = true; });
+        rng.addEventListener('pointerup', function(){ dragging = false; });
+        row.appendChild(lab); row.appendChild(rng); row.appendChild(val);
+        rows.appendChild(row);
+      });
+      box.appendChild(rows);
+      groups.appendChild(box);
+    });
+  }
+
+  document.getElementById('save').onclick = function(){
+    var id = document.getElementById('facename').value.trim();
+    if (!id) { alert('表情名を入力してください'); return; }
+    post('/app/face/save', {id:id});
+  };
+  document.getElementById('clear').onclick = function(){ post('/app/face/clear'); };
+
+  function refresh(){
+    return fetch('/app/state').then(function(r){ return r.json(); })
+      .then(function(s){ state = s; if (!dragging) render(); })
+      .catch(function(){ statusEl.textContent = 'state fetch failed'; });
+  }
+
+  // SSE: 操作後の broadcast で他クライアント/外部変更に追従
+  var es = new EventSource('/sub/state');
+  es.onopen = function(){ statusEl.textContent = 'connected'; };
+  es.onerror = function(){ statusEl.textContent = 'disconnected (retrying)'; };
+  es.onmessage = function(e){
+    try { state = JSON.parse(e.data); if (!dragging) render(); } catch(_){}
+  };
+
+  refresh();
+})();
+</script>
+</body></html>

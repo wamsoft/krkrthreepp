@@ -1,0 +1,98 @@
+// webui.tjs — ブラウザ編集 UI 向け WebServer ハンドラ登録 (アプリ層)
+//
+// advsample (global.app = ADVSample) のモデル層を HTTP/SSE へ橋渡しする。
+//   /ui/ 以下     … data/ui/ 以下の静的配信 (ブラウザ UI 本体)
+//   /app/state    … 編集状態 JSON (GET)
+//   /app/…        … 操作系 (POST, body=JSON)
+//   SSE /sub/state … 状態変更の push (操作後に broadcast)
+//
+// engine が WebServer (-replweb ビルド) を持たない場合は何もしない。
+// advsample.tjs 末尾から execStorage される (単体で REPL から呼んでもよい)。
+// ハンドラは常にメインスレッドで呼ばれるため app を直接触ってよい。
+// ※ TJS2 はローカル関数へのレキシカルクロージャを持たないので、ハンドラは
+//    クラスメンバにして objthis (webui インスタンス) 経由で相互参照する。
+// ※ TJS2 のブロックコメントはネスト可能で "/ui/" + "*" の並びが誤爆するため
+//    このファイルは行コメントのみ使用。
+
+class WebUIBridge
+{
+    function WebUIBridge() {}
+
+    // ---- 状態 JSON (表情編集タブに必要な一式) ----
+    function buildState()
+    {
+        var st = %[];
+        if (typeof global.app == "undefined") { st.ready = false; return st; }
+        st.ready = true;
+        st.workMode = app.workMode;
+        st.editName = (app.editName === void) ? "" : app.editName;
+        st.morphs = (app.editMorphs === void) ? %[] : app.editMorphs;
+        st.faces = app.faceIdList();
+        // curated モーフグループ (advsample.tjs のグローバル定義)
+        var groups = [];
+        for (var g = 0; g < FACE_MORPH_GROUPS.count; g++) {
+            var src = FACE_MORPH_GROUPS[g];
+            var items = [];
+            for (var i = 0; i < src.items.count; i++)
+                items.add(%[ "name" => src.items[i][0], "label" => src.items[i][1] ]);
+            groups.add(%[ "title" => src.title, "items" => items ]);
+        }
+        st.groups = groups;
+        return st;
+    }
+    function stateJson() { return Scripts.toJSONString(buildState()); }
+    function push() { WebServer.broadcast("state", stateJson()); }
+
+    // ---- アプリ操作ハンドラ (WebServer.register の呼び先) ----
+    function handler(req)
+    {
+        var path = req.path;
+        if (path == "/app/state") return stateJson();
+
+        if (typeof global.app == "undefined")
+            return %[ "status" => 503, "body" => "{\"error\":\"app not ready\"}" ];
+
+        var arg = (req.body != "") ? Scripts.evalJSON(req.body) : %[];
+
+        if (path == "/app/workmode") {          // {mode:"op"/"face"/"pose"/"seq"/"char"}
+            app.setWorkMode(arg.mode);
+            push();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/face/morph") {        // {name:"Fcl_…", w:0..1} スライダライブ反映
+            app.editSetMorph(arg.name, +arg.w);
+            return "{\"ok\":true}";             // 連打されるので push しない (操作元が真実)
+        }
+        if (path == "/app/face/clear") {        // 全モーフ 0
+            app.editClear();
+            push();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/face/save") {         // {id:"表情名"} 現在の編集内容を保存
+            app.editName = arg.id;
+            app.saveCurrentFace();
+            push();
+            return "{\"ok\":true}";
+        }
+        if (path == "/app/face/load") {         // {id:"表情名"} ライブラリから編集へ読込
+            app.loadFaceIntoEdit(arg.id);
+            push();
+            return "{\"ok\":true}";
+        }
+        return %[ "status" => 404, "body" => "{\"error\":\"unknown: " + path + "\"}" ];
+    }
+}
+
+(function() {
+    if (typeof global.WebServer == "undefined") return;
+    if (typeof Scripts.toJSONString == "undefined") {
+        Debug.message("webui: json.dll がありません (Scripts.toJSONString 不在)");
+        return;
+    }
+    // ブラウザ UI 本体 (data/ui/ 以下) を /ui/ で配信
+    WebServer.serveStatic("/ui/", "ui/");
+    // ハンドラ登録 (webui インスタンスの handle 閉包。objthis=webui でメンバ解決)
+    global.webui = new WebUIBridge();
+    WebServer.register("/app/", webui.handler);
+    Debug.message("webui: WebServer へ /ui/ と /app/ を登録");
+})();
