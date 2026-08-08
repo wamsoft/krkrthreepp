@@ -2891,15 +2891,15 @@ static int   VRM_getExpressionCount(ThreeWrapper<VRM> *self)                    
 static void VRM_setMorph(ThreeWrapper<VRM> *self, std::string name, float w) { if (self && self->getObject()) self->getObject()->setMorph(name, w); }
 static void VRM_clearMorphs(ThreeWrapper<VRM> *self)                         { if (self && self->getObject()) self->getObject()->clearMorphs(); }
 static int  VRM_getMorphCount(ThreeWrapper<VRM> *self)                       { return (self && self->getObject()) ? (int)self->getObject()->morphCount() : 0; }
-static std::string VRM_getMorphName(ThreeWrapper<VRM> *self, int i)          { return (self && self->getObject()) ? self->getObject()->morphName((std::size_t)i) : std::string(); }
+static ttstr VRM_getMorphName(ThreeWrapper<VRM> *self, int i)          { return (self && self->getObject()) ? ThreeUtf8ToTtstr(self->getObject()->morphName((std::size_t)i)) : ttstr(); }
 
 // i 番目の表情名を返す(範囲外は空)。表情一覧UIやエディタで使う。
-static std::string VRM_getExpressionName(ThreeWrapper<VRM> *self, int i) {
+static ttstr VRM_getExpressionName(ThreeWrapper<VRM> *self, int i) {
 	if (self && self->getObject()) {
 		auto ns = self->getObject()->expressionManager.names();
-		if (i >= 0 && i < (int)ns.size()) return ns[i];
+		if (i >= 0 && i < (int)ns.size()) return ThreeUtf8ToTtstr(ns[i]);
 	}
-	return std::string();
+	return ttstr();
 }
 // 表情一覧を JSON 文字列で一括取得 ([{name,weight},…])。ブラウザ UI 用に
 // 1 呼び出しで済ませる (getExpressionName の N 往復回避)。
@@ -3021,9 +3021,9 @@ static std::shared_ptr<VRMAnimation> VRMAnimationLoader_loadStorage(ThreeWrapper
 }
 static float VRMAnimation_getDuration(ThreeWrapper<VRMAnimation> *self)       { return (self && self->getObject()) ? self->getObject()->duration() : 0.f; }
 static int   VRMAnimation_getBoneTrackCount(ThreeWrapper<VRMAnimation> *self) { return (self && self->getObject()) ? (int)self->getObject()->boneTrackCount() : 0; }
-static std::string VRM_getMetaName(ThreeWrapper<VRM> *self)       { return (self && self->getObject()) ? self->getObject()->meta.name : std::string(); }
-static std::string VRM_getMetaVersion(ThreeWrapper<VRM> *self)    { return (self && self->getObject()) ? self->getObject()->meta.version : std::string(); }
-static std::string VRM_getMetaLicenseUrl(ThreeWrapper<VRM> *self) { return (self && self->getObject()) ? self->getObject()->meta.licenseUrl : std::string(); }
+static ttstr VRM_getMetaName(ThreeWrapper<VRM> *self)       { return (self && self->getObject()) ? ThreeUtf8ToTtstr(self->getObject()->meta.name) : ttstr(); }
+static ttstr VRM_getMetaVersion(ThreeWrapper<VRM> *self)    { return (self && self->getObject()) ? ThreeUtf8ToTtstr(self->getObject()->meta.version) : ttstr(); }
+static ttstr VRM_getMetaLicenseUrl(ThreeWrapper<VRM> *self) { return (self && self->getObject()) ? ThreeUtf8ToTtstr(self->getObject()->meta.licenseUrl) : ttstr(); }
 
 // VRM / VRMAnimation は VRMLoader/VRMAnimationLoader の戻り値としてコンバータ復路
 // (CreateAdaptor) で TJS 化される。エンジンの CreateNew は「未実装コンストラクタ =
@@ -3152,13 +3152,13 @@ static int GLTFModel_getAnimationCount(ThreeWrapper<GLTFModel> *self)
 {
 	return (self && self->getObject()) ? (int)self->getObject()->result.animations.size() : 0;
 }
-static std::string GLTFModel_getAnimationName(ThreeWrapper<GLTFModel> *self, int i)
+static ttstr GLTFModel_getAnimationName(ThreeWrapper<GLTFModel> *self, int i)
 {
 	if (self && self->getObject()) {
 		auto &anims = self->getObject()->result.animations;
-		if (i >= 0 && i < (int)anims.size() && anims[i]) return anims[i]->name();
+		if (i >= 0 && i < (int)anims.size() && anims[i]) return ThreeUtf8ToTtstr(anims[i]->name());
 	}
-	return std::string();
+	return ttstr();
 }
 static float GLTFModel_getAnimationDuration(ThreeWrapper<GLTFModel> *self, int i)
 {
