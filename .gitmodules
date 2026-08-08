@@ -1,5 +1,5 @@
 [submodule "threepp"]
-	path = threepp
+	path = external/threepp
 	url = https://github.com/wtnbgo/threepp.git
 	branch = work_sdl3
 [submodule "external/VRM"]

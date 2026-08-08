@@ -1,7 +1,7 @@
 # VRM SpringBone コライダー: 「髪が服に埋まる」現象の記録と対応
 
 対象モデル: `data/model.vrm` (VRM 1.0, VRoid 製 "VRM1_Constraint_Twist_Sample")
-記録日: 2026-08-01 / 実装: `vrm/VRM.cpp` (`VRMSpringBoneManager::collide`)
+記録日: 2026-08-01 / 実装: `src/vrm/VRM.cpp` (`VRMSpringBoneManager::collide`)
 
 他の VRM 実装（three-vrm / UniVRM / 他ビューア）と挙動比較する際の参照用メモ。
 
@@ -52,7 +52,7 @@
 **opt-in のコライダー半径一律スケール** を追加（既定 1.0 = 忠実）。
 
 - 実装: `VRMSpringBoneManager::colliderScale`（`collide()` で `col.radius * colliderScale`）。
-- API: `vrm.setColliderScale(1.4)` / `vrm.getColliderScale()`（ncbind 公開、`main.cpp`）。
+- API: `vrm.setColliderScale(1.4)` / `vrm.getColliderScale()`（ncbind 公開、`src/main.cpp`）。
 - 効果: 実機で 1.0 vs 1.4 を比較 → **1.4 で胸横の髪が服から離れて自然**に。
   （＝コリジョンが正しく発火している裏付けにもなった。）
 - コミット: 親 `90e5d81`。

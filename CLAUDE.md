@@ -29,12 +29,12 @@ No test suite is built for the plugin itself (threepp's tests are disabled via C
 
 The plugin has four layers:
 
-1. **threepp** (git submodule, `threepp/`): Pure C++ 3D library (fork at `wtnbgo/threepp`, branch `work_sdl3`). Uses `THREEPP_WITH_GENERIC` mode for custom rendering integration. GLES 化・GLTFLoader 露出・MToon 用の追加あり。
+1. **threepp** (git submodule, `external/threepp/`): Pure C++ 3D library (fork at `wtnbgo/threepp`, branch `work_sdl3`). Uses `THREEPP_WITH_GENERIC` mode for custom rendering integration. GLES 化・GLTFLoader 露出・MToon 用の追加あり。
 2. **ncbind** (sibling directory `../ncbind`): C++ template library that bridges native C++ classes to Kirikiri's TJS2 scripting engine.
-3. **vrm** (`vrm/VRM.cpp` `vrm/VRM.hpp`): threepp の上に構築した VRM ランタイム (0.x/1.0 読込・humanoid・表情・視線・VRMA・springBone・node_constraint・MToon)。ncbind 非依存の純 C++。詳細は [`docs/vrm_support_status.md`](docs/vrm_support_status.md)。
-4. **main.cpp**: The binding layer that registers 100+ threepp/VRM classes with ncbind macros for TJS2 access.
+3. **vrm** (`src/vrm/VRM.cpp` `src/vrm/VRM.hpp`): threepp の上に構築した VRM ランタイム (0.x/1.0 読込・humanoid・表情・視線・VRMA・springBone・node_constraint・MToon)。ncbind 非依存の純 C++。詳細は [`docs/vrm_support_status.md`](docs/vrm_support_status.md)。
+4. **src/main.cpp**: The binding layer that registers 100+ threepp/VRM classes with ncbind macros for TJS2 access.
 
-### Key Binding Patterns in main.cpp
+### Key Binding Patterns in src/main.cpp
 
 - `NCB_REGISTER_SUBCLASS()` — value-type classes with Boxing converter (Euler, Box3, etc.)
 - `NCB_REGISTER_SUBCLASS_DELAY()` — value-type classes with custom converters (Vector2, Vector3, Color のみ — カスタム DST コンバータを持つため)
@@ -53,7 +53,7 @@ The plugin has four layers:
 
 ### Other Key Files
 
-- `layerExBase.hpp` — Base class for integrating threepp rendering into Kirikiri's layer system (image buffer access)
+- `src/layerExBase.hpp` — Base class for integrating threepp rendering into Kirikiri's layer system (image buffer access)
 - `manual.tjs` — Pseudo-code API documentation for TJS2 script developers
 - `README.md` — Japanese documentation with class listing and usage examples
 - `data/startup.tjs` / `data/basic.tjs` — threepp 描画の最小デモ (テクスチャ付き回転キューブ / フラグ付き
@@ -70,9 +70,9 @@ The plugin has four layers:
 - **捕捉 FBO へ描画**: threepp に `setDefaultFramebuffer*` を追加し、`adaptor.capture()` が bind した
   中間 FBO へ描く。`GLRenderer` は `onBeginScene(w,h)` → `render(scene,camera)` → `onEndScene()`。
 - **MSAA** (`setSampleCount`) + gles.dll の `unpremultiply` で縁の AA と premultiplied 補正。
-- 合成は `dest.type = ltAlpha`。実装は `main.cpp` の `GLRenderer*` 群。
+- 合成は `dest.type = ltAlpha`。実装は `src/main.cpp` の `GLRenderer*` 群。
 
-### VRM (`vrm/VRM.cpp` `vrm/VRM.hpp`)
+### VRM (`src/vrm/VRM.cpp` `src/vrm/VRM.hpp`)
 VRM 0.x / 1.0 の読込・humanoid・表情(morph/override/textureTransformBind)・視線(bone/expression)・
 VRMA アニメ(+hips ルートモーション)・揺れ物(springBone, center 空間)・制約(node_constraint)・
 **MToon**(lit/shade・輪郭線・matcap・normalMap・UVアニメ) を実装。three-vrm / vrm-specification を
@@ -80,12 +80,12 @@ VRMA アニメ(+hips ルートモーション)・揺れ物(springBone, center �
 未対応の主なもの: materialColorBind / VRMA 顔トラック / FirstPerson / scene ライティング(固定ライト)。
 
 ### リポジトリ
-- 親 (`.`): VRM 実装 + ncbind バインド (`main.cpp`)。
-- threepp fork (`threepp/`, branch `work_sdl3`): GLES 化 / GLTFLoader 露出・修正 / MToon 用の
+- 親 (`.`): VRM 実装 + ncbind バインド (`src/main.cpp`)。
+- threepp fork (`external/threepp/`, branch `work_sdl3`): GLES 化 / GLTFLoader 露出・修正 / MToon 用の
   ShaderMaterial・MeshToonMaterial mixin 追加 / **morph テクスチャ化**(全モーフを RGBA32F
   テクスチャに詰め `gl_VertexID`+`texelFetch` で走査。旧 attribute 8 枠方式の「同時8モーフ」
   上限を撤廃) 等。**push は force 必要 (rebase 履歴)、未 push**。
-  - ⚠ **シェーダ chunk (`src/shaders/**/*.glsl`) を編集したら再 configure 必須**:
+  - ⚠ **シェーダ chunk (`external/threepp/src/shaders/**/*.glsl`) を編集したら再 configure 必須**:
     `cmake/embed.cmake` が configure 時に `.glsl` を READ して生成ヘッダ (`build/*/generated/`)
     へ埋め込む。`cmake --build` だけでは古い生成ヘッダが使われ、コンパイル失敗が**黙殺**され
     描画破綻になる (旧 `createShader` は `GL_COMPILE_STATUS` 未チェックだった→報告するよう修正済)。

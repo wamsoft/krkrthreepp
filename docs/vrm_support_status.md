@@ -3,7 +3,7 @@
 krkrthreepp の VRM 実装が three-vrm / VRM 仕様のどこまで対応しているかの詳細一覧。
 凡例: ✅ 対応 / ⚠️ 部分対応・近似 / ❌ 未対応。
 
-- 実装: `vrm/VRM.cpp` `vrm/VRM.hpp`、TJS バインド: `main.cpp`、擬似コード API: `manual.tjs`
+- 実装: `src/vrm/VRM.cpp` `src/vrm/VRM.hpp`、TJS バインド: `src/main.cpp`、擬似コード API: `manual.tjs`
 - 参照実装: three-vrm (`D:\test\three-vrm`)、VRM 仕様サンプル (vrm-c/vrm-specification)
 - 検証: 実機 (krkrz64 + REPL) で確認済みのものは「実機✓」と記載
 

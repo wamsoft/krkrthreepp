@@ -17,16 +17,16 @@ option(THREEPP_WITH_SVG "Build with SVGLoader" ON)
 option(THREEPP_WITH_AUDIO "Build with Audio" OFF)
 option(THREEPP_WITH_GENERIC "Build with Generic frontend (user-provided interface)" ON)
 
-add_subdirectory(threepp)
+add_subdirectory(external/threepp)
 
 # VRM ロード検証用スタンドアロン exe (GLES/kirikiri 不要)。既定 OFF。
 option(BUILD_VRM_SMOKE_TEST "Build standalone VRM load smoke test" OFF)
 if(BUILD_VRM_SMOKE_TEST)
-    add_executable(vrm_smoke test/vrm_smoke.cpp vrm/VRM.cpp)
+    add_executable(vrm_smoke test/vrm_smoke.cpp src/vrm/VRM.cpp)
     target_include_directories(vrm_smoke PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/vrm
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/vrm
         ${CMAKE_CURRENT_SOURCE_DIR}/external/VRM/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/threepp/src/external/nlohmann)
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/threepp/src/external/nlohmann)
     target_compile_definitions(vrm_smoke PRIVATE USE_VRMC_VRM_1_0)
     target_link_libraries(vrm_smoke PRIVATE threepp)
 endif()
@@ -34,13 +34,13 @@ endif()
 krkrz_plugin(krkrthreepp
     NCBIND
     SOURCES
-        main.cpp
-        vrm/VRM.cpp
+        src/main.cpp
+        src/vrm/VRM.cpp
     INCLUDES
-        ${CMAKE_CURRENT_SOURCE_DIR}/vrm
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/vrm
         ${CMAKE_CURRENT_SOURCE_DIR}/external/VRM/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/threepp/src/external/nlohmann
-        ${CMAKE_CURRENT_SOURCE_DIR}/threepp/src/external/glad
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/threepp/src/external/nlohmann
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/threepp/src/external/glad
     DEFINITIONS
         USE_VRMC_VRM_1_0
     LIBRARIES
