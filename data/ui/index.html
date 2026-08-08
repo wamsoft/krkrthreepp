@@ -6,15 +6,21 @@
   :root { color-scheme: dark; }
   html,body { margin:0; background:#1e1e1e; color:#d4d4d4;
     font-family:"Segoe UI","Yu Gothic UI",Meiryo,sans-serif; font-size:14px; }
+  body { display:flex; flex-direction:column; height:100vh; }
   #bar { display:flex; align-items:center; gap:10px; padding:8px 12px;
-    background:#252526; border-bottom:1px solid #333; position:sticky; top:0; z-index:1; }
+    background:#252526; border-bottom:1px solid #333; flex:none; }
   #bar b { color:#4ec9b0; }
   #bar .mode { display:flex; gap:4px; }
   #bar .mode button { background:#333; color:#ccc; border:0; padding:4px 12px;
     border-radius:3px; cursor:pointer; }
   #bar .mode button.on { background:#0e639c; color:#fff; }
-  #status { margin-left:auto; font-size:12px; color:#808080; }
-  #main { padding:12px 16px; max-width:760px; }
+  #ctoggle { margin-left:auto; background:#3c3c3c; color:#ccc; border:0;
+    padding:4px 10px; border-radius:3px; cursor:pointer; }
+  #ctoggle.on { background:#0e639c; color:#fff; }
+  #status { font-size:12px; color:#808080; }
+  #wrap { flex:1; display:flex; overflow:hidden; }
+  #main { flex:1; overflow-y:auto; padding:12px 16px; }
+  #side { width:290px; flex:none; overflow-y:auto; padding:12px 12px 12px 0; }
   .group { margin:0 0 14px; border:1px solid #3c3c3c; border-radius:4px; }
   .group h3 { margin:0; padding:4px 10px; font-size:13px; background:#2d2d30;
     color:#9ad8ff; border-bottom:1px solid #3c3c3c; }
@@ -37,25 +43,65 @@
     padding:4px 10px; border-radius:3px; cursor:pointer; }
   .chips button:hover { border-color:#0e639c; }
   .chips button.on { background:#0e639c; color:#fff; border-color:#0e639c; }
-  #notready { padding:24px; color:#f48771; display:none; }
+  #notready { padding:24px; color:#f48771; display:none; flex:none; }
   .hint { color:#808080; font-size:12px; margin:6px 0; }
   .radio { display:flex; gap:12px; align-items:center; color:#c2ccda; }
+  /* --- サイドバー (インスペクター/操作ログ) --- */
+  .ins-char { border-bottom:1px solid #333; padding:6px 10px; }
+  .ins-char .nm { font-weight:bold; color:#98a2b0; }
+  .ins-char.sel .nm { color:#88ecae; }
+  .ins-kv { display:flex; font-size:13px; padding:1px 0; }
+  .ins-kv .k { width:4.5em; color:#c2ccda; }
+  .ins-kv .v { color:#f4f6fa; }
+  #oplog { font-size:13px; color:#c2ccda; padding:6px 10px; max-height:220px;
+    overflow-y:auto; white-space:pre-wrap; word-break:break-all; }
+  /* --- REPL コンソール --- */
+  #console { flex:none; height:230px; display:none; flex-direction:column;
+    border-top:1px solid #333; background:#181818;
+    font-family:Consolas,"Cascadia Mono","MS Gothic",monospace; font-size:13px; }
+  #console.show { display:flex; }
+  #clog { flex:1; overflow-y:auto; padding:6px 10px; white-space:pre-wrap;
+    word-break:break-word; }
+  #clog .echo { color:#9cdcfe; } #clog .result { color:#6a9955; }
+  #clog .error { color:#f48771; } #clog .help { color:#4ec9b0; }
+  #clog .info { color:#d4d4d4; } #clog .warn { color:#dcdcaa; }
+  #clog .debug { color:#4fc1ff; } #clog .verbose { color:#808080; }
+  #clog .critical { color:#f14c4c; font-weight:bold; }
+  #cin { display:flex; align-items:center; gap:6px; padding:5px 10px;
+    border-top:1px solid #2a2a2a; }
+  #cprompt { color:#6a9955; font-weight:bold; }
+  #ccmd { flex:1; background:#1e1e1e; color:#d4d4d4; border:1px solid #3c3c3c;
+    padding:4px 8px; border-radius:3px; font:inherit; }
 </style></head>
 <body>
 <div id="bar">
   <b>threepp 編集UI</b>
   <div class="mode" id="modes"></div>
+  <button id="ctoggle">REPL</button>
   <span id="status">connecting...</span>
 </div>
 <div id="notready">アプリ (advsample) が未起動です。</div>
-<div id="main"></div>
+<div id="wrap">
+  <div id="main"></div>
+  <div id="side"></div>
+</div>
+<div id="console">
+  <div id="clog"></div>
+  <div id="cin">
+    <span id="cprompt">krkrz&gt;</span>
+    <input id="ccmd" autocomplete="off" spellcheck="false"
+      placeholder="TJS 式/文 (Enter=実行, .help=コマンド一覧, ↑↓=履歴)">
+  </div>
+</div>
 <script>
 (function(){
   var MODES = [["op","操作"],["face","表情"],["pose","ポーズ"],["seq","連番"],["char","キャラ"]];
   var statusEl = document.getElementById('status');
   var main = document.getElementById('main');
+  var side = document.getElementById('side');
   var dragging = false;      // スライダ操作中は SSE 由来の再描画を抑止
   var state = null;
+  var lastEditorKey = '';    // エディタ部の再構築判定 (insp/log の 4Hz 更新で壊さない)
 
   function post(path, obj){
     return fetch(path, {method:'POST', body: obj ? JSON.stringify(obj) : ''})
@@ -111,125 +157,6 @@
       wrap.appendChild(b);
     });
     return wrap;
-  }
-
-  // ---- 表情ペイン ----
-  var faceDetail = false;     // 詳細モード (全モーフ表示) トグル
-  var allMorphs = null;       // /app/face/morphs の結果キャッシュ
-  function morphSliderRow(name, label){
-    var w = (state.morphs && state.morphs[name]) || 0;
-    return sliderRow(label, 0, 1, 0.01, w,
-      function(v){ return v.toFixed(2); },
-      function(v){
-        if (state.morphs) state.morphs[name] = v;
-        sendThrottled('mo:'+name, '/app/face/morph', {name:name, w:v});
-      });
-  }
-  function renderFace(){
-    var ops = el('div','ops');
-    var nameIn = el('input'); nameIn.type='text'; nameIn.placeholder='表情名 (保存キー)';
-    nameIn.value = state.editName || ''; nameIn.id='facename';
-    var save = el('button','act','保存');
-    save.onclick = function(){
-      var id = nameIn.value.trim();
-      if (!id) { alert('表情名を入力してください'); return; }
-      post('/app/face/save', {id:id});
-    };
-    var clear = el('button','sub','クリア');
-    clear.onclick = function(){ post('/app/face/clear'); };
-    var detail = el('button', faceDetail ? 'act' : 'sub', '詳細 (全モーフ)');
-    detail.onclick = function(){
-      faceDetail = !faceDetail;
-      if (faceDetail && !allMorphs) {
-        fetch('/app/face/morphs').then(function(r){ return r.json(); })
-          .then(function(m){ allMorphs = m; render(); });
-      } else render();
-    };
-    ops.appendChild(nameIn); ops.appendChild(save); ops.appendChild(clear);
-    ops.appendChild(detail);
-    main.appendChild(ops);
-
-    main.appendChild(chipList(
-      (state.faces||[]).map(function(id){ return {label:id, id:id}; }),
-      function(){ return false; },
-      function(it){ post('/app/face/load', {id:it.id}); }));
-
-    (state.groups||[]).forEach(function(g){
-      var gb = groupBox(g.title);
-      g.items.forEach(function(it){
-        gb.rows.appendChild(morphSliderRow(it.name,
-          it.label + ' (' + it.name.replace(/^Fcl_/,'') + ')'));
-      });
-      main.appendChild(gb.box);
-    });
-
-    // 詳細モード: 対象 VRM の全モーフ (curated 済みは除外して残りを列挙)
-    if (faceDetail && allMorphs){
-      var curated = {};
-      (state.groups||[]).forEach(function(g){
-        g.items.forEach(function(it){ curated[it.name] = 1; });
-      });
-      var rest = allMorphs.filter(function(n){ return !curated[n]; });
-      var gb = groupBox('全モーフ (' + rest.length + ' / 計 ' + allMorphs.length + ')');
-      rest.forEach(function(n){
-        gb.rows.appendChild(morphSliderRow(n, n.replace(/^Fcl_/,'')));
-      });
-      main.appendChild(gb.box);
-    }
-  }
-
-  // ---- ポーズペイン ----
-  function renderPose(){
-    var p = state.pose || {};
-    var ops = el('div','ops');
-    var cap = el('button','sub','基準=現在姿勢');
-    cap.onclick = function(){ post('/app/pose/base', {kind:'capture'}); };
-    var rest = el('button','sub','基準=素立ち');
-    rest.onclick = function(){ post('/app/pose/base', {kind:'rest'}); };
-    ops.appendChild(cap); ops.appendChild(rest);
-    main.appendChild(ops);
-
-    var gbB = groupBox('関節 (選択して回転を編集)');
-    gbB.rows.appendChild(chipList(
-      (p.bones||[]).map(function(b){ return {label:b.label, name:b.name}; }),
-      function(it){ return it.name === p.editBone; },
-      function(it){ post('/app/pose/bone', {name:it.name}); }));
-    main.appendChild(gbB.box);
-
-    var e = p.euler || [0,0,0];
-    var gbR = groupBox('回転 (' + (p.editBone||'') + ') [度]');
-    ['X','Y','Z'].forEach(function(ax, i){
-      gbR.rows.appendChild(sliderRow(ax, -180, 180, 1, e[i],
-        function(v){ return v.toFixed(0) + '°'; },
-        function(v){ sendThrottled('rot:'+i, '/app/pose/rot', {axis:i, deg:v}); }));
-    });
-    main.appendChild(gbR.box);
-
-    var h = p.hips || [0,0,0];
-    var gbH = groupBox('腰の移動 (ルートモーション) [m]');
-    ['X','Y','Z'].forEach(function(ax, i){
-      gbH.rows.appendChild(sliderRow(ax, -0.5, 0.5, 0.01, h[i],
-        function(v){ return v.toFixed(2); },
-        function(v){ sendThrottled('hp:'+i, '/app/pose/hips', {axis:i, m:v}); }));
-    });
-    main.appendChild(gbH.box);
-
-    var ops2 = el('div','ops');
-    var nameIn = el('input'); nameIn.type='text'; nameIn.placeholder='ポーズ名 (保存キー)';
-    nameIn.value = p.poseName || '';
-    var save = el('button','act','保存');
-    save.onclick = function(){
-      var id = nameIn.value.trim();
-      if (!id) { alert('ポーズ名を入力してください'); return; }
-      post('/app/pose/save', {id:id});
-    };
-    ops2.appendChild(nameIn); ops2.appendChild(save);
-    main.appendChild(ops2);
-
-    main.appendChild(chipList(
-      (p.poses||[]).map(function(id){ return {label:id, id:id}; }),
-      function(){ return false; },
-      function(it){ post('/app/pose/load', {id:it.id}); }));
   }
 
   // ---- 操作(op)ペイン ----
@@ -321,6 +248,125 @@
       {label:'視線ターゲット', id:'gaze_set', val:!o.gaze, on:!!o.gaze}],
       function(it){ return it.on; });
     main.appendChild(gbG.box);
+  }
+
+  // ---- 表情ペイン ----
+  var faceDetail = false;     // 詳細モード (全モーフ表示) トグル
+  var allMorphs = null;       // /app/face/morphs の結果キャッシュ
+  function morphSliderRow(name, label){
+    var w = (state.morphs && state.morphs[name]) || 0;
+    return sliderRow(label, 0, 1, 0.01, w,
+      function(v){ return v.toFixed(2); },
+      function(v){
+        if (state.morphs) state.morphs[name] = v;
+        sendThrottled('mo:'+name, '/app/face/morph', {name:name, w:v});
+      });
+  }
+  function renderFace(){
+    var ops = el('div','ops');
+    var nameIn = el('input'); nameIn.type='text'; nameIn.placeholder='表情名 (保存キー)';
+    nameIn.value = state.editName || ''; nameIn.id='facename';
+    var save = el('button','act','保存');
+    save.onclick = function(){
+      var id = nameIn.value.trim();
+      if (!id) { alert('表情名を入力してください'); return; }
+      post('/app/face/save', {id:id});
+    };
+    var clear = el('button','sub','クリア');
+    clear.onclick = function(){ post('/app/face/clear'); };
+    var detail = el('button', faceDetail ? 'act' : 'sub', '詳細 (全モーフ)');
+    detail.onclick = function(){
+      faceDetail = !faceDetail;
+      if (faceDetail && !allMorphs) {
+        fetch('/app/face/morphs').then(function(r){ return r.json(); })
+          .then(function(m){ allMorphs = m; lastEditorKey=''; applyState(state); });
+      } else { lastEditorKey=''; applyState(state); }
+    };
+    ops.appendChild(nameIn); ops.appendChild(save); ops.appendChild(clear);
+    ops.appendChild(detail);
+    main.appendChild(ops);
+
+    main.appendChild(chipList(
+      (state.faces||[]).map(function(id){ return {label:id, id:id}; }),
+      function(){ return false; },
+      function(it){ post('/app/face/load', {id:it.id}); }));
+
+    (state.groups||[]).forEach(function(g){
+      var gb = groupBox(g.title);
+      g.items.forEach(function(it){
+        gb.rows.appendChild(morphSliderRow(it.name,
+          it.label + ' (' + it.name.replace(/^Fcl_/,'') + ')'));
+      });
+      main.appendChild(gb.box);
+    });
+
+    // 詳細モード: 対象 VRM の全モーフ (curated 済みは除外して残りを列挙)
+    if (faceDetail && allMorphs){
+      var curated = {};
+      (state.groups||[]).forEach(function(g){
+        g.items.forEach(function(it){ curated[it.name] = 1; });
+      });
+      var rest = allMorphs.filter(function(n){ return !curated[n]; });
+      var gb = groupBox('全モーフ (' + rest.length + ' / 計 ' + allMorphs.length + ')');
+      rest.forEach(function(n){
+        gb.rows.appendChild(morphSliderRow(n, n.replace(/^Fcl_/,'')));
+      });
+      main.appendChild(gb.box);
+    }
+  }
+
+  // ---- ポーズペイン ----
+  function renderPose(){
+    var p = state.pose || {};
+    var ops = el('div','ops');
+    var cap = el('button','sub','基準=現在姿勢');
+    cap.onclick = function(){ post('/app/pose/base', {kind:'capture'}); };
+    var rest = el('button','sub','基準=素立ち');
+    rest.onclick = function(){ post('/app/pose/base', {kind:'rest'}); };
+    ops.appendChild(cap); ops.appendChild(rest);
+    main.appendChild(ops);
+
+    var gbB = groupBox('関節 (選択して回転を編集)');
+    gbB.rows.appendChild(chipList(
+      (p.bones||[]).map(function(b){ return {label:b.label, name:b.name}; }),
+      function(it){ return it.name === p.editBone; },
+      function(it){ post('/app/pose/bone', {name:it.name}); }));
+    main.appendChild(gbB.box);
+
+    var e = p.euler || [0,0,0];
+    var gbR = groupBox('回転 (' + (p.editBone||'') + ') [度]');
+    ['X','Y','Z'].forEach(function(ax, i){
+      gbR.rows.appendChild(sliderRow(ax, -180, 180, 1, e[i],
+        function(v){ return v.toFixed(0) + '°'; },
+        function(v){ sendThrottled('rot:'+i, '/app/pose/rot', {axis:i, deg:v}); }));
+    });
+    main.appendChild(gbR.box);
+
+    var h = p.hips || [0,0,0];
+    var gbH = groupBox('腰の移動 (ルートモーション) [m]');
+    ['X','Y','Z'].forEach(function(ax, i){
+      gbH.rows.appendChild(sliderRow(ax, -0.5, 0.5, 0.01, h[i],
+        function(v){ return v.toFixed(2); },
+        function(v){ sendThrottled('hp:'+i, '/app/pose/hips', {axis:i, m:v}); }));
+    });
+    main.appendChild(gbH.box);
+
+    var ops2 = el('div','ops');
+    var nameIn = el('input'); nameIn.type='text'; nameIn.placeholder='ポーズ名 (保存キー)';
+    nameIn.value = p.poseName || '';
+    var save = el('button','act','保存');
+    save.onclick = function(){
+      var id = nameIn.value.trim();
+      if (!id) { alert('ポーズ名を入力してください'); return; }
+      post('/app/pose/save', {id:id});
+    };
+    ops2.appendChild(nameIn); ops2.appendChild(save);
+    main.appendChild(ops2);
+
+    main.appendChild(chipList(
+      (p.poses||[]).map(function(id){ return {label:id, id:id}; }),
+      function(){ return false; },
+      function(it){ post('/app/pose/load', {id:it.id}); }));
   }
 
   // ---- 連番(シーケンス)ペイン ----
@@ -445,11 +491,43 @@
     main.appendChild(gbR.box);
   }
 
+  // ---- サイドバー: インスペクター + 操作ログ (SSE ~4Hz で常時更新) ----
+  function renderSide(){
+    side.innerHTML = '';
+    if (!state || !state.ready) return;
+    var ins = state.insp || {};
+    var gbI = groupBox('インスペクター' + (ins.fps ? ' (FPS ' + ins.fps + ')' : ''));
+    (ins.chars||[]).forEach(function(c){
+      var box = el('div', 'ins-char' + (c.selected ? ' sel' : ''));
+      box.appendChild(el('div','nm', (c.selected ? '● ' : '○ ') + c.name));
+      var kv = [['表情', c.expr], ['動作', c.motion],
+                ['目線', c.look ? 'ON' : 'off'], ['瞬き', c.blink ? 'ON' : 'off'],
+                ['idle', c.idle ? 'ON' : 'off'], ['構図', c.frame]];
+      if (state.op && state.op.mode === 'space')
+        kv.push(['位置', 'x' + (+c.x).toFixed(1) + ' z' + (+c.z).toFixed(1)]);
+      kv.forEach(function(p){
+        var row = el('div','ins-kv');
+        row.appendChild(el('span','k', p[0]));
+        row.appendChild(el('span','v', String(p[1])));
+        box.appendChild(row);
+      });
+      gbI.rows.appendChild(box);
+    });
+    gbI.rows.classList.remove('rows');   // padding は ins-char 側で持つ
+    side.appendChild(gbI.box);
+
+    var gbL = groupBox('操作ログ');
+    var lg = el('div'); lg.id = 'oplog';
+    lg.textContent = (state.log||[]).join('\n');
+    gbL.rows.appendChild(lg);
+    side.appendChild(gbL.box);
+    lg.scrollTop = lg.scrollHeight;
+  }
+
+  // ---- エディタ本体の描画 (作業モードでペイン切替) ----
   function render(){
     if (!state) return;
     document.getElementById('notready').style.display = state.ready ? 'none' : 'block';
-    main.style.display = state.ready ? 'block' : 'none';
-    // 作業モード (ゲーム側 workMode と連動。切替はサーバへ送って SSE で反映)
     var modes = document.getElementById('modes');
     modes.innerHTML = '';
     MODES.forEach(function(m){
@@ -457,30 +535,97 @@
       b.onclick = function(){ post('/app/workmode', {mode:m[0]}); };
       modes.appendChild(b);
     });
-    if (!state.ready) return;
     main.innerHTML = '';
+    if (!state.ready) return;
     if (state.workMode === 'op') renderOp();
     else if (state.workMode === 'face') renderFace();
     else if (state.workMode === 'pose') renderPose();
     else if (state.workMode === 'seq') renderSeq();
     else if (state.workMode === 'char') renderChar();
-    else main.appendChild(el('div','hint',
-      '不明な作業モード (' + state.workMode + ') です。'));
+    else main.appendChild(el('div','hint', '不明な作業モード (' + state.workMode + ') です。'));
+  }
+
+  // insp/log は 4Hz で更新されるので、エディタ部はそれ以外が変わったときだけ再構築
+  function editorKey(s){
+    var c = {};
+    Object.keys(s).forEach(function(k){ if (k !== 'insp' && k !== 'log') c[k] = s[k]; });
+    return JSON.stringify(c);
+  }
+  function applyState(s){
+    state = s;
+    renderSide();
+    var k = editorKey(s);
+    if (k !== lastEditorKey && !dragging){ lastEditorKey = k; render(); }
   }
 
   function refresh(){
     return fetch('/app/state').then(function(r){ return r.json(); })
-      .then(function(s){ state = s; if (!dragging) render(); })
+      .then(function(s){ applyState(s); })
       .catch(function(){ statusEl.textContent = 'state fetch failed'; });
   }
 
-  // SSE: 操作後の broadcast で他クライアント/外部変更に追従
+  // SSE: 状態 push (操作後 + tick 4Hz の変化時)
   var es = new EventSource('/sub/state');
   es.onopen = function(){ statusEl.textContent = 'connected'; };
   es.onerror = function(){ statusEl.textContent = 'disconnected (retrying)'; };
   es.onmessage = function(e){
-    try { state = JSON.parse(e.data); if (!dragging) render(); } catch(_){}
+    try { applyState(JSON.parse(e.data)); } catch(_){}
   };
+
+  // ---- REPL コンソール (エンジンの /events + /cmd をそのまま利用) ----
+  var consoleEl = document.getElementById('console');
+  var ctoggle = document.getElementById('ctoggle');
+  var clog = document.getElementById('clog');
+  var ccmd = document.getElementById('ccmd');
+  var cprompt = document.getElementById('cprompt');
+  var chist = [], chpos = -1, ces = null;
+
+  function cappend(cls, text){
+    var stick = clog.scrollHeight - clog.scrollTop - clog.clientHeight < 40;
+    var d = el('div', cls, text);
+    clog.appendChild(d);
+    while (clog.childNodes.length > 2000) clog.removeChild(clog.firstChild);
+    if (stick) clog.scrollTop = clog.scrollHeight;
+  }
+  function consoleOpen(){
+    consoleEl.classList.add('show');
+    ctoggle.classList.add('on');
+    if (!ces){
+      ces = new EventSource('/events');   // エンジンログ (バックログ付き)
+      ces.onmessage = function(e){
+        try { var m = JSON.parse(e.data); cappend(m.cls || 'info', m.text || ''); }
+        catch(_){}
+      };
+    }
+    ccmd.focus();
+  }
+  function consoleClose(){
+    consoleEl.classList.remove('show');
+    ctoggle.classList.remove('on');
+  }
+  ctoggle.onclick = function(){
+    if (consoleEl.classList.contains('show')) consoleClose(); else consoleOpen();
+  };
+  ccmd.addEventListener('keydown', function(e){
+    if (e.key === 'Enter'){
+      e.preventDefault();
+      var line = ccmd.value;
+      ccmd.value = ''; chpos = -1;
+      fetch('/cmd', {method:'POST', body: line})
+        .then(function(r){ return r.text(); })
+        .then(function(cont){
+          cprompt.innerHTML = (cont === '1') ? '&nbsp;&nbsp;...&gt;' : 'krkrz&gt;';
+        }).catch(function(){});
+      if (line.trim() !== '' && (chist.length === 0 || chist[chist.length-1] !== line))
+        chist.push(line);
+    } else if (e.key === 'ArrowUp'){
+      e.preventDefault();
+      if (chist.length){ if (chpos < 0) chpos = chist.length; if (chpos > 0) chpos--; ccmd.value = chist[chpos]; }
+    } else if (e.key === 'ArrowDown'){
+      e.preventDefault();
+      if (chpos >= 0){ chpos++; if (chpos >= chist.length){ chpos = -1; ccmd.value = ''; } else ccmd.value = chist[chpos]; }
+    }
+  });
 
   refresh();
 })();

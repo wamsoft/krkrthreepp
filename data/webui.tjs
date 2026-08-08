@@ -18,9 +18,23 @@ class WebUIBridge
 {
     var openTimer;      // -webui 自動起動用 (サーバ起動待ちのリトライタイマ)
     var openTries = 0;
+    var lastFps = 0;
+    var lastStateJson = "";
 
     function WebUIBridge() {}
     function finalize() { if (openTimer !== void) invalidate openTimer; }
+
+    // ---- 本体フレームループから ~4Hz で呼ばれる状態配信 ----
+    // 変化があったときだけ SSE push する (インスペクター/操作ログのライブ更新)。
+    function tick(fps)
+    {
+        lastFps = fps;
+        if (!WebServer.active) return;
+        var j = stateJson();
+        if (j == lastStateJson) return;
+        lastStateJson = j;
+        WebServer.broadcast("state", j);
+    }
 
     // ---- ブラウザ UI をアプリモード (タブ/アドレスバー無し) で開く ----
     // Chromium 系の --app=URL を使う。Edge → Chrome → 既定ブラウザの順に試す。
@@ -98,6 +112,23 @@ class WebUIBridge
             "poseName" => (app.poseName === void) ? "" : app.poseName
         ];
 
+        // --- インスペクター/操作ログ (本体の描画から移設。tick が ~4Hz 配信) ---
+        var ichars = [];
+        for (var i = 0; i < app.tachies.count; i++) {
+            var t = app.tachies[i];
+            ichars.add(%[ "name" => app.slotName(i), "selected" => app.isSelected(i),
+                "expr" => (t.emotion == "" ? "neutral" : t.emotion),
+                "motion" => (t.motionId == "" ? "-" : t.motionId),
+                "look" => t.lookAtCamera, "blink" => t.blinkEnabled,
+                "idle" => t.idleEnabled, "frame" => t.preset,
+                "x" => t.offX, "z" => t.offZ ]);
+        }
+        // fps は 5 刻みへ丸め (比較ベース push が fps ジッタで毎回発火しないように)
+        st.insp = %[ "fps" => ((int)((lastFps + 2.5) / 5)) * 5, "chars" => ichars ];
+        var lg = [];
+        if (app.logLines !== void) lg.assign(app.logLines);
+        st.log = lg;
+
         // --- 操作(op) ---
         var exprs = [ %[ "id" => "neutral", "label" => "標準" ] ];
         var ex = app.stageDef.expressions;
@@ -157,7 +188,12 @@ class WebUIBridge
         return st;
     }
     function stateJson() { return Scripts.toJSONString(buildState()); }
-    function push() { WebServer.broadcast("state", stateJson()); }
+    function push()
+    {
+        var j = stateJson();
+        lastStateJson = j;   // tick との重複配信を避ける
+        WebServer.broadcast("state", j);
+    }
 
     // ---- アプリ操作ハンドラ (WebServer.register の呼び先) ----
     function handler(req)

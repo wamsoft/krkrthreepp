@@ -96,24 +96,13 @@ function quatToEuler(qx, qy, qz, qw)
 // 3D 描画領域(中央ビューポート)のサイズ
 var SCREEN_W = 1280;
 var SCREEN_H = 720;
-// ウィンドウ全体。3 ペイン構成 (編集 UI はブラウザ側 /ui/ に移行済み):
-//   左〜中央: 3D ビューポート(1280x720)
-//   右      : インスペクター(選択対象の状態表示)
-//   下      : ログ/情報コンソール(ビューポートの下)
-var WIN_W = 1920;
-var WIN_H = 1080;
-var RENDER_X = 0;                   // ビューポートは左端から
+// ウィンドウ = 3D 表示エリアのみ (1280x720)。
+// インスペクター/操作ログ/REPL は全てブラウザ編集 UI (/ui/) 側に統合済み。
+// 本体側に残るのはゲーム内 UI (視線ターゲットレイヤ等) だけ。
+var WIN_W = SCREEN_W;
+var WIN_H = SCREEN_H;
+var RENDER_X = 0;
 var RENDER_Y = 0;
-// 右: インスペクター(ビューポートの右、フル高)
-var INSP_X   = SCREEN_W;            // = 1280
-var INSP_Y   = 0;
-var INSP_W   = WIN_W - SCREEN_W;    // = 640
-var INSP_H   = WIN_H;               // 1080
-// 下: ログ/情報コンソール(ビューポートの真下)
-var LOG_X    = 0;
-var LOG_Y    = SCREEN_H;            // 720
-var LOG_W    = SCREEN_W;            // 1280
-var LOG_H    = WIN_H - SCREEN_H;    // 360
 
 // 立ち絵1体分の描画バッファ(=dest レイヤ)サイズ。両キャラ共通なので
 // adaptor/renderer をこのサイズ固定で使え、フレーム毎のリサイズが要らない。
@@ -167,8 +156,6 @@ class ADVSample extends Window
 
     var baseLayer;  // 全窓ベース(1920x1080, 4ペインの余白)
     var back;       // 3D ビューポート(1280x720, 中央)。全描画レイヤの親
-    var inspLayer;  // 右: インスペクター(選択対象の状態)
-    var logLayer;   // 下: ログ/情報コンソール
     var tachies;    // Tachie 配列 [左, 右]
     var target = 2; // 操作対象 0:左 1:右 2:両方
 
@@ -229,7 +216,7 @@ class ADVSample extends Window
         caption = "krkr_threepp ADV sample";
         setInnerSize(WIN_W, WIN_H);
 
-        // 全窓ベース(L字の空き領域を暗色で埋める)
+        // 全窓ベース
         baseLayer = new Layer(this, null);
         baseLayer.setImageSize(WIN_W, WIN_H);
         baseLayer.setSize(WIN_W, WIN_H);
@@ -238,22 +225,9 @@ class ADVSample extends Window
         baseLayer.visible = true;
         add(baseLayer);
 
-        // 右: インスペクター(選択対象の状態表示・右列フル高)
-        logLines = [];
-        inspLayer = new Layer(this, baseLayer);
-        inspLayer.setImageSize(INSP_W, INSP_H);
-        inspLayer.setSize(INSP_W, INSP_H);
-        inspLayer.setPos(INSP_X, INSP_Y);
-        inspLayer.visible = true;
+        logLines = [];   // 操作ログ (ブラウザ UI へ SSE 配信)
 
-        // 下: ログ/情報コンソール(中央ビューの真下)
-        logLayer = new Layer(this, baseLayer);
-        logLayer.setImageSize(LOG_W, LOG_H);
-        logLayer.setSize(LOG_W, LOG_H);
-        logLayer.setPos(LOG_X, LOG_Y);
-        logLayer.visible = true;
-
-        // 3D 描画領域(右上)。全描画レイヤ(dest/space/gaze)はこの back の子。
+        // 3D 描画領域。全描画レイヤ(dest/space/gaze)はこの back の子。
         back = new Layer(this, baseLayer);
         back.setImageSize(SCREEN_W, SCREEN_H);
         back.setSize(SCREEN_W, SCREEN_H);
@@ -1595,12 +1569,11 @@ class ADVSample extends Window
             for (var i = 0; i < tachies.count; i++) tachies[i].render();
         }
 
-        // 情報パネルを ~4Hz で更新
+        // 状態をブラウザ UI へ ~4Hz で配信 (変化があったときだけ SSE push)
         infoClock += dt;
         if (infoClock >= 0.25) {
             var fps = (dt > 0.0) ? (1.0 / dt) : 60.0;
-            drawInspector();
-            drawLog(fps);
+            if (typeof global.webui != "undefined") webui.tick(fps);
             infoClock = 0.0;
         }
     }
@@ -1611,95 +1584,7 @@ class ADVSample extends Window
         return (target == 2) || (target == i);
     }
 
-    // 右: インスペクター(選択対象の状態を縦に表示)。選択キャラを強調。
-    function drawInspector()
-    {
-        if (inspLayer === void) return;
-        var L = inspLayer;
-        L.fillRect(0, 0, INSP_W, INSP_H, 0xFF14171F);
-        L.fillRect(0, 0, 2, INSP_H, 0x40FFFFFF);   // 左境界
-        try { L.font.face = "ＭＳ ゴシック"; } catch (e) { }
-        // ★drawText の色は 24bit(0xRRGGBB)。32bit(0xFFRRGGBB)を渡すと暗く化ける。
-        var white = 0xF4F6FA, dim = 0xC2CCDA, key = 0x9AD8FF, sel = 0x88ECAE, off = 0x98A2B0;
-        var x = 16, y = 18;
-        L.font.height = 20;
-        L.drawText(x, y, "インスペクター", key, 255, true); y += 34;
-        L.font.height = 14;
-        L.drawText(x, y, "モード:" + (mode == "space" ? "空間" : "立ち絵"), dim, 255, true); y += 28;
-
-        for (var i = 0; i < tachies.count; i++) {
-            var t = tachies[i];
-            var on = isSelected(i);
-            // 見出し(選択キャラは緑丸+明色、非選択は暗色)
-            L.fillRect(0, y - 4, INSP_W, 30, on ? 0xFF1E2A24 : 0xFF191c24);
-            L.font.height = 17;
-            L.drawText(x, y, (on ? "● " : "○ ") + slotName(i),
-                       on ? sel : off, 255, true);
-            y += 34;
-            L.font.height = 14;
-            var kv = [
-                ["表情", (t.emotion  == "" ? "neutral" : t.emotion)],
-                ["動作", (t.motionId == "" ? "-" : t.motionId)],
-                ["目線", (t.lookAtCamera ? "ON" : "off")],
-                ["瞬き", (t.blinkEnabled ? "ON" : "off")],
-                ["idle", (t.idleEnabled ? "ON" : "off")],
-                ["構図", t.preset]
-            ];
-            if (mode == "space")
-                kv.add(["位置", "x" + fmt1(t.offX) + " z" + fmt1(t.offZ)]);
-            for (var j = 0; j < kv.count; j++) {
-                L.drawText(x + 6,  y, kv[j][0], dim,   255, true);
-                L.drawText(x + 62, y, kv[j][1], white, 255, true);
-                y += 24;
-            }
-            y += 12;
-        }
-        L.update();
-    }
-    // 小数1桁の簡易整形(offX/offZ 表示用)
-    function fmt1(v)
-    {
-        var s = (v < 0) ? "-" : "+";
-        var a = (v < 0) ? -v : v;
-        var w = (int)a;
-        var f = (int)((a - w) * 10 + 0.5);
-        if (f >= 10) { w += 1; f -= 10; }
-        return s + w + "." + f;
-    }
-
-    // 下: ログ/情報コンソール(1280x360)。左=情報/操作ヒント、右=操作ログ。
-    function drawLog(fps)
-    {
-        if (logLayer === void) return;
-        var L = logLayer;
-        L.fillRect(0, 0, LOG_W, LOG_H, 0xFF12141B);
-        L.fillRect(0, 0, LOG_W, 2, 0x40FFFFFF);    // 上境界
-        try { L.font.face = "ＭＳ ゴシック"; } catch (e) { }
-        // ★drawText の色は 24bit(0xRRGGBB)。32bit(0xFFRRGGBB)を渡すと暗く化ける。
-        var white = 0xF4F6FA, dim = 0xC2CCDA, key = 0x9AD8FF;
-        // 左: タイトル + 状態 + キーヒント
-        var x = 24, y = 18;
-        L.font.height = 22;
-        L.drawText(x, y, "krkr_threepp ADV サンプル", key, 255, true); y += 36;
-        L.font.height = 16;
-        L.drawText(x, y, "対象:" + (target==0?"左":(target==1?"右":"両方"))
-                       + "   FPS:" + (int)fps, dim, 255, true); y += 32;
-        L.font.height = 14;
-        var hints = [ "Tab: ブラウザ編集UIを開く",
-                      "矢印: カメラ旋回   Z/X: ズーム   R: 正面",
-                      "編集はブラウザUI(Tab か -webui で開く)から" ];
-        for (var i = 0; i < hints.count; i++) { L.drawText(x, y, hints[i], dim, 255, true); y += 24; }
-        // 右: 操作ログ(最新が下、収まる分だけ)
-        var lx = 560, ly = 18, llh = 22;
-        L.fillRect(lx - 24, 14, 2, LOG_H - 28, 0x30FFFFFF);   // 区切り線
-        L.font.height = 18;
-        L.drawText(lx, ly, "─ 操作ログ ─", key, 255, true); ly += 30;
-        L.font.height = 15;
-        var maxLines = (int)((LOG_H - ly - 12) / llh);
-        var start = logLines.count - maxLines; if (start < 0) start = 0;
-        for (var i = start; i < logLines.count; i++) { L.drawText(lx, ly, logLines[i], dim, 255, true); ly += llh; }
-        L.update();
-    }
+    // 操作ログ (描画はせずブラウザ UI が state.log として SSE で受け取る)
     function logLine(s)
     {
         if (logLines === void) logLines = [];
