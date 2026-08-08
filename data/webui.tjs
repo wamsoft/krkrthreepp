@@ -98,6 +98,34 @@ class WebUIBridge
             "poseName" => (app.poseName === void) ? "" : app.poseName
         ];
 
+        // --- 操作(op) ---
+        var exprs = [ %[ "id" => "neutral", "label" => "標準" ] ];
+        var ex = app.stageDef.expressions;
+        if (ex !== void)
+            for (var i = 0; i < ex.count; i++)
+                exprs.add(%[ "id" => ex[i].id, "label" => ex[i].name ]);
+        var en2 = app.emotionNames();
+        for (var i = 0; i < en2.count; i++)
+            exprs.add(%[ "id" => en2[i], "label" => app.exprLabel(en2[i]) ]);
+        var mos = [];
+        var ms = app.stageDef.motions;
+        if (ms !== void)
+            for (var i = 0; i < ms.count; i++)
+                mos.add(%[ "id" => "m_" + ms[i].id, "label" => ms[i].name ]);
+        var scs = [];
+        var sc = app.stageDef.scenes;
+        if (sc !== void)
+            for (var i = 0; i < sc.count; i++)
+                scs.add(%[ "id" => "sc_" + sc[i].id, "label" => sc[i].name ]);
+        var t0 = app.tachies[0];
+        st.op = %[
+            "target" => app.target, "mode" => app.mode,
+            "exprs" => exprs, "motions" => mos, "scenes" => scs,
+            "blink" => t0.blinkEnabled, "look" => t0.lookAtCamera,
+            "idle" => t0.idleEnabled, "gaze" => app.gazeActive,
+            "camMode" => app.sCamMode, "bgFollow" => app.bgFollow, "fov" => app.sFov
+        ];
+
         // --- 連番(シーケンス) ---
         var steps = [];
         if (app.seq !== void) {
@@ -144,6 +172,15 @@ class WebUIBridge
 
         if (path == "/app/workmode") {          // {mode:"op"/"face"/"pose"/"seq"/"char"}
             app.setWorkMode(arg.mode);
+            push();
+            return "{\"ok\":true}";
+        }
+
+        // --- 操作(op): Elements パネルと同一 id の汎用パススルー ---
+        // {id:"t_left"/"f_face"/"happy"/"m_…"/"sc_…"/"cam_…"/…, val?:bool|number}
+        // onPanel が全 id を捌くので Elements 版と完全に同じ挙動になる。
+        if (path == "/app/op/panel") {
+            app.onPanel(arg.id, (arg.val === void) ? void : arg.val);
             push();
             return "{\"ok\":true}";
         }

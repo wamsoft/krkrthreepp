@@ -232,6 +232,97 @@
       function(it){ post('/app/pose/load', {id:it.id}); }));
   }
 
+  // ---- 操作(op)ペイン ----
+  // Elements パネルと同一 id を /app/op/panel へパススルーする。
+  function opBtn(id, val){ post('/app/op/panel', val === undefined ? {id:id} : {id:id, val:val}); }
+  function opChipRow(gb, items, isOn){
+    gb.rows.appendChild(chipList(items,
+      isOn || function(){ return false; },
+      function(it){ opBtn(it.id, it.val); }));
+  }
+  function renderOp(){
+    var o = state.op || {};
+    var gbT = groupBox('対象 / モード');
+    opChipRow(gbT, [
+      {label:'左', id:'t_left', t:0}, {label:'右', id:'t_right', t:1},
+      {label:'両方', id:'t_both', t:2}],
+      function(it){ return o.target === it.t; });
+    opChipRow(gbT, [
+      {label:'立ち絵', id:'mode_tachie', m:'tachie'}, {label:'空間', id:'mode_space', m:'space'}],
+      function(it){ return o.mode === it.m; });
+    main.appendChild(gbT.box);
+
+    if (o.mode === 'tachie'){
+      var gbF = groupBox('フレーム');
+      opChipRow(gbF, [
+        {label:'全身', id:'f_full'}, {label:'膝上', id:'f_knee'}, {label:'腰上', id:'f_waist'},
+        {label:'胸上', id:'f_bust'}, {label:'顔', id:'f_face'}]);
+      main.appendChild(gbF.box);
+    } else {
+      var gbP = groupBox('位置 / 画角 / カメラ操作 / 背景');
+      opChipRow(gbP, [
+        {label:'← 左', id:'pos_left'}, {label:'右 →', id:'pos_right'},
+        {label:'前(近)', id:'pos_fwd'}, {label:'後(遠)', id:'pos_back'},
+        {label:'並べ直す', id:'pos_reset'}]);
+      opChipRow(gbP, [
+        {label:'望遠', id:'fov_tele'}, {label:'広角', id:'fov_wide'}]);
+      opChipRow(gbP, [
+        {label:'回り込み', id:'camm_orbit', v:'orbit'}, {label:'平行移動', id:'camm_move', v:'move'}],
+        function(it){ return o.camMode === it.v; });
+      opChipRow(gbP, [
+        {label:'舞台に固定', id:'bg_fixed', v:false}, {label:'カメラ追従', id:'bg_follow', v:true}],
+        function(it){ return !!o.bgFollow === it.v; });
+      main.appendChild(gbP.box);
+    }
+
+    var gbE = groupBox('表情');
+    opChipRow(gbE, (o.exprs||[]).map(function(e){ return {label:e.label, id:e.id}; }));
+    main.appendChild(gbE.box);
+
+    var gbM = groupBox('モーション');
+    opChipRow(gbM, (o.motions||[]).map(function(m){ return {label:m.label, id:m.id}; })
+      .concat([{label:'停止', id:'m_stop'}]));
+    main.appendChild(gbM.box);
+
+    var gbPo = groupBox('ポーズ (簡易スロット)');
+    opChipRow(gbPo, [
+      {label:'採取', id:'pose_cap'}, {label:'適用', id:'pose_apply'},
+      {label:'素立ち', id:'pose_clear'}, {label:'保存', id:'pose_save'},
+      {label:'読込', id:'pose_load'}]);
+    main.appendChild(gbPo.box);
+
+    var gbS = groupBox('シーン / 状態');
+    opChipRow(gbS, (o.scenes||[]).map(function(s){ return {label:s.label, id:s.id}; })
+      .concat([{label:'状態保存', id:'state_save'}, {label:'状態復元', id:'state_load'}]));
+    main.appendChild(gbS.box);
+
+    if (o.mode === 'tachie'){
+      var gbX = groupBox('演出・音声');
+      opChipRow(gbX, [
+        {label:'フェードイン', id:'fx_fadein'}, {label:'フェードアウト', id:'fx_fadeout'},
+        {label:'スライド登場', id:'fx_slidein'},
+        {label:'発話(音声)', id:'lip_play'}, {label:'停止', id:'lip_stop'}]);
+      main.appendChild(gbX.box);
+    }
+
+    var gbC = groupBox('カメラ');
+    opChipRow(gbC, [
+      {label:'◀', id:'cam_left'}, {label:'▶', id:'cam_right'},
+      {label:'▲', id:'cam_up'}, {label:'▼', id:'cam_down'},
+      {label:'寄る', id:'cam_in'}, {label:'引く', id:'cam_out'},
+      {label:'正面', id:'cam_reset'}]);
+    main.appendChild(gbC.box);
+
+    var gbG = groupBox('切替 (クリックで ON/OFF)');
+    opChipRow(gbG, [
+      {label:'まばたき', id:'blink_set', val:!o.blink, on:!!o.blink},
+      {label:'カメラ目線', id:'look_set', val:!o.look, on:!!o.look},
+      {label:'idle', id:'idle_set', val:!o.idle, on:!!o.idle},
+      {label:'視線ターゲット', id:'gaze_set', val:!o.gaze, on:!!o.gaze}],
+      function(it){ return it.on; });
+    main.appendChild(gbG.box);
+  }
+
   // ---- 連番(シーケンス)ペイン ----
   function renderSeq(){
     var q = state.seq || {steps:[], sel:-1, emotes:[]};
@@ -368,13 +459,13 @@
     });
     if (!state.ready) return;
     main.innerHTML = '';
-    if (state.workMode === 'face') renderFace();
+    if (state.workMode === 'op') renderOp();
+    else if (state.workMode === 'face') renderFace();
     else if (state.workMode === 'pose') renderPose();
     else if (state.workMode === 'seq') renderSeq();
     else if (state.workMode === 'char') renderChar();
     else main.appendChild(el('div','hint',
-      'この作業モード (' + state.workMode + ') はゲーム画面の Elements パネルで操作してください。' +
-      '表情 / ポーズ / 連番 / キャラ はこの画面から編集できます。'));
+      '不明な作業モード (' + state.workMode + ') です。'));
   }
 
   function refresh(){
