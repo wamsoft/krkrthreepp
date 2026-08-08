@@ -114,6 +114,17 @@
   }
 
   // ---- 表情ペイン ----
+  var faceDetail = false;     // 詳細モード (全モーフ表示) トグル
+  var allMorphs = null;       // /app/face/morphs の結果キャッシュ
+  function morphSliderRow(name, label){
+    var w = (state.morphs && state.morphs[name]) || 0;
+    return sliderRow(label, 0, 1, 0.01, w,
+      function(v){ return v.toFixed(2); },
+      function(v){
+        if (state.morphs) state.morphs[name] = v;
+        sendThrottled('mo:'+name, '/app/face/morph', {name:name, w:v});
+      });
+  }
   function renderFace(){
     var ops = el('div','ops');
     var nameIn = el('input'); nameIn.type='text'; nameIn.placeholder='表情名 (保存キー)';
@@ -126,7 +137,16 @@
     };
     var clear = el('button','sub','クリア');
     clear.onclick = function(){ post('/app/face/clear'); };
+    var detail = el('button', faceDetail ? 'act' : 'sub', '詳細 (全モーフ)');
+    detail.onclick = function(){
+      faceDetail = !faceDetail;
+      if (faceDetail && !allMorphs) {
+        fetch('/app/face/morphs').then(function(r){ return r.json(); })
+          .then(function(m){ allMorphs = m; render(); });
+      } else render();
+    };
     ops.appendChild(nameIn); ops.appendChild(save); ops.appendChild(clear);
+    ops.appendChild(detail);
     main.appendChild(ops);
 
     main.appendChild(chipList(
@@ -137,15 +157,25 @@
     (state.groups||[]).forEach(function(g){
       var gb = groupBox(g.title);
       g.items.forEach(function(it){
-        var w = (state.morphs && state.morphs[it.name]) || 0;
-        gb.rows.appendChild(sliderRow(
-          it.label + ' (' + it.name.replace(/^Fcl_/,'') + ')',
-          0, 1, 0.01, w,
-          function(v){ return v.toFixed(2); },
-          function(v){ sendThrottled('mo:'+it.name, '/app/face/morph', {name:it.name, w:v}); }));
+        gb.rows.appendChild(morphSliderRow(it.name,
+          it.label + ' (' + it.name.replace(/^Fcl_/,'') + ')'));
       });
       main.appendChild(gb.box);
     });
+
+    // 詳細モード: 対象 VRM の全モーフ (curated 済みは除外して残りを列挙)
+    if (faceDetail && allMorphs){
+      var curated = {};
+      (state.groups||[]).forEach(function(g){
+        g.items.forEach(function(it){ curated[it.name] = 1; });
+      });
+      var rest = allMorphs.filter(function(n){ return !curated[n]; });
+      var gb = groupBox('全モーフ (' + rest.length + ' / 計 ' + allMorphs.length + ')');
+      rest.forEach(function(n){
+        gb.rows.appendChild(morphSliderRow(n, n.replace(/^Fcl_/,'')));
+      });
+      main.appendChild(gb.box);
+    }
   }
 
   // ---- ポーズペイン ----

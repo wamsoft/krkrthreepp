@@ -16,7 +16,52 @@
 
 class WebUIBridge
 {
+    var openTimer;      // -webui 自動起動用 (サーバ起動待ちのリトライタイマ)
+    var openTries = 0;
+
     function WebUIBridge() {}
+    function finalize() { if (openTimer !== void) invalidate openTimer; }
+
+    // ---- ブラウザ UI をアプリモード (タブ/アドレスバー無し) で開く ----
+    // Chromium 系の --app=URL を使う。Edge → Chrome → 既定ブラウザの順に試す。
+    // url 省略時は WebServer.url + "ui/" (サーバ未起動なら false)。
+    function openBrowser(url)
+    {
+        if (url === void || url == "") {
+            var base = "" + WebServer.url;
+            if (base == "") return false;
+            url = base + "ui/";
+        }
+        if (System.shellExecute("msedge.exe", "--app=" + url)) return true;
+        if (System.shellExecute("chrome.exe", "--app=" + url)) return true;
+        return System.shellExecute(url) != 0;   // 最後は既定ブラウザ (通常ウィンドウ)
+    }
+    // -webui 指定時の自動起動。startup 実行中はサーバ未起動 (WebServer.url が空) の
+    // ため、タイマで起動を待ってから開く (~20秒で諦め)。
+    function startAutoOpen()
+    {
+        if (openTimer !== void) return;
+        openTries = 0;
+        openTimer = new Timer(onOpenTimer, "");
+        openTimer.interval = 800;
+        openTimer.enabled = true;
+    }
+    function onOpenTimer()
+    {
+        if (("" + WebServer.url) != "") {
+            openTimer.enabled = false;
+            invalidate openTimer;
+            openTimer = void;
+            openBrowser();
+            return;
+        }
+        if (++openTries > 25) {
+            Debug.message("webui: サーバが起動しないため自動オープンを中止 (-replweb 指定を確認)");
+            openTimer.enabled = false;
+            invalidate openTimer;
+            openTimer = void;
+        }
+    }
 
     // ---- 状態 JSON (各編集タブに必要な一式) ----
     function buildState()
@@ -104,6 +149,11 @@ class WebUIBridge
         }
 
         // --- 表情編集 ---
+        if (path == "/app/face/morphs") {       // 対象 VRM の全モーフ名一覧 (詳細モード用)
+            var list = app.targetList();
+            if (list.count == 0) return "[]";
+            return list[0].vrm.morphListJson(); // ネイティブ一括 JSON ダンプ
+        }
         if (path == "/app/face/morph") {        // {name:"Fcl_…", w:0..1} スライダライブ反映
             app.editSetMorph(arg.name, +arg.w);
             return "{\"ok\":true}";             // 連打されるので push しない (操作元が真実)
@@ -253,4 +303,7 @@ class WebUIBridge
     global.webui = new WebUIBridge();
     WebServer.register("/app/", webui.handler);
     Debug.message("webui: WebServer へ /ui/ と /app/ を登録");
+    // -webui: 編集 UI をブラウザのアプリモード (タブ/アドレスバー無し) で自動起動。
+    // 手動で開くときは REPL から webui.openBrowser()。
+    if (System.getArgument("-webui") !== void) webui.startAutoOpen();
 })();
