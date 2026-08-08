@@ -8,6 +8,8 @@ threepp (C++ port of three.js) を吉里吉里で使用するためのプラグ�
 
 three.js 相当のシーングラフ/ジオメトリ/マテリアル/ライティングに加え、**VRM アバター (VRoid 等、0.x・1.0)** の読み込み・表情・視線・VRMA アニメ・揺れ物・MToon トゥーン描画に対応します。TJS2 側の擬似コード API は [`manual.tjs`](manual.tjs)、GLES 接続や描画の流れは [`CLAUDE.md`](CLAUDE.md) を参照してください。
 
+また、エンジンの `-replweb` サーバに乗る**ブラウザ編集 UI**(表情/ポーズ/連番/キャラ/操作 + インスペクター + REPL)を同梱します。→ [ブラウザ編集 UI](#ブラウザ編集-ui-advsample)
+
 ## 実装済みクラス一覧
 
 ### Math クラス
@@ -171,14 +173,40 @@ VRoid/VRM アバター (0.x・1.0 両対応)。読み込み・humanoid リグ・
 | クラス名 | 説明 |
 |---------|------|
 | `VRMLoader` | .vrm ローダ (`load` / `loadStorage`) |
-| `VRM` | アバター本体 (`getScene`/`update`/`setExpression`/`applyAnimation`/`setLookAtTarget`/`setColliderScale` 等) |
-| `VRMAnimationLoader` | .vrma ローダ |
-| `VRMAnimation` | VRM アニメーション (ボーン回転 + hips ルートモーション) |
+| `VRM` | アバター本体 (`getScene`/`update`/`setExpression`/`applyAnimation`/`setLookAtTarget`/`setColliderScale` 等。Web UI 向け一括 JSON: `expressionListJson`/`morphListJson`) |
+| `VRMAnimationLoader` | .vrma ローダ (`loadStorage` / `exportPoseSeq` = poseseq→VRMA 書出) |
+| `VRMAnimation` | VRM アニメーション (ボーン回転 + hips ルートモーション + 表情トラック) |
 
 グローバル関数 `textureFromLayer(layer)` — 吉里吉里 Layer を threepp テクスチャへ変換。
+`Object3D.treeJson()` — サブツリーの一括 JSON ダンプ (ブラウザ UI のシーンツリー用)。
 
 詳細な API は [`manual.tjs`](manual.tjs)、**VRM の機能ごとの対応状況**は
 [`docs/vrm_support_status.md`](docs/vrm_support_status.md) を参照。
+
+---
+
+## ブラウザ編集 UI (advsample)
+
+エンジンの `-replweb` HTTP+SSE サーバへプラグイン/TJS がハンドラを追加公開する
+仕組み(TJS クラス `WebServer`)の上に、VRM 立ち絵編集のブラウザ UI を実装して
+います。**本体ウィンドウは 3D 表示専用**(1280x720)で、編集(操作/表情/ポーズ/
+連番/キャラの5モード)・インスペクター・操作ログ・REPL コンソールはすべて
+ブラウザ側に統合されています。
+
+```bash
+# 推奨起動 (アプリモードのブラウザウィンドウが自動で開く)
+krkrz64.exe <ABS data> -readencoding=UTF-8 -sample -replweb=8899 -webui
+# 手動で開く場合: http://127.0.0.1:8899/ui/ (またはゲーム画面で Tab)
+```
+
+- 表情: curated モーフ + 全モーフ詳細モード → `faces.json` 保存/読込
+- ポーズ: 関節回転 + 腰ルートモーション → `poses.json` 保存/読込
+- 連番: ポーズ列 + 保持/遷移/表情 → プレビュー / **VRMA 書き出し**
+- キャラ: レジストリ (`chars/registry.json`) の一覧/スロット割当/新規登録
+- REPL: エンジンログ + TJS 評価 (エンジンの `/events` + `/cmd` を UI 内に統合)
+
+構成・ルート一覧・拡張方法は [`docs/webui.md`](docs/webui.md)、エンジン側の
+`WebServer` クラス仕様は krkrz core の `doc/REPL.md` を参照。
 
 ---
 

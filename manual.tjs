@@ -573,6 +573,13 @@ class Threepp {
 		function updateMatrix();      // ローカル行列を更新
 		function updateMatrixWorld(force); // ワールド行列を更新
 
+		/**
+		 * サブツリーを JSON 文字列で一括ダンプ (ブラウザ編集 UI のシーンツリー表示用)。
+		 * 1 ノード = {id,name,type,visible,pos:[x,y,z],children:[…]}
+		 * @return JSON 文字列
+		 */
+		function treeJson();
+
 		// --- ワールド変換の取得 (matrixWorld から算出) ---
 		// 返り値が最新であるには、直前に render するか updateMatrixWorld(true) を
 		// 呼んでおくこと(親をたどって world 行列を確定させる必要がある)。
@@ -2598,6 +2605,15 @@ class Threepp {
 		function setExpression(name, weight); // 表情ウェイト設定 (name: "happy"/"blink"/"aa" 等, weight 0..1)
 		function getExpression(name);         // -> float
 		function getExpressionCount();        // -> int
+		function getExpressionName(index);    // i 番目の表情名 -> string (範囲外は "")
+		function expressionListJson();        // 全表情の一括 JSON '[{"name":…,"weight":…},…]' (Web UI 用)
+
+		// --- 生モーフ (ブレンドシェイプ直接指定。表情の後に override 適用) ---
+		function setMorph(name, weight);      // 名前で個別モーフを設定 (VRoid: "Fcl_*" 等)
+		function clearMorphs();               // 生モーフ全解除
+		function getMorphCount();             // -> int
+		function getMorphName(index);         // i 番目のモーフ名 -> string
+		function morphListJson();             // 全モーフ名の一括 JSON '["Fcl_ALL_Neutral",…]' (Web UI 用)
 
 		// --- 視線 (LookAt) ---
 		function setLookAtTarget(x, y, z);    // 注視点(ワールド座標)を設定
@@ -2611,6 +2627,19 @@ class Threepp {
 		 * @param time  秒
 		 */
 		function applyAnimation(vrmAnimation, time);
+		function applyAnimationBlend(vrmAnimation, time, blend); // クロスフェード用 (blend 0..1)
+
+		// --- ポーズ (正規化リグのローカル回転) ---
+		/**
+		 * ポーズを適用。arr は [ボーン名, qx, qy, qz, qw, …] の平坦配列。
+		 * @param blend  0..1 (省略時 1 = 即時)
+		 */
+		function applyPose(arr, blend);
+		function applyHipsOffset(dx, dy, dz); // hips を rest からのオフセットへ (ルートモーション)
+		function getHipsOffset();             // -> Vector3
+		function captureRestPose();           // rest 正規化姿勢を記録
+		function blendToRest(t);              // rest へ slerp (素立ち復帰)
+		function setOffset(x, y, z);          // キャラ全体を平行移動
 
 		// --- 揺れ物 (SpringBone) ---
 		/**
@@ -2644,6 +2673,19 @@ class Threepp {
 		function VRMAnimationLoader();
 		function load(osPath);        // OS パスから (デバッグ用) -> VRMAnimation
 		function loadStorage(storageName); // 吉里吉里ストレージ名から (本番用) -> VRMAnimation
+
+		/**
+		 * ポーズ列を 1 本の VRMA (.vrma = glTF-JSON + base64) へ書き出す。
+		 * 入力は平坦な並列配列。書き出したファイルは loadStorage で読み戻せる。
+		 * @param boneNames  [ボーン名,…] (nBones)
+		 * @param times      [秒,…] (nKeys)
+		 * @param quatsFlat  [(key,bone) 行優先の qx,qy,qz,qw,…] (nKeys*nBones*4)
+		 * @param hipsFlat   hips オフセット [dx,dy,dz,…] (nKeys*3。空配列 = トラック無し)
+		 * @param exprNames  表情名 [] (省略/空 = 表情トラック無し)
+		 * @param exprWeightsFlat  表情 weight (expr-major 平坦, nExpr*nKeys)
+		 * @param path       出力ストレージ名 (bare 名で data/ 直下)
+		 */
+		function exportPoseSeq(boneNames, times, quatsFlat, hipsFlat, exprNames, exprWeightsFlat, path);
 	}
 
 	// ============================================================
