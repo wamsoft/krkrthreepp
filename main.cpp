@@ -914,6 +914,10 @@ template <> struct ThreeBaseOf<Camera>             { typedef Object3D Type; };
 template <> struct ThreeBaseOf<PerspectiveCamera>  { typedef Camera   Type; };
 template <> struct ThreeBaseOf<OrthographicCamera> { typedef Camera   Type; };
 template <> struct ThreeBaseOf<Mesh>               { typedef Object3D Type; };
+// InstancedMesh は Mesh 経由で Object3D メンバ (visible/castShadow/position 等) を継承する。
+// この特殊化が無いと TJS 側クラスに Object3D メンバがコピーされず、
+// visible 代入などが動的メンバとして黙って無視される (rpgsys で実害確認済み)
+template <> struct ThreeBaseOf<InstancedMesh>      { typedef Mesh     Type; };
 // Material 系 (threepp の Material は仮想基底。伝播は暗黙アップキャストで対応)
 template <> struct ThreeBaseOf<MeshBasicMaterial>    { typedef Material Type; };
 template <> struct ThreeBaseOf<MeshStandardMaterial> { typedef Material Type; };
