@@ -3,6 +3,10 @@
 
 #include "tp_stub.h"
 
+/* License API 非対応バージョンの tp_stub / 本体ヘッダと組み合わせた
+   ビルドでは登録をまるごとスキップして空関数になる (互換ガード)。 */
+#ifdef TVP_HAS_LICENSE_API
+
 /* threepp (1077 -> 641 bytes) */
 static const unsigned char lic_00[] = {
 	120,218,93,82,201,110,219,48,16,189,243,43,6,57,37,128,154,46,135,30,122,163,37,58,
@@ -69,3 +73,9 @@ void RegisterKrkrThreeppLicenses()
 	TVPRegisterLicense(TJS_W("threepp"), TJS_W("plugin:krkrthreepp"), lic_00, 641, 1077);
 	TVPRegisterLicense(TJS_W("VRM (Kota Iguchi)"), TJS_W("plugin:krkrthreepp"), lic_01, 635, 1068);
 }
+
+#else /* !TVP_HAS_LICENSE_API */
+
+void RegisterKrkrThreeppLicenses() {}
+
+#endif /* TVP_HAS_LICENSE_API */
