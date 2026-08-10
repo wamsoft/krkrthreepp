@@ -5869,4 +5869,9 @@ NCB_PRE_UNREGIST_CALLBACK(unregisterThreeppWebApi);
 // ----------------------------------- 起動・開放処理
 
 NCB_PRE_REGIST_CALLBACK(initThreepp);
+// 同梱コンポーネントのライセンスを本体収集機構へ登録
+// (LicensesGen.cpp = licenses/manifest.json から生成)
+extern void RegisterKrkrThreeppLicenses();
+NCB_PRE_REGIST_CALLBACK(RegisterKrkrThreeppLicenses);
+
 NCB_POST_UNREGIST_CALLBACK(deInitThreepp);

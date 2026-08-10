@@ -1,0 +1,6 @@
+{
+  "entries": [
+    { "name": "threepp", "group": "plugin:krkrthreepp", "file": "../external/threepp/LICENSE" },
+    { "name": "VRM (Kota Iguchi)", "group": "plugin:krkrthreepp", "file": "../external/VRM/LICENSE" }
+  ]
+}

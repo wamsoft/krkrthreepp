@@ -35,6 +35,7 @@ krkrz_plugin(krkrthreepp
     NCBIND
     SOURCES
         src/main.cpp
+        src/LicensesGen.cpp
         src/vrm/VRM.cpp
     INCLUDES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/vrm
