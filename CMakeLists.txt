@@ -16,6 +16,9 @@ option(THREEPP_BUILD_TESTS "Build test suite" OFF)
 option(THREEPP_WITH_SVG "Build with SVGLoader" ON)
 option(THREEPP_WITH_AUDIO "Build with Audio" OFF)
 option(THREEPP_WITH_GENERIC "Build with Generic frontend (user-provided interface)" ON)
+# threepp の SDK 配布用 install ルールを抑止する (プラグインの配布物は DLL だけ。
+# ON のままだと make install で include/threepp や threepp.lib が bin/ に混入する)
+option(THREEPP_INSTALL "Generate threepp install rules" OFF)
 
 add_subdirectory(external/threepp)
 

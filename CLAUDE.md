@@ -84,7 +84,7 @@ VRMA アニメ(+hips ルートモーション)・揺れ物(springBone, center �
 - threepp fork (`external/threepp/`, branch `work_sdl3`): GLES 化 / GLTFLoader 露出・修正 / MToon 用の
   ShaderMaterial・MeshToonMaterial mixin 追加 / **morph テクスチャ化**(全モーフを RGBA32F
   テクスチャに詰め `gl_VertexID`+`texelFetch` で走査。旧 attribute 8 枠方式の「同時8モーフ」
-  上限を撤廃) 等。**push は force 必要 (rebase 履歴)、未 push**。
+  上限を撤廃) 等。origin/work_sdl3 へ push 済 (履歴を rebase した場合は force push が必要)。
   - ⚠ **シェーダ chunk (`external/threepp/src/shaders/**/*.glsl`) を編集したら再 configure 必須**:
     `cmake/embed.cmake` が configure 時に `.glsl` を READ して生成ヘッダ (`build/*/generated/`)
     へ埋め込む。`cmake --build` だけでは古い生成ヘッダが使われ、コンパイル失敗が**黙殺**され
@@ -97,4 +97,6 @@ VRMA アニメ(+hips ルートモーション)・揺れ物(springBone, center �
 - C++17 standard, MSVC static runtime on Windows, `/bigobj` 有効
 - Ninja Multi-Config generator
 - vcpkg for dependency management (static linking)
-- threepp options: SVG loader ON, Audio OFF (Kirikiri has its own), Generic frontend ON
+- threepp options: SVG loader ON, Audio OFF (Kirikiri has its own), Generic frontend ON,
+  install rules OFF (`THREEPP_INSTALL` — 配布物はプラグイン DLL だけなので threepp の
+  lib/include/share が install prefix に混入しないよう抑止)
