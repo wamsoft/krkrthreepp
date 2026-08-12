@@ -1,0 +1,348 @@
+/**
+ * krkrthreepp VRM ビューアサンプル (ファイルドロップ対応)
+ *
+ * ウィンドウへ .vrm をドロップするとモデルを表示し、.vrma をドロップすると
+ * アニメーションを再生する。VRM 0.x / 1.0 両対応 (0.x はローダが +Z 正面へ正規化)。
+ *
+ * 起動: krkrz64.exe <data> -readencoding=UTF-8
+ *   (startup.tjs がプラグインのリンクと makeGLAdaptor を用意して分岐してくる)
+ *
+ *   起動オプション:
+ *     -vrm=名前  … data/<名前>.vrm を初期表示する (省略時は model.vrm が有れば表示)
+ *     -vrma=名前 … data/<名前>.vrma を初期再生する (省略時は anim.vrma が有れば再生)
+ *     -shot=out  … 60 フレーム進めた結果を PNG 保存して終了する (自動確認用。拡張子不要)
+ *
+ * 操作:
+ *   ファイルドロップ … .vrm=モデル差し替え / .vrma=アニメ再生 (複数可)
+ *   ← / →      … カメラを左右に回す
+ *   ↑ / ↓      … カメラを上下に回す
+ *   Z / X      … ズームイン / ズームアウト
+ *   Space      … アニメーションを頭から再生し直す (再押下で停止⇔再開ではなく先頭へ)
+ *   S          … アニメーションを停止して素立ちへ
+ *   E          … 表情(expression)を順番に切り替える
+ *   O          … override デモ (happy+blink+aa ⇔ blink単体 をトグル)
+ *   Enter      … 現在の画面を shot.png へ保存
+ *
+ * ※ ファイルドロップ (Window.onFileDrop) は現状 WINVER ビルドのみ対応
+ *   (SDL 側にドロップイベントの配線が無い)。SDL では起動オプションで指定する。
+ */
+
+var SCREEN_W = 800;
+var SCREEN_H = 800;
+
+class VRMViewer extends Window
+{
+    var adaptor;    // GL アダプタ (GLCompositor。旧 GLESAdaptor 互換。GL コンテキスト提供元)
+    var renderer;   // Threepp.GLRenderer
+    var scene;      // Threepp.Scene
+    var camera;     // Threepp.PerspectiveCamera
+    var vrm;        // Threepp.VRM (未ロード時 void)
+    var anim;       // Threepp.VRMAnimation (無いこともある)
+    var animDur = 0.0;      // アニメの長さ(秒)
+    var animPlaying = false;
+
+    var back;       // 背景レイヤ (未ロード時は案内テキストもここへ描く)
+    var dest;       // 3D 描画結果を受けるレイヤ
+    var timer;
+    var lastTick;
+    var animTime  = 0.0;
+    var frameCount = 0;
+    var shotName;
+
+    // カメラ軌道パラメータ (ターゲットを中心に回る)
+    var camYaw   = 0.0;      // 0 = +Z 側から見る (VRM の正面)
+    var camPitch = 0.0;
+    var camDist  = 2.4;
+    var targetY  = 0.9;      // 見る高さ (おおよそ胸〜顔)
+
+    // 表情切り替え用
+    var exprNames = ["happy", "angry", "sad", "relaxed", "surprised",
+                     "aa", "ih", "ou", "ee", "oh", "blink"];
+    var exprIndex = -1;
+
+    function VRMViewer()
+    {
+        super.Window();
+        caption = "krkrthreepp VRM viewer — .vrm / .vrma をドロップ";
+        setInnerSize(SCREEN_W, SCREEN_H);
+
+        // 背景 (位置が分かるようにグラデーション + 中心線)
+        back = new Layer(this, null);
+        back.setImageSize(SCREEN_W, SCREEN_H);
+        back.setSize(SCREEN_W, SCREEN_H);
+        back.setPos(0, 0);
+        drawBackground(back);
+        back.visible = true;
+        add(back);
+
+        // 3D 描画結果を受けるレイヤ。GL アダプタが capture でα込みを書き戻すので
+        // ltAlpha(通常アルファ合成)で背景へ重ねる。
+        dest = new Layer(this, back);
+        dest.setImageSize(SCREEN_W, SCREEN_H);
+        dest.setSize(SCREEN_W, SCREEN_H);
+        dest.setPos(0, 0);
+        dest.type = ltAlpha;
+        dest.visible = true;
+        add(dest);
+
+        // 未ロード時の案内 (不透明な背景レイヤへ直接描く。透明レイヤへの
+        // drawText は縁が乱れるため使わない)
+        drawHint();
+
+        // --- GL コンテキストと threepp の初期化 -----------------------
+        // 生成時のコンテキストがそのまま使われるので makeCurrent 後に生成する
+        adaptor = makeGLAdaptor(this, SCREEN_W, SCREEN_H);
+        adaptor.makeCurrent();
+        renderer = new Threepp.GLRenderer(adaptor, SCREEN_W, SCREEN_H);
+        renderer.setClearColor(0x000000, 0.0);
+
+        scene  = new Threepp.Scene();
+        camera = new Threepp.PerspectiveCamera(35, SCREEN_W / SCREEN_H, 0.1, 100);
+
+        // ライト (three-vrm の標準的な構成に近い)
+        var dir = new Threepp.DirectionalLight(0xffffff, 1.4);
+        dir.setPosition(1, 1, 1);
+        scene.add(dir);
+        var amb = new Threepp.AmbientLight(0xffffff, 0.6);
+        scene.add(amb);
+
+        // --- 初期ロード (指定があれば/既定ファイルが有れば) -----------
+        var vrmName = System.getArgument("-vrm");
+        if (vrmName !== void) loadVRM(vrmName + ".vrm");
+        else if (Storages.isExistentStorage("model.vrm")) loadVRM("model.vrm");
+
+        var vrmaName = System.getArgument("-vrma");
+        if (vrmaName !== void && vrmaName != "none") loadVRMA(vrmaName + ".vrma");
+        else if (vrmaName === void && Storages.isExistentStorage("anim.vrma")) loadVRMA("anim.vrma");
+
+        updateCamera();
+
+        lastTick = System.getTickCount();
+        shotName = System.getArgument("-shot");
+        if (shotName !== void) shotName += ".png";
+
+        timer = new Timer(this, "onFrame");
+        timer.interval = 16;
+        timer.enabled = true;
+        add(timer);
+    }
+
+    // --- ロード (初期ロード / ファイルドロップ共用) -----------------------
+    // name はストレージ名 (data/ 相対) でもドロップされた正規化パスでもよい。
+    function loadVRM(name)
+    {
+        var placed = Storages.getPlacedPath(name);
+        if (placed == "") placed = name;   // ドロップ由来の絶対パス等はそのまま
+        var loader = new Threepp.VRMLoader();
+        var v = loader.loadStorage(placed);
+        if (v === void) { Debug.message("VRM load failed: " + name); return false; }
+        // 前のモデルを外して差し替える
+        if (vrm !== void) {
+            var s = vrm.getScene();
+            if (s !== void) s.removeFromParent();
+            invalidate vrm;
+        }
+        vrm = v;
+        scene.add(vrm.getScene());
+        exprIndex = -1;
+        overrideOn = false;
+        drawBackground(back);   // 案内テキストを消す
+        back.update();
+        Debug.message("VRM: name=" + vrm.getMetaName()
+                      + " bones=" + vrm.getBoneCount()
+                      + " expressions=" + vrm.getExpressionCount());
+        return true;
+    }
+    function loadVRMA(name)
+    {
+        var placed = Storages.getPlacedPath(name);
+        if (placed == "") placed = name;
+        var loader = new Threepp.VRMAnimationLoader();
+        var a = loader.loadStorage(placed);
+        if (a === void) { Debug.message("VRMA load failed: " + name); return false; }
+        if (anim !== void) invalidate anim;
+        anim = a;
+        animDur = anim.getDuration();
+        animTime = 0.0;
+        animPlaying = true;
+        Debug.message("VRMA loaded: " + name + "  duration=" + animDur
+                      + "s  tracks=" + anim.getBoneTrackCount());
+        return true;
+    }
+
+    // ファイルドロップ (WINVER ビルドのみ発火。files = 正規化ストレージパスの配列)
+    function onFileDrop(files)
+    {
+        for (var i = 0; i < files.count; i++) {
+            var f = "" + files[i];
+            var lf = f.toLowerCase();
+            if (lf.length >= 5 && lf.substring(lf.length - 5) == ".vrma") loadVRMA(f);
+            else if (lf.length >= 4 && lf.substring(lf.length - 4) == ".vrm") loadVRM(f);
+            else Debug.message("viewer: 対応していないファイルです (.vrm/.vrma): " + f);
+        }
+    }
+
+    // 縦グラデ背景 + 中心の縦線
+    function drawBackground(layer)
+    {
+        for (var y = 0; y < SCREEN_H; y++) {
+            var t = y / SCREEN_H;
+            var r = (int)(0x20 + 0x30 * t);
+            var g = (int)(0x28 + 0x38 * t);
+            var b = (int)(0x38 + 0x48 * t);
+            layer.fillRect(0, y, SCREEN_W, 1, 0xFF000000 + (r << 16) + (g << 8) + b);
+        }
+        layer.fillRect(SCREEN_W / 2, 0, 1, SCREEN_H, 0x30FFFFFF);
+    }
+    // 未ロード時の案内テキスト (背景レイヤへ直接描く)
+    function drawHint()
+    {
+        // drawText の色は 24bit (0xRRGGBB)。先頭に FF を付けると暗く化けるので付けない
+        back.font.height = 28;
+        back.drawText(160, SCREEN_H / 2 - 30, "VRM ファイルをここへドロップしてください", 0xE8F0FF);
+        back.font.height = 18;
+        back.drawText(200, SCREEN_H / 2 + 12, ".vrm = モデル表示 / .vrma = アニメーション再生", 0xA8B8D0);
+        back.update();
+    }
+
+    // 軌道パラメータからカメラ位置を更新する
+    function updateCamera()
+    {
+        var cy = Math.cos(camPitch);
+        var px = camDist * Math.sin(camYaw) * cy;
+        var py = targetY + camDist * Math.sin(camPitch);
+        var pz = camDist * Math.cos(camYaw) * cy;
+        camera.setPosition(px, py, pz);
+        camera.lookAt(0, targetY, 0);
+    }
+
+    function onFrame()
+    {
+        var now  = System.getTickCount();
+        var tick = now - lastTick;
+        lastTick = now;
+        if (tick > 100) tick = 100;   // 停止していた場合に飛びすぎないように
+
+        // --- 更新 ----------------------------------------------------
+        if (vrm !== void) {
+            if (anim !== void && animPlaying && animDur > 0) {
+                animTime += tick / 1000.0;
+                if (animTime > animDur) animTime -= animDur;
+                vrm.applyAnimation(anim, animTime);
+            }
+            vrm.update(tick / 1000.0);   // rig/表情/視線/揺れを反映(dt秒)
+        }
+
+        // --- 描画 ----------------------------------------------------
+        // capture のコールバックはアダプタのコンテキストで実行されるため、
+        // このクラスのメンバは見えない。必要なものは param 経由で渡す。
+        adaptor.capture(dest, onRender, this, 0x00000000);
+        dest.update();
+
+        frameCount++;
+
+        // -shot=xxx 指定時: 60 フレーム進めた絵を保存して終了する
+        if (shotName !== void && frameCount >= 60) {
+            timer.enabled = false;
+            saveShot(shotName);
+            System.exit(0);
+        }
+    }
+
+    function onRender(w, h, self)
+    {
+        self.renderer.onBeginScene(w, h);
+        self.renderer.render(self.scene, self.camera);
+        self.renderer.onEndScene();
+    }
+
+    function saveShot(name)
+    {
+        // 背景と合成した見た目で保存する
+        var shot = new Layer(this, back);
+        shot.visible = false;
+        shot.setImageSize(SCREEN_W, SCREEN_H);
+        shot.setSize(SCREEN_W, SCREEN_H);
+        shot.copyRect(0, 0, back, 0, 0, SCREEN_W, SCREEN_H);
+        shot.operateRect(0, 0, dest, 0, 0, SCREEN_W, SCREEN_H, omAdditive);
+        shot.saveLayerImage(name, "png24");
+        invalidate shot;
+        Debug.message("saved: " + name);
+    }
+
+    function onKeyDown(key, shift)
+    {
+        switch (key) {
+        case VK_LEFT:   camYaw   -= 0.15; updateCamera(); break;
+        case VK_RIGHT:  camYaw   += 0.15; updateCamera(); break;
+        case VK_UP:     camPitch += 0.10; if (camPitch >  1.4) camPitch =  1.4; updateCamera(); break;
+        case VK_DOWN:   camPitch -= 0.10; if (camPitch < -1.4) camPitch = -1.4; updateCamera(); break;
+        case VK_Z:      camDist  /= 1.1;  if (camDist  <  0.4) camDist  =  0.4; updateCamera(); break;
+        case VK_X:      camDist  *= 1.1;  if (camDist  > 20.0) camDist  = 20.0; updateCamera(); break;
+        case VK_SPACE:  animTime = 0.0; animPlaying = (anim !== void); break;
+        case VK_S:      stopAnim(); break;
+        case VK_E:      cycleExpression(); break;
+        case VK_O:      overrideDemo(); break;
+        case VK_RETURN: saveShot("shot.png"); break;
+        default:
+            super.onKeyDown(key, shift);
+            return;
+        }
+    }
+
+    // アニメを止めて素立ちへ戻す
+    function stopAnim()
+    {
+        animPlaying = false;
+        if (vrm !== void) { vrm.resetNormalizedPose(); }
+    }
+
+    // 表情を順に当てる (前の表情は 0 に戻す)
+    function cycleExpression()
+    {
+        if (vrm === void) return;
+        if (exprIndex >= 0)
+            vrm.setExpression(exprNames[exprIndex], 0.0);
+        exprIndex++;
+        if (exprIndex >= exprNames.count) exprIndex = 0;
+        vrm.setExpression(exprNames[exprIndex], 1.0);
+        Debug.message("expression: " + exprNames[exprIndex]);
+    }
+
+    // override デモ: happy(overrideBlink/Mouth=block)+blink+aa を同時に掛ける。
+    // override が効いていれば blink/aa は抑制され、happy の笑顔だけが出る。
+    // 押すたびに [override有効] と [blink単体] を切り替えて違いを見る。
+    var overrideOn = false;
+    function overrideDemo()
+    {
+        if (vrm === void) return;
+        if (exprIndex >= 0) { vrm.setExpression(exprNames[exprIndex], 0.0); exprIndex = -1; }
+        vrm.setExpression("happy", 0.0);
+        vrm.setExpression("blink", 0.0);
+        vrm.setExpression("aa",    0.0);
+        overrideOn = !overrideOn;
+        if (overrideOn) {
+            vrm.setExpression("happy", 1.0);
+            vrm.setExpression("blink", 1.0);
+            vrm.setExpression("aa",    1.0);
+            Debug.message("override demo: happy+blink+aa (blink/aa は override で抑制されるはず)");
+        } else {
+            vrm.setExpression("blink", 1.0);
+            Debug.message("override demo: blink 単体 (目が閉じる)");
+        }
+    }
+
+    function finalize()
+    {
+        if (timer !== void) timer.enabled = false;
+        // 破棄順序: threepp オブジェクト → adaptor
+        invalidate anim     if anim     !== void;
+        invalidate vrm      if vrm      !== void;
+        invalidate renderer if renderer !== void;
+        invalidate adaptor  if adaptor  !== void;
+        super.finalize(...);
+    }
+}
+
+var win = new VRMViewer();
+win.visible = true;

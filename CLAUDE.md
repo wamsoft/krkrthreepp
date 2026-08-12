@@ -56,8 +56,10 @@ The plugin has four layers:
 - `src/layerExBase.hpp` — Base class for integrating threepp rendering into Kirikiri's layer system (image buffer access)
 - `manual.tjs` — Pseudo-code API documentation for TJS2 script developers
 - `README.md` — Japanese documentation with class listing and usage examples
-- `data/startup.tjs` / `data/basic.tjs` — threepp 描画の最小デモ (テクスチャ付き回転キューブ / フラグ付き
-  スモークテスト。VRM 抜き。`GLRenderer` → `GLESAdaptor.capture` → dest レイヤ合成の確認用)
+- `data/startup.tjs` — サンプル起動エントリ (リンク + `makeGLAdaptor` + 分岐。既定=viewer / `-cube`=cube)
+- `data/viewer.tjs` — VRM ビューアサンプル (ファイルドロップで .vrm/.vrma 表示。ドロップは WINVER のみ)
+- `data/cube.tjs` / `data/basic.tjs` — threepp 描画の最小デモ (テクスチャ付き回転キューブ / フラグ付き
+  スモークテスト。VRM 抜き。`GLRenderer` → GL アダプタ `.capture` → dest レイヤ合成の確認用)
 
 ## Current Status
 

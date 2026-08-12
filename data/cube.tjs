@@ -1,0 +1,147 @@
+/**
+ * krkrthreepp 最小デモ — テクスチャ付き回転キューブ
+ *
+ * プラグイン (krkrthreepp.dll) が threepp 描画パイプライン
+ * (GLRenderer → GL アダプタ.capture → dest レイヤ合成) で
+ * 実際にピクセルを出せることを、VRM 抜きの最小構成で確認するサンプル。
+ * チェッカーテクスチャを Layer から生成してキューブに貼り、毎フレーム回す。
+ *
+ * 起動: krkrz64.exe <data> -readencoding=UTF-8 -cube
+ *   (startup.tjs がプラグインのリンクと makeGLAdaptor を用意して分岐してくる)
+ *
+ * オプション:
+ *   -shot=out … 60 フレーム後に out.png を保存して終了 (自動確認用。拡張子は付けない)
+ *   -lit      … MeshBasicMaterial(unlit) の代わりに MeshStandardMaterial + ライトで描く
+ *
+ * より詳しいフラグ付きスモークテストは data/basic.tjs を参照。
+ */
+
+var SCREEN_W = 512;
+var SCREEN_H = 512;
+
+class CubeDemo extends Window
+{
+    var adaptor, renderer, scene, camera, mesh;
+    var back, dest, timer, shotName, frameCount = 0;
+
+    function CubeDemo()
+    {
+        super.Window();
+        caption = "krkrthreepp — textured cube";
+        setInnerSize(SCREEN_W, SCREEN_H);
+
+        // 背景 (暗い単色。3D が乗れば分かる)
+        back = new Layer(this, null);
+        back.setImageSize(SCREEN_W, SCREEN_H);
+        back.setSize(SCREEN_W, SCREEN_H);
+        back.fillRect(0, 0, SCREEN_W, SCREEN_H, 0xff102030);
+        back.visible = true;
+        add(back);
+
+        // 3D 描画結果を通常アルファ合成する先
+        dest = new Layer(this, back);
+        dest.setImageSize(SCREEN_W, SCREEN_H);
+        dest.setSize(SCREEN_W, SCREEN_H);
+        dest.type = ltAlpha;
+        dest.visible = true;
+        add(dest);
+
+        // GL コンテキスト (GLCompositor。旧エンジンは GLESAdaptor。startup.tjs 定義)
+        adaptor = makeGLAdaptor(this, SCREEN_W, SCREEN_H);
+        adaptor.makeCurrent();
+
+        renderer = new Threepp.GLRenderer(adaptor, SCREEN_W, SCREEN_H);
+        renderer.setClearColor(0x000000, 0.0);
+
+        scene  = new Threepp.Scene();
+        camera = new Threepp.PerspectiveCamera(50, SCREEN_W / SCREEN_H, 0.1, 100);
+        camera.setPosition(0, 0, 3);
+        camera.lookAt(0, 0, 0);
+
+        // チェッカーテクスチャを Layer に描いて threepp テクスチャ化
+        // (プライマリレイヤは LayerManager 競合を起こすため既存レイヤの子として作る)
+        var texLayer = new Layer(this, back);
+        texLayer.setImageSize(64, 64);
+        texLayer.setSize(64, 64);
+        texLayer.visible = false;
+        for (var ty = 0; ty < 8; ty++)
+            for (var tx = 0; tx < 8; tx++) {
+                var c = (((tx + ty) & 1) != 0) ? 0xffff8020 : 0xff2050ff;
+                texLayer.fillRect(tx * 8, ty * 8, 8, 8, c);
+            }
+        var tex = textureFromLayer(texLayer);
+        invalidate texLayer;   // 画素はテクスチャへコピー済み
+
+        var geom = new Threepp.BoxGeometry(1, 1, 1);
+        var mat;
+        if (System.getArgument("-lit") !== void) {
+            mat = new Threepp.MeshStandardMaterial();
+            mat.color = 0xffffff;
+            mat.setMap(tex);
+            var dir = new Threepp.DirectionalLight(0xffffff, 1.0);
+            dir.setPosition(2, 3, 4); scene.add(dir);
+            scene.add(new Threepp.AmbientLight(0xffffff, 0.4));
+        } else {
+            mat = new Threepp.MeshBasicMaterial();
+            mat.color = 0xffffff;              // 白 = テクスチャ色をそのまま出す
+            mat.setMap(tex);
+        }
+        mesh = new Threepp.Mesh(geom, mat);
+        scene.add(mesh);
+
+        shotName = System.getArgument("-shot");
+        if (shotName !== void) shotName += ".png";
+
+        timer = new Timer(this, "onFrame");
+        timer.interval = 16;
+        timer.enabled = true;
+        add(timer);
+    }
+
+    function onFrame()
+    {
+        if (mesh !== void) { mesh.rotateY(0.02); mesh.rotateX(0.01); }
+
+        adaptor.capture(dest, onRender, this, 0x00000000);
+        dest.update();
+        frameCount++;
+
+        if (shotName !== void && frameCount >= 60) {
+            timer.enabled = false;
+            saveShot(shotName);
+            System.exit(0);
+        }
+    }
+
+    function onRender(w, h, self)
+    {
+        self.renderer.onBeginScene(w, h);
+        self.renderer.render(self.scene, self.camera);
+        self.renderer.onEndScene();
+    }
+
+    function saveShot(name)
+    {
+        var shot = new Layer(this, back);
+        shot.visible = false;
+        shot.setImageSize(SCREEN_W, SCREEN_H);
+        shot.setSize(SCREEN_W, SCREEN_H);
+        shot.copyRect(0, 0, back, 0, 0, SCREEN_W, SCREEN_H);
+        shot.operateRect(0, 0, dest, 0, 0, SCREEN_W, SCREEN_H, omAdditive);
+        shot.saveLayerImage(name, "png24");
+        invalidate shot;
+        Debug.message("saved: " + name);
+    }
+
+    function finalize()
+    {
+        if (timer !== void) timer.enabled = false;
+        invalidate mesh     if mesh     !== void;
+        invalidate renderer if renderer !== void;
+        invalidate adaptor  if adaptor  !== void;
+        super.finalize(...);
+    }
+}
+
+var win = new CubeDemo();
+win.visible = true;

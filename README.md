@@ -8,7 +8,7 @@ threepp (C++ port of three.js) を吉里吉里で使用するためのプラグ�
 
 three.js 相当のシーングラフ/ジオメトリ/マテリアル/ライティングに加え、**VRM アバター (VRoid 等、0.x・1.0)** の読み込み・表情・視線・VRMA アニメ・揺れ物・MToon トゥーン描画に対応します。TJS2 側の擬似コード API は [`manual.tjs`](manual.tjs)、GLES 接続や描画の流れは [`CLAUDE.md`](CLAUDE.md) を参照してください。
 
-付属サンプルは threepp 描画の最小デモ(テクスチャ付き回転キューブ)です。→ [サンプル](#サンプル)。
+付属サンプルは **VRM ビューア(ファイルドロップで .vrm/.vrma を表示)** と threepp 描画の最小デモ(テクスチャ付き回転キューブ)です。→ [サンプル](#サンプル)。
 
 ## 実装済みクラス一覧
 
@@ -187,20 +187,31 @@ VRoid/VRM アバター (0.x・1.0 両対応)。読み込み・humanoid リグ・
 
 ## サンプル
 
-`data/` に threepp 描画パイプライン(GLRenderer → GLESAdaptor.capture → dest レイヤ合成)の
-最小デモを同梱します(VRM 抜き)。
+`data/` に VRM ビューアと threepp 描画パイプライン(GLRenderer → GL アダプタ.capture →
+dest レイヤ合成)の最小デモを同梱します。
 
 ```bash
-# テクスチャ付き回転キューブ (自己完結)
+# VRM ビューア (既定。ウィンドウへ .vrm/.vrma をドロップして表示)
 krkrz64.exe <ABS data> -readencoding=UTF-8
+# テクスチャ付き回転キューブ (最小デモ)
+krkrz64.exe <ABS data> -readencoding=UTF-8 -cube
 ```
 
-- [`data/startup.tjs`](data/startup.tjs) — チェッカーテクスチャを貼った回転キューブ。
+- [`data/startup.tjs`](data/startup.tjs) — 起動エントリ(プラグインのリンク +
+  GL アダプタ生成ヘルパ `makeGLAdaptor` + 分岐。既定=viewer / `-cube`=cube)。
+- [`data/viewer.tjs`](data/viewer.tjs) — **VRM ビューア**。ファイルドロップで
+  .vrm(モデル差し替え)/.vrma(アニメ再生)。カメラ旋回/ズーム、表情切替(E)、
+  override デモ(O)、`-vrm=名前` / `-vrma=名前` / `-shot=out`。
+  ※ファイルドロップ(Window.onFileDrop)は現状 WINVER ビルドのみ。
+- [`data/cube.tjs`](data/cube.tjs) — チェッカーテクスチャを貼った回転キューブ。
   `-shot=out` で 60 フレーム後に PNG 保存、`-lit` でライティング版に切替。
 - [`data/basic.tjs`](data/basic.tjs) — フラグ付きスモークテスト(`-tex` / `-lit` / `-clear` / `-shot`)。
 
-前提: エンジン隣の plugin64 に `krkrthreepp.dll` / `krkrgles.dll` を配置(`data/startup.tjs` は
-開発ビルド `../build/x64-windows/Release/krkrthreepp.dll` も探索する)。
+前提: エンジン隣の plugin64 に `krkrthreepp.dll` を配置(`data/startup.tjs` は
+開発ビルド `../build/x64-windows/Release/krkrthreepp.dll` も探索する)。GL コンテキストは
+本体内蔵 GLCompositor を使う(旧エンジンのみ `krkrgles.dll` の GLESAdaptor へフォールバック)。
+3D 表示は WINVER ビルド (x64-windows-win) 推奨。VRM 立ち絵の**エディタ環境**
+(ADV サンプル + ブラウザ編集 UI)は別リポジトリ krkrz_vrmsys。
 
 ---
 
