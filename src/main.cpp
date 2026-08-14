@@ -1415,6 +1415,27 @@ template <class T> static void ThreeLightSetShadowOrthoBounds(ThreeWrapper<T> *s
 	NCB_METHOD_PROXY(setShadowNearFar,     ThreeLightSetShadowNearFar<ThreeClass>); \
 	NCB_METHOD_PROXY(setShadowOrthoBounds, ThreeLightSetShadowOrthoBounds<ThreeClass>)
 
+// --- ライトの色と強度 (実行中の変更用) ---
+// Light の color / intensity は Light クラスのメンバだが、ライト各クラスは
+// ThreeBaseOf に載せていない (= TJS 側で Light を is-a 継承しない) ため、
+// 派生クラスの登録ブロックにも明示的に生やす必要がある。生やさないと
+// `light.intensity = x` が動的メンバ代入になって黙って無視される
+// (InstancedMesh.visible と同じ罠)。
+// color は値型プロパティ (getter は複製を返す) なので setter はメソッドで公開する。
+template <class T> static void ThreeLightSetColor(ThreeWrapper<T> *self, tjs_int hex)
+{
+	if (self && self->getObject()) self->getObject()->color.setHex((unsigned int)hex);
+}
+template <class T> static void ThreeLightSetGroundColor(ThreeWrapper<T> *self, tjs_int hex)
+{
+	if (self && self->getObject()) self->getObject()->groundColor.setHex((unsigned int)hex);
+}
+
+// 全ライト共通 (Light の色/強度) の登録ブロック。
+#define THREE_LIGHT_MEMBERS() \
+	NCB_THREE_MEMBER_PROPERTY(intensity, float, intensity); \
+	NCB_METHOD_PROXY(setColor, ThreeLightSetColor<ThreeClass>)
+
 // 各 Object3D 派生クラスの登録ブロックに書く共通メンバ群。
 // type は各クラスが独自の RO プロパティを持つため含めない (衝突回避)。
 #define THREE_OBJECT3D_MEMBERS() \
@@ -1494,10 +1515,32 @@ SceneFactory(ThreeWrapper<Scene> **result, tjs_int numparams, tTJSVariant **para
 	return TJS_S_OK;
 }
 
+// シーンの霧 (Scene::fog は std::optional<std::variant<Fog,FogExp2>> のため
+// プロパティにできない)。色は 0xRRGGBB、距離は world 単位。
+// マテリアル側の material.fog が true (既定) のものにだけ掛かる。
+// 霧の有無/値の変更はレンダラ側でシェーダ再コンパイルされるので実行中に変えてよい。
+static void ThreeSceneSetFog(ThreeWrapper<Scene> *self, tjs_int hex, float nearPlane, float farPlane)
+{
+	if (self && self->getObject())
+		self->getObject()->fog = Fog(Color((unsigned int)hex), nearPlane, farPlane);
+}
+static void ThreeSceneSetFogExp2(ThreeWrapper<Scene> *self, tjs_int hex, float density)
+{
+	if (self && self->getObject())
+		self->getObject()->fog = FogExp2(Color((unsigned int)hex), density);
+}
+static void ThreeSceneClearFog(ThreeWrapper<Scene> *self)
+{
+	if (self && self->getObject()) self->getObject()->fog.reset();
+}
+
 NCB_REGISTER_THREE_SUBCLASS(Scene)
 Factory(SceneFactory);
 NCB_THREE_PROPERTY_RO(type, type);
 NCB_THREE_MEMBER_PROPERTY(autoUpdate, bool, autoUpdate);
+NCB_METHOD_PROXY(setFog,     ThreeSceneSetFog);
+NCB_METHOD_PROXY(setFogExp2, ThreeSceneSetFogExp2);
+NCB_METHOD_PROXY(clearFog,   ThreeSceneClearFog);
 // Object3D 共通メンバは is-a 継承 (ThreeBaseOf<Scene>=Object3D) で自動取得
 };
 
@@ -1631,6 +1674,7 @@ NCB_REGISTER_THREE_SUBCLASS(AmbientLight)
 Factory(AmbientLightFactory);
 NCB_THREE_PROPERTY_RO(type, type);
 THREE_OBJECT3D_MEMBERS();
+THREE_LIGHT_MEMBERS();
 };
 
 // ======================================================================
@@ -1660,6 +1704,7 @@ Factory(DirectionalLightFactory);
 NCB_THREE_PROPERTY_RO(type, type);
 NCB_THREE_METHOD(dispose);
 THREE_OBJECT3D_MEMBERS();
+THREE_LIGHT_MEMBERS();
 THREE_LIGHT_SHADOW_MEMBERS();
 };
 
@@ -1698,6 +1743,7 @@ NCB_THREE_METHOD(getPower);
 NCB_THREE_METHOD(setPower);
 NCB_THREE_METHOD(dispose);
 THREE_OBJECT3D_MEMBERS();
+THREE_LIGHT_MEMBERS();
 THREE_LIGHT_SHADOW_MEMBERS();
 };
 
@@ -1742,6 +1788,7 @@ NCB_THREE_METHOD(getPower);
 NCB_THREE_METHOD(setPower);
 NCB_THREE_METHOD(dispose);
 THREE_OBJECT3D_MEMBERS();
+THREE_LIGHT_MEMBERS();
 THREE_LIGHT_SHADOW_MEMBERS();
 };
 
@@ -1778,6 +1825,9 @@ Factory(HemisphereLightFactory);
 NCB_THREE_PROPERTY_RO(type, type);
 struct AutoProp_groundColor { static Color ProxyGet(ThreeClass *inst) { return inst->groundColor; } };
 Property(TJS_W("groundColor"), &AutoProp_groundColor::ProxyGet, (int)0, getBridgeType(&ThreeWrapper<ThreeClass>::BridgeFunctor::operator()));
+THREE_OBJECT3D_MEMBERS();
+THREE_LIGHT_MEMBERS();
+NCB_METHOD_PROXY(setGroundColor, ThreeLightSetGroundColor<ThreeClass>);
 };
 
 // ======================================================================
