@@ -4,7 +4,7 @@
 #endif
 
 #include "ncbind.hpp"
-#include "LayerExBase.hpp"
+#include "layerExBase.hpp"   // ファイル名どおりの綴り (Linux は大小文字を区別する)
 #include "vrm/VRM.hpp"
 #include <nlohmann/json.hpp>   // Web API 用 JSON ダンプ (treeJson / expressionListJson 等)
 #include <glad/glad.h>   // onEndScene のホスト向け GL ステート復帰で使用
@@ -12,6 +12,8 @@
 #include <memory>
 #include <cstdint>
 #include <climits>
+#include <cstdarg>   // va_list / va_start (ログ出力ヘルパ)
+#include <cstdio>    // vsnprintf (MSVC 以外)
 
 // threepp headers
 #include <threepp/threepp.hpp>
@@ -123,6 +125,18 @@
 
 using namespace threepp;
 
+// 可変長引数の書式化。 _vsnprintf_s / _TRUNCATE は MSVC 拡張なので、
+// それ以外の処理系では標準の vsnprintf を使う (どちらも必ず NUL 終端する)。
+static void
+format_log_message(char (&buf)[1024], const char* format, va_list args)
+{
+#if defined(_MSC_VER)
+	_vsnprintf_s(buf, sizeof(buf), _TRUNCATE, format, args);
+#else
+	vsnprintf(buf, sizeof(buf), format, args);
+#endif
+}
+
 /**
  * ログ出力用
  */
@@ -132,7 +146,7 @@ message_log(const char* format, ...)
 	va_list args;
 	va_start(args, format);
 	char msg[1024];
-	_vsnprintf_s(msg, 1024, _TRUNCATE, format, args);
+	format_log_message(msg, format, args);
 	TVPAddLog(ttstr(msg));
 	va_end(args);
 }
@@ -146,7 +160,7 @@ error_log(const char* format, ...)
 	va_list args;
 	va_start(args, format);
 	char msg[1024];
-	_vsnprintf_s(msg, 1024, _TRUNCATE, format, args);
+	format_log_message(msg, format, args);
 	TVPAddImportantLog(ttstr(msg));
 	va_end(args);
 }
