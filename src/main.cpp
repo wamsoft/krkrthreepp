@@ -312,10 +312,13 @@ struct StdStringConvertor {
 };
 NCB_SET_CONVERTOR(std::string, StdStringConvertor);
 
-// size_t は 64bit では unsigned __int64 だが 32bit では unsigned int と同一。
-// 32bit で登録すると ncbind 既定の unsigned int 変換と二重定義になる（C2766）。
-// size_t が unsigned int より広い（=64bit）ときのみ登録する。
-#if SIZE_MAX != UINT_MAX
+// size_t の実体は処理系で変わり、ncbind が既定登録している整数型
+// (unsigned char / short / int / long) と同一になると二重定義になる。
+//   Windows x64 (LLP64) : size_t = unsigned long long → 未登録なので要登録
+//   Linux/macOS  (LP64) : size_t = unsigned long      → 既定登録済み (登録すると衝突)
+//   32bit               : size_t = unsigned int       → 既定登録済み (同上)
+// unsigned long より広いときだけ登録する。
+#if SIZE_MAX > ULONG_MAX
 NCB_TYPECONV_CAST_INTEGER(size_t);
 #endif
 NCB_TYPECONV_CAST_INTEGER(Side);
