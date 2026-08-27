@@ -1851,7 +1851,22 @@ NCB_METHOD_PROXY(setGroundColor, ThreeLightSetGroundColor<ThreeClass>);
 // Material (基底)
 // ======================================================================
 
+// **コンバータ復路 (CreateAdaptor) 用の Factory**。
+// `std::shared_ptr<Material>` を返すメソッド (GLTFModel.getPartMaterial 等) は、
+// 変換の際に CreateAdaptor → CreateNew を通る。Factory が 1 つも登録されていないと
+// ここで失敗して**戻り値が void になる**ため、空の Factory を置いておく。
+// CreateAdaptor は「引数 1 個が void」で呼ぶので**この本体は実行されない**。
+// Material は抽象基底なので実体は作れず、TJS から new Threepp.Material() しても
+// 中身は空になる (EdgesGeometry が引数不足のとき nullptr を返すのと同じ扱い)。
+static tjs_error
+MaterialFactory(ThreeWrapper<Material> **result, tjs_int, tTJSVariant **, iTJSDispatch2 *)
+{
+	*result = nullptr;
+	return TJS_S_OK;
+}
+
 NCB_REGISTER_THREE_SUBCLASS(Material)
+Factory(MaterialFactory);                             // コンバータ復路(CreateAdaptor)用
 NCB_THREE_PROPERTY_RO(type, type);
 NCB_THREE_MEMBER_PROPERTY_RO(id, unsigned int, id);
 NCB_THREE_MEMBER_PROPERTY(name, std::string, name);
@@ -3236,6 +3251,81 @@ static float GLTFModel_getAnimationDuration(ThreeWrapper<GLTFModel> *self, int i
 	return 0.f;
 }
 
+// --- パーツ (メッシュ) の取り出し ------------------------------------
+//
+// 同じモデルを何百個も並べるとき、GLB を個数ぶん読んで Mesh を並べると
+// draw call がそのまま個数になる。InstancedMesh へまとめたいが、そのためには
+// ジオメトリとマテリアルを取り出す口が要る。ここがそれ。
+//
+//   var m = loader.loadStorage("prop.glb");
+//   for (var i = 0; i < m.getPartCount(); i++) {
+//       var im = new Threepp.InstancedMesh(m.getPartGeometry(i), m.getPartMaterial(i), n);
+//       for (var k = 0; k < n; k++) im.setMatrixAt(k, mat4);
+//       scene.add(im);
+//   }
+//
+// **ジオメトリはモデル内のローカル変換を焼き込んだ複製を返す**。こうしないと
+// 呼ぶ側が「モデル内でメッシュがどうぶら下がっているか」を知らないと正しく置けない
+// (Kenney 系は大半が 1 パーツだが 2〜3 パーツのものもある)。
+// 複製なので、呼ぶ側が回転や移動を掛けても元モデルには影響しない。
+namespace {
+// モデル配下の Mesh を出現順に集める (深さ優先)。matrixWorld は呼ぶ前に更新しておく
+static void GLTFCollectMeshes(Object3D *o, std::vector<Mesh *> &out)
+{
+	if (!o) return;
+	if (auto *m = dynamic_cast<Mesh *>(o)) out.push_back(m);
+	for (auto &c : o->children) GLTFCollectMeshes(c, out);
+}
+static std::vector<Mesh *> GLTFParts(GLTFModel *model)
+{
+	std::vector<Mesh *> out;
+	if (!model || !model->result.scene) return out;
+	model->result.scene->updateMatrixWorld(true);
+	GLTFCollectMeshes(model->result.scene.get(), out);
+	return out;
+}
+}// namespace
+
+static int GLTFModel_getPartCount(ThreeWrapper<GLTFModel> *self)
+{
+	if (!self || !self->getObject()) return 0;
+	return (int)GLTFParts(self->getObject().get()).size();
+}
+
+// i 番目のパーツのジオメトリ (モデル内の変換を焼き込んだ複製)
+static std::shared_ptr<BufferGeometry> GLTFModel_getPartGeometry(ThreeWrapper<GLTFModel> *self, int i)
+{
+	if (!self || !self->getObject()) return nullptr;
+	auto parts = GLTFParts(self->getObject().get());
+	if (i < 0 || i >= (int)parts.size()) return nullptr;
+	auto src = parts[i]->geometry();
+	if (!src) return nullptr;
+	auto geo = src->clone();
+	if (!geo) return nullptr;
+	// モデルのルートから見た変換を焼き込む (ルートは読み込み直後で単位行列なので
+	// matrixWorld がそのままモデル空間の変換になる)
+	if (parts[i]->matrixWorld) geo->applyMatrix4(*parts[i]->matrixWorld);
+	return geo;
+}
+
+// i 番目のパーツのマテリアル (**複製せず元を共有する**。テクスチャを持つため)
+static std::shared_ptr<Material> GLTFModel_getPartMaterial(ThreeWrapper<GLTFModel> *self, int i)
+{
+	if (!self || !self->getObject()) return nullptr;
+	auto parts = GLTFParts(self->getObject().get());
+	if (i < 0 || i >= (int)parts.size()) return nullptr;
+	return parts[i]->material();
+}
+
+// i 番目のパーツの名前 (どのパーツか見分ける用。デバッグ向け)
+static ttstr GLTFModel_getPartName(ThreeWrapper<GLTFModel> *self, int i)
+{
+	if (!self || !self->getObject()) return ttstr();
+	auto parts = GLTFParts(self->getObject().get());
+	if (i < 0 || i >= (int)parts.size()) return ttstr();
+	return ThreeUtf8ToTtstr(parts[i]->name);
+}
+
 NCB_REGISTER_THREE_SUBCLASS(GLTFLoader)
 Factory(GLTFLoaderFactory);
 NCB_METHOD_PROXY(load, GLTFLoader_load);              // (OSパス) デバッグ/スタンドアロン用
@@ -3248,6 +3338,11 @@ NCB_METHOD_PROXY(getScene, GLTFModel_getScene);       // -> Threepp.Group (シ�
 NCB_METHOD_PROXY(getAnimationCount, GLTFModel_getAnimationCount);
 NCB_METHOD_PROXY(getAnimationName, GLTFModel_getAnimationName);         // (i) -> string
 NCB_METHOD_PROXY(getAnimationDuration, GLTFModel_getAnimationDuration); // (i) -> float(sec)
+// パーツ (メッシュ) の取り出し。InstancedMesh でまとめて並べるのに使う
+NCB_METHOD_PROXY(getPartCount, GLTFModel_getPartCount);       // -> int
+NCB_METHOD_PROXY(getPartGeometry, GLTFModel_getPartGeometry); // (i) -> BufferGeometry (変換を焼き込んだ複製)
+NCB_METHOD_PROXY(getPartMaterial, GLTFModel_getPartMaterial); // (i) -> Material (元を共有)
+NCB_METHOD_PROXY(getPartName, GLTFModel_getPartName);         // (i) -> string
 };
 
 // ======================================================================

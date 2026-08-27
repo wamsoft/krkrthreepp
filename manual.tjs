@@ -2728,6 +2728,37 @@ class Threepp {
 		 *       node.setScale(0.5, 0.5, 0.5);
 		 *   }
 		 */
+
+		// --- パーツ (メッシュ) の取り出し ---
+		// 同じモデルを何百個も並べたいとき、GLB を個数ぶん読んで Mesh を並べると
+		// draw call がそのまま個数になる。ここから取り出して InstancedMesh へ
+		// まとめると 1 個で済む。
+		function getPartCount();           // -> int (モデル内のメッシュ数。深さ優先の出現順)
+		function getPartGeometry(i);       // (i) -> BufferGeometry
+		function getPartMaterial(i);       // (i) -> Material (元を共有。テクスチャを持つため)
+		function getPartName(i);           // (i) -> string (どのパーツか見分ける用)
+		/* 使用例 (同じプロップを N 個並べる):
+		 *   var m = ld.loadStorage("prop.glb");
+		 *   for (var i = 0; i < m.getPartCount(); i++) {
+		 *       var im = new Threepp.InstancedMesh(m.getPartGeometry(i),
+		 *                                          m.getPartMaterial(i), N);
+		 *       var q = new Threepp.Quaternion(0, 0, 0, 1);
+		 *       for (var k = 0; k < N; k++) {
+		 *           var mtx = new Threepp.Matrix4();
+		 *           mtx.compose(new Threepp.Vector3(x, y, z), q,
+		 *                       new Threepp.Vector3(1, 1, 1));
+		 *           im.setMatrixAt(k, mtx);
+		 *       }
+		 *       scene.add(im);
+		 *   }
+		 *
+		 * @note getPartGeometry は **モデル内のローカル変換を焼き込んだ複製**を返す。
+		 *   こうしないと、呼ぶ側が「モデル内でメッシュがどうぶら下がっているか」を
+		 *   知らないと正しく置けない (1 パーツのモデルが大半だが、複数のものもある)。
+		 *   複製なので回転や移動を掛けても元モデルには影響しない。
+		 * @note getPartMaterial は **複製せず元を共有する** (テクスチャを持つため)。
+		 *   変えると同じモデルを使う他の描画にも効く。
+		 */
 	}
 
 	// ============================================================
