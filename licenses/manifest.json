@@ -1,6 +1,6 @@
 {
   "entries": [
-    { "name": "threepp", "group": "plugin:krkrthreepp", "file": "../external/threepp/LICENSE" },
-    { "name": "VRM (Kota Iguchi)", "group": "plugin:krkrthreepp", "file": "../external/VRM/LICENSE" }
+    { "name": "threepp",           "group": "plugin:krkrthreepp", "license": "MIT","file": "../external/threepp/LICENSE", "note": "three.js の C++ 移植" },
+    { "name": "VRM (Kota Iguchi)", "group": "plugin:krkrthreepp", "license": "MIT","file": "../external/VRM/LICENSE" }
   ]
 }
