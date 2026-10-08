@@ -579,6 +579,8 @@ class Threepp {
 		 * @return JSON 文字列
 		 */
 		function treeJson();
+		// quaternion プロパティは値のコピーを返すので、書き戻しはこれを使う (Object3D のみ)
+		function setQuaternion(x, y, z, w);
 
 		// --- ワールド変換の取得 (matrixWorld から算出) ---
 		// 返り値が最新であるには、直前に render するか updateMatrixWorld(true) を
@@ -698,6 +700,12 @@ class Threepp {
 		function setViewOffset(fullWidth, fullHeight, x, y, width, height); // ビューオフセットを設定
 		function clearViewOffset(); // ビューオフセットをクリア
 		function updateProjectionMatrix(); // 投影行列を更新
+		/**
+		 * 投影行列に画面上の 2D アフィンを後掛けする (updateProjectionMatrix の後に呼ぶ。Camera 共通)。
+		 * NDC で x' = a*x + b*y + tx, y' = c*x + d*y + ty。カメラの全画角を画面の任意の平行四辺形へ
+		 * 写せるので、2D 側の拡大・回転・位置を「描いた後の拡大」ではなく描画そのものに反映できる。
+		 */
+		function applyScreenAffine(a, b, c, d, tx, ty);
 	}
 
 	/**
@@ -2649,6 +2657,24 @@ class Threepp {
 		 */
 		function setColliderScale(scale);
 		function getColliderScale();          // -> float
+		/**
+		 * 揺れものを現在の姿勢で静止させる (慣性を 0 にする)。
+		 * ロード直後・服装替え・大きな姿勢変更・セーブ復元の後に呼ぶと髪が暴れない。
+		 */
+		function resetSpringBones();
+
+		// --- マテリアル (glTF の material 単位) ---
+		// name は完全一致を優先し、無ければ部分一致した全 material に適用する。戻り値は適用数。
+		// VRoid の服の部品 (上着/リボン等) の出し入れや色替え、全体の暗さに使う。
+		// 実効色 = 元の色 × setMaterialColor の色 × setTint の色 (MToon の lit/shade/emissive/rim/
+		// matcap と輪郭線の色に掛かる)。
+		function getMaterialCount();          // -> int
+		function getMaterialName(index);      // -> string (glTF material.name)
+		function materialListJson();          // -> [{name,visible,meshes},…] の JSON 文字列
+		function setMaterialVisible(name, visible); // -> 適用数
+		function getMaterialVisible(name);    // -> bool
+		function setMaterialColor(name, r, g, b);   // 乗算色 (1,1,1 = 元の色) -> 適用数
+		function setTint(r, g, b);            // 全 material への乗算色 (1,1,1 = 元の色)
 
 		// --- メタ情報 ---
 		function getMetaName();               // -> string

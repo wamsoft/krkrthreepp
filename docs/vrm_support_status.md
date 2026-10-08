@@ -36,7 +36,7 @@ VRM 0.x / 1.0 の**読込・humanoid・表情・視線・アニメ(VRMA)・揺�
 | raw ボーン名前引き | ✅ | `getBoneNode` |
 | 正規化リグ + リタゲ | ✅ | rest world 回転を identity 化した正規化スケルトン |
 | hips ルートモーション | ✅ | 正規化 hips の位置も raw へ転写 |
-| 指ボーン | ⚠️ | rig 対象外(raw rest のまま。アニメの指は未転写) |
+| 指ボーン | ✅ | rig 対象 (2026-10-09)。VRMA・ポーズの指が反映される。0.x の親指は 1.0 名へ読み替え (Proximal→Metacarpal / Intermediate→Proximal) |
 | pose get/set | ⚠️ | 最小(正規化ノードへの直接アクセスのみ) |
 
 ## 表情 (Expression / BlendShape)
@@ -49,6 +49,7 @@ VRM 0.x / 1.0 の**読込・humanoid・表情・視線・アニメ(VRMA)・揺�
 | isBinary × override 相互作用 | ✅ | override 側=binary 値使用、被 override かつ isBinary=effect>0 で完全抑制(spec 準拠) |
 | textureTransformBind | ✅ | 材テクスチャ UV offset/scale を weight で駆動(瞳移動)。実機✓(seed) |
 | materialColorBind | ❌ | 検証アセット無し(手元 VRM は全て morph 表情)。VroidStudio 標準出力では付かない |
+| material 単位の表示切替・乗算色 | ✅ | 標準外。`setMaterialVisible` / `setMaterialColor` / `setTint` (2026-10-09)。服の部品差分・色替え・全体の暗さ用 |
 
 ## 視線 (LookAt)
 
@@ -63,8 +64,8 @@ VRM 0.x / 1.0 の**読込・humanoid・表情・視線・アニメ(VRMA)・揺�
 
 | 項目 | 状況 | 備考 |
 |---|---|---|
-| humanoid ボーン回転トラック | ✅ | nlerp 補間 |
-| hips translation (ルートモーション) | ✅ | 高さスケール補正 + offset 方式。実機✓ |
+| humanoid ボーン回転トラック | ✅ | nlerp 補間。**rest が単位回転でない VRMA (Blender の VRM Add-on 出力) は three-vrm と同じく 親 rest ワールド回転 × q × 自 rest ワールド回転⁻¹ で正規化** (2026-10-09。未対応時は Hips が 82° 倒れていた) |
+| hips translation (ルートモーション) | ✅ | 高さスケール補正 + offset 方式。親のワールド行列で写してから適用。実機✓ |
 | expression トラック | ⚠️ | パース・適用実装済。**顔トラック付き VRMA が手元に無く未検証** |
 | lookAt トラック | ❌ | 未実装(rotation → 視線) |
 
@@ -78,6 +79,7 @@ VRM 0.x / 1.0 の**読込・humanoid・表情・視線・アニメ(VRMA)・揺�
 | colliderGroups | ✅ | |
 | center 空間 | ✅ | tail を center ローカルで保持、慣性を center 空間で計算(three-vrm 準拠) |
 | コライダー半径スケール | ✅ | opt-in・標準外(`setColliderScale`)。VRoid の胴体側面手薄対策 |
+| リセット | ✅ | `resetSpringBones()` で現在の姿勢のまま静止させる (2026-10-09) |
 | VRM0.x のメッシュ衝突 | ❌ | VRM 仕様に無し(コライダーは球/カプセルのみ) |
 
 ## 制約 (VRMC_node_constraint)

@@ -331,7 +331,18 @@ void main() {
         if (b == suf("Foot")) return {suf("LowerLeg")};
         if (b == suf("Toes")) return {suf("Foot")};
 
-        return {};// 未対応(指等)は rig に含めない
+        // 指 (VRM 1.0 名。0.x の親指はロード時に 1.0 名へ読み替え済み)
+        if (b == suf("ThumbMetacarpal")) return {suf("Hand")};
+        if (b == suf("ThumbProximal")) return {suf("ThumbMetacarpal"), suf("Hand")};
+        if (b == suf("ThumbDistal")) return {suf("ThumbProximal"), suf("ThumbMetacarpal")};
+        for (const char* f : {"Index", "Middle", "Ring", "Little"}) {
+            const std::string fn = f;
+            if (b == suf(fn + "Proximal")) return {suf("Hand")};
+            if (b == suf(fn + "Intermediate")) return {suf(fn + "Proximal")};
+            if (b == suf(fn + "Distal")) return {suf(fn + "Intermediate"), suf(fn + "Proximal")};
+        }
+
+        return {};// 未対応は rig に含めない
     }
 
     void VRMHumanoid::buildRig() {
@@ -803,6 +814,27 @@ void main() {
         }
     }
 
+    void VRMSpringBoneManager::reset(threepp::Object3D* root) {
+        // 揺れボーンを rest のローカル回転へ戻し、現在の体の姿勢での world 行列を作り直してから
+        // tail を置き直す (慣性 = currentTail - prevTail を 0 にする)。
+        for (auto& j : joints) {
+            if (j.bone) j.bone->quaternion.copy(j.initialLocalRotation);
+        }
+        if (root) root->updateMatrixWorld(true);
+        for (auto& j : joints) {
+            if (!j.bone) continue;
+            threepp::Vector3 worldTail;
+            worldTail.copy(j.initialLocalChildPosition).applyMatrix4(*j.bone->matrixWorld);
+            if (j.center) {
+                threepp::Matrix4 w2c;
+                w2c.copy(*j.center->matrixWorld).invert();
+                worldTail.applyMatrix4(w2c);
+            }
+            j.currentTail.copy(worldTail);
+            j.prevTail.copy(worldTail);
+        }
+    }
+
     void VRMSpringBoneManager::collide(const VRMSpringJoint& j, threepp::Vector3& tail, const threepp::Vector3& head) {
         for (int gi : j.colliderGroupIndices) {
             if (gi < 0 || gi >= static_cast<int>(colliderGroups.size())) continue;
@@ -925,6 +957,86 @@ void main() {
     // -----------------------------------------------------------------------
     void VRM::updateConstraints() {
         for (auto& c : constraints) c.update();
+    }
+
+    // material 単位の表示切替・乗算色 -----------------------------------------
+    void VRM::collectMaterials(const std::vector<std::string>& gltfMaterialNames,
+                               const std::vector<std::pair<int, std::shared_ptr<threepp::Mesh>>>& prims) {
+        materials_.clear();
+        colorSlots_.clear();
+        materials_.resize(gltfMaterialNames.size());
+        for (std::size_t i = 0; i < gltfMaterialNames.size(); ++i) materials_[i].name = gltfMaterialNames[i];
+        // 乗算対象の uniform (MToon 本体 / 輪郭線)。emissive は暗くする用途で効かせる。
+        static const char* kColorUniforms[] = {"litFactor", "shadeFactor", "emissiveFactor", "rimFactor",
+                                               "matcapColor", "outlineColor"};
+        std::set<threepp::ShaderMaterial*> seen;
+        for (const auto& [mi, mesh] : prims) {
+            if (mi < 0 || mi >= static_cast<int>(materials_.size()) || !mesh) continue;
+            materials_[mi].meshes.push_back(mesh);
+            for (const auto& m : mesh->materials()) {
+                auto sm = std::dynamic_pointer_cast<threepp::ShaderMaterial>(m);
+                if (!sm || seen.count(sm.get())) continue;
+                seen.insert(sm.get());
+                if (sm->name.empty()) sm->name = materials_[mi].name;
+                for (const char* u : kColorUniforms) {
+                    auto it = sm->uniforms.find(u);
+                    if (it == sm->uniforms.end()) continue;
+                    auto& v = it->second.value();
+                    if (!std::holds_alternative<threepp::Vector3>(v)) continue;
+                    colorSlots_.push_back({sm, u, std::get<threepp::Vector3>(v), mi});
+                }
+            }
+        }
+    }
+
+    void VRM::applyColors() {
+        for (auto& s : colorSlots_) {
+            const auto& c = materials_[s.entry].color;
+            threepp::Vector3 v(s.original.x * c.x * tint_.x,
+                               s.original.y * c.y * tint_.y,
+                               s.original.z * c.z * tint_.z);
+            s.material->uniforms.at(s.uniform).setValue(v);
+            s.material->uniformsNeedUpdate = true;
+        }
+    }
+
+    namespace {
+        // 完全一致があればそれだけ、無ければ部分一致の全件
+        std::vector<int> matchMaterials(const std::vector<VRM::MaterialEntry>& list, const std::string& name) {
+            std::vector<int> r;
+            for (int i = 0; i < static_cast<int>(list.size()); ++i)
+                if (list[i].name == name) r.push_back(i);
+            if (!r.empty() || name.empty()) return r;
+            for (int i = 0; i < static_cast<int>(list.size()); ++i)
+                if (list[i].name.find(name) != std::string::npos) r.push_back(i);
+            return r;
+        }
+    }// namespace
+
+    int VRM::setMaterialVisible(const std::string& name, bool visible) {
+        auto idx = matchMaterials(materials_, name);
+        for (int i : idx) {
+            materials_[i].visible = visible;
+            for (auto& m : materials_[i].meshes) m->visible = visible;
+        }
+        return static_cast<int>(idx.size());
+    }
+
+    bool VRM::getMaterialVisible(const std::string& name) const {
+        auto idx = matchMaterials(materials_, name);
+        return idx.empty() ? false : materials_[idx.front()].visible;
+    }
+
+    int VRM::setMaterialColor(const std::string& name, float r, float g, float b) {
+        auto idx = matchMaterials(materials_, name);
+        for (int i : idx) materials_[i].color.set(r, g, b);
+        if (!idx.empty()) applyColors();
+        return static_cast<int>(idx.size());
+    }
+
+    void VRM::setTint(float r, float g, float b) {
+        tint_.set(r, g, b);
+        applyColors();
     }
 
     // 生モーフ(ブレンドシェイプ)を名前で直接指定 -----------------------------
@@ -1212,10 +1324,19 @@ void main() {
             }
 
             // Humanoid: humanBones は配列 [{ bone, node }]。ボーン名は 1.0 と同じ camelCase。
+            // ただし親指だけ 0.x と 1.0 で名前がずれている (three-vrm と同じく 1.0 名へ読み替える):
+            //   0.x ThumbProximal → 1.0 ThumbMetacarpal / Intermediate → Proximal / Distal → Distal
             if (vrmExt.contains("humanoid") && vrmExt["humanoid"].contains("humanBones")) {
                 for (const auto& hb : vrmExt["humanoid"]["humanBones"]) {
-                    if (hb.contains("bone") && hb.contains("node") && hb["bone"].is_string())
-                        bindBone(hb["bone"].get<std::string>(), hb["node"].get<int>());
+                    if (hb.contains("bone") && hb.contains("node") && hb["bone"].is_string()) {
+                        std::string bn = hb["bone"].get<std::string>();
+                        for (const char* lr : {"left", "right"}) {
+                            const std::string p = lr;
+                            if (bn == p + "ThumbProximal") bn = p + "ThumbMetacarpal";
+                            else if (bn == p + "ThumbIntermediate") bn = p + "ThumbProximal";
+                        }
+                        bindBone(bn, hb["node"].get<int>());
+                    }
                 }
             }
 
@@ -1845,6 +1966,29 @@ void main() {
                 std::cerr << "[VRM] morphTargets enabled on " << morphMats << " materials\n";
         }
 
+        // material 単位の表示切替・乗算色のための台帳 (MToon 差し替え後に作る)
+        if (gltf.contains("meshes")) {
+            std::vector<std::string> matNames;
+            if (gltf.contains("materials")) {
+                const auto& mats = gltf["materials"];
+                for (int mi = 0; mi < static_cast<int>(mats.size()); ++mi)
+                    matNames.push_back(mats[mi].value("name", std::string("material_") + std::to_string(mi)));
+            }
+            std::vector<std::pair<int, std::shared_ptr<threepp::Mesh>>> prims;
+            const auto& meshes = gltf["meshes"];
+            for (int meshI = 0; meshI < static_cast<int>(meshes.size()); ++meshI) {
+                if (!meshes[meshI].contains("primitives")) continue;
+                const auto& ps = meshes[meshI]["primitives"];
+                for (int primI = 0; primI < static_cast<int>(ps.size()); ++primI) {
+                    const int mi = ps[primI].value("material", -1);
+                    auto it = result->meshPrimitives.find({meshI, primI});
+                    if (mi < 0 || it == result->meshPrimitives.end() || !it->second) continue;
+                    prims.emplace_back(mi, it->second);
+                }
+            }
+            vrm->collectMaterials(matNames, prims);
+        }
+
         std::cerr << "[VRM] loaded (" << (isVrm1 ? "1.0" : "0.x") << "): bones="
                   << vrm->humanoid.size() << " expressions=" << vrm->expressionManager.size()
                   << " meta.name=\"" << vrm->meta.name << "\"\n";
@@ -1912,6 +2056,55 @@ void main() {
             }
         }
 
+        // rest (glTF ノードの初期姿勢) のワールド行列。Blender の VRM Add-on 等が書き出す VRMA は
+        // ボーンの rest 回転が単位回転ではないので、three-vrm-animation と同じく
+        //   正規化回転 = 親の rest ワールド回転 × トラック値 × 自分の rest ワールド回転の逆
+        // へ変換する (rest が単位回転の VRMA では恒等変換になる)。hips の移動は親のワールド行列で写す。
+        std::unordered_map<int, int> nodeParent;
+        std::unordered_map<int, threepp::Matrix4> nodeWorld;
+        if (gltf.contains("nodes")) {
+            const auto& nodes = gltf["nodes"];
+            for (int i = 0; i < static_cast<int>(nodes.size()); ++i)
+                if (nodes[i].contains("children"))
+                    for (const auto& c : nodes[i]["children"]) nodeParent[c.get<int>()] = i;
+            std::function<threepp::Matrix4(int)> worldOf = [&](int idx) -> threepp::Matrix4 {
+                auto it = nodeWorld.find(idx);
+                if (it != nodeWorld.end()) return it->second;
+                const auto& nd = nodes[idx];
+                threepp::Vector3 t(0.f, 0.f, 0.f), s(1.f, 1.f, 1.f);
+                threepp::Quaternion q;
+                if (nd.contains("translation")) t.set(nd["translation"][0].get<float>(), nd["translation"][1].get<float>(), nd["translation"][2].get<float>());
+                if (nd.contains("rotation")) q.set(nd["rotation"][0].get<float>(), nd["rotation"][1].get<float>(), nd["rotation"][2].get<float>(), nd["rotation"][3].get<float>());
+                if (nd.contains("scale")) s.set(nd["scale"][0].get<float>(), nd["scale"][1].get<float>(), nd["scale"][2].get<float>());
+                threepp::Matrix4 local;
+                local.compose(t, q, s);
+                threepp::Matrix4 w;
+                auto pit = nodeParent.find(idx);
+                if (pit != nodeParent.end()) w.multiplyMatrices(worldOf(pit->second), local);
+                else w.copy(local);
+                nodeWorld[idx] = w;
+                return w;
+            };
+            for (int i = 0; i < static_cast<int>(nodes.size()); ++i) worldOf(i);
+        }
+        auto worldRotOf = [&](int idx) -> threepp::Quaternion {
+            threepp::Quaternion q;
+            auto it = nodeWorld.find(idx);
+            if (it == nodeWorld.end()) return q;
+            threepp::Vector3 p, s;
+            it->second.decompose(p, q, s);
+            return q;
+        };
+        auto parentWorldOf = [&](int idx) -> threepp::Matrix4 {
+            threepp::Matrix4 m;
+            auto pit = nodeParent.find(idx);
+            if (pit != nodeParent.end()) {
+                auto wit = nodeWorld.find(pit->second);
+                if (wit != nodeWorld.end()) m.copy(wit->second);
+            }
+            return m;
+        };
+
         auto anim = std::make_shared<VRMAnimation>();
         if (!result->rawAnimations.empty()) {
             const auto& ra = result->rawAnimations.front();
@@ -1922,6 +2115,18 @@ void main() {
                     VRMAnimation::RotTrack t;
                     t.times = ch.times;
                     t.values = ch.values;
+                    {
+                        threepp::Quaternion parentRot;
+                        auto pit = nodeParent.find(ch.node);
+                        if (pit != nodeParent.end()) parentRot = worldRotOf(pit->second);
+                        threepp::Quaternion restInv = worldRotOf(ch.node);
+                        restInv.invert();
+                        for (std::size_t k = 0; k + 3 < t.values.size(); k += 4) {
+                            threepp::Quaternion q(t.values[k], t.values[k + 1], t.values[k + 2], t.values[k + 3]);
+                            q.premultiply(parentRot).multiply(restInv);
+                            t.values[k] = q[0]; t.values[k + 1] = q[1]; t.values[k + 2] = q[2]; t.values[k + 3] = q[3];
+                        }
+                    }
                     if (!t.times.empty())
                         anim->duration_ = std::max(anim->duration_, t.times.back());
                     anim->boneRotations_[bit->second] = std::move(t);
@@ -1930,6 +2135,15 @@ void main() {
                         anim->hasHips_ = true;
                         anim->hipsTranslation_.times = ch.times;
                         anim->hipsTranslation_.values = ch.values;
+                        {
+                            const threepp::Matrix4 pw = parentWorldOf(ch.node);
+                            auto& v = anim->hipsTranslation_.values;
+                            for (std::size_t k = 0; k + 2 < v.size(); k += 3) {
+                                threepp::Vector3 p(v[k], v[k + 1], v[k + 2]);
+                                p.applyMatrix4(pw);
+                                v[k] = p.x; v[k + 1] = p.y; v[k + 2] = p.z;
+                            }
+                        }
                         if (!ch.times.empty())
                             anim->duration_ = std::max(anim->duration_, ch.times.back());
                     } else {// 表情 (translation.x をウェイトとして採用)
@@ -1965,15 +2179,13 @@ void main() {
                 }
                 return v;
             };
-            anim->vrmaHipsRest_.copy(localT(hipsNode));
-            float y = 0.f;
-            int idx = hipsNode;
-            while (idx >= 0) {
-                y += localT(idx).y;
-                auto pit = childToParent.find(idx);
-                idx = (pit != childToParent.end()) ? pit->second : -1;
-            }
-            anim->vrmaHipsRestY_ = y;
+            (void)localT;
+            // トラックはワールドへ写したので、rest 位置もワールドで持つ
+            threepp::Vector3 wp;
+            auto wit = nodeWorld.find(hipsNode);
+            if (wit != nodeWorld.end()) wp.setFromMatrixPosition(wit->second);
+            anim->vrmaHipsRest_.copy(wp);
+            anim->vrmaHipsRestY_ = wp.y;
         }
 
         std::cerr << "[VRMA] loaded: boneTracks=" << anim->boneTrackCount()

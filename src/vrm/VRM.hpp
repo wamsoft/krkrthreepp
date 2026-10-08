@@ -216,6 +216,9 @@ namespace krkrvrm {
         [[nodiscard]] bool empty() const { return joints.empty(); }
         void setInitState();///< rest ポーズ(world 行列更新後)で捕捉
         void update(float dt);
+        /// 揺れを止めて現在の姿勢で静止状態から再開する (ロード直後・服装替え・
+        /// 大きな姿勢変更・セーブ復元の後に呼ぶ)。root は world 行列更新用。
+        void reset(threepp::Object3D* root);
     private:
         void updateJoint(VRMSpringJoint& j, float dt);
         void collide(const VRMSpringJoint& j, threepp::Vector3& tail, const threepp::Vector3& head);
@@ -298,6 +301,40 @@ namespace krkrvrm {
         /// 髪が服に埋まる場合、1.2〜1.4 程度にすると改善する (opt-in、標準外)。
         void setColliderScale(float s) { springBone.colliderScale = s; }
         [[nodiscard]] float getColliderScale() const { return springBone.colliderScale; }
+        /// 揺れものを現在の姿勢で静止させる (VRMSpringBoneManager::reset)。
+        void resetSpringBones() { springBone.reset(scene.get()); }
+
+        // --- マテリアル (glTF の material 単位) ---
+        // 表示切替 (服の部品差分) と乗算色 (色替え・全体の暗さ)。
+        // 実効色 = 元の色 × setMaterialColor の色 × setTint の色。
+        struct MaterialEntry {
+            std::string name;                                   ///< glTF material.name
+            std::vector<std::shared_ptr<threepp::Mesh>> meshes; ///< この material を使う primitive
+            threepp::Vector3 color{1.f, 1.f, 1.f};              ///< setMaterialColor の乗算色
+            bool visible = true;
+        };
+        struct ColorSlot {///< 乗算の元になる uniform の元値
+            std::shared_ptr<threepp::ShaderMaterial> material;
+            std::string uniform;
+            threepp::Vector3 original;
+            int entry;///< materials_ の index
+        };
+        std::vector<MaterialEntry> materials_;
+        std::vector<ColorSlot> colorSlots_;
+        threepp::Vector3 tint_{1.f, 1.f, 1.f};
+        [[nodiscard]] std::size_t materialCount() const { return materials_.size(); }
+        [[nodiscard]] std::string materialName(std::size_t i) const {
+            return i < materials_.size() ? materials_[i].name : std::string();
+        }
+        /// name は完全一致を優先し、無ければ部分一致した全 material に適用。戻り値=適用数
+        int setMaterialVisible(const std::string& name, bool visible);
+        [[nodiscard]] bool getMaterialVisible(const std::string& name) const;
+        int setMaterialColor(const std::string& name, float r, float g, float b);
+        void setTint(float r, float g, float b);
+        /// buildVRM の最後に呼ぶ。prims = (glTF material index, primitive mesh) の組。
+        void collectMaterials(const std::vector<std::string>& gltfMaterialNames,
+                              const std::vector<std::pair<int, std::shared_ptr<threepp::Mesh>>>& prims);
+        void applyColors();
 
         /// VRM アニメーションを時刻 time(sec) で正規化ボーンへ適用する。
         /// 適用後 update() を呼ぶと raw へ転写される (update 内で updateRig)。

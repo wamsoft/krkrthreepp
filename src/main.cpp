@@ -1165,6 +1165,9 @@ static void Object3D_translateY(ThreeWrapper<Object3D> *self, float distance) { 
 static void Object3D_translateZ(ThreeWrapper<Object3D> *self, float distance) { if (self && self->getObject()) self->getObject()->translateZ(distance); }
 static void Object3D_translateOnAxis(ThreeWrapper<Object3D> *self, const Vector3& axis, float distance) { if (self && self->getObject()) self->getObject()->translateOnAxis(axis, distance); }
 
+// quaternion プロパティは値のコピーを返すので、書き戻し用に直接設定する口を用意する
+static void Object3D_setQuaternion(ThreeWrapper<Object3D> *self, float x, float y, float z, float w) { if (self && self->getObject()) self->getObject()->quaternion.set(x, y, z, w); }
+
 // UTF-8 → ttstr 変換 (JSON ダンプ返却用)。std::string の既定コンバータは
 // ASCII 限定 (バイト単位 widening) なので、日本語を含みうる JSON はこれで返す。
 static ttstr ThreeUtf8ToTtstr(const std::string &u8)
@@ -1500,6 +1503,7 @@ NCB_METHOD_PROXY(rotateOnAxis, Object3D_rotateOnAxis);
 NCB_METHOD_PROXY(rotateOnWorldAxis, Object3D_rotateOnWorldAxis);
 NCB_METHOD_PROXY(translateOnAxis, Object3D_translateOnAxis);
 NCB_METHOD_PROXY(treeJson, Object3D_treeJson);  // サブツリー JSON ダンプ (Web UI 用)
+NCB_METHOD_PROXY(setQuaternion, Object3D_setQuaternion);  // (x,y,z,w) 回転を四元数で直接設定
 };
 
 // ======================================================================
@@ -1565,7 +1569,25 @@ NCB_METHOD_PROXY(clearFog,   ThreeSceneClearFog);
 // Camera (基底)
 // ======================================================================
 
+// 投影行列に画面上の 2D アフィンを後掛けする (updateProjectionMatrix の後に呼ぶ)。
+// NDC で x' = a*x + b*y + tx, y' = c*x + d*y + ty。カメラの全画角を画面の任意の
+// 平行四辺形へ写せるので、2D 側の拡大・回転・位置を「描いた後の拡大」ではなく
+// 描画そのものに反映できる (立ち絵を表示サイズで直接描く用途)。
+static void Camera_applyScreenAffine(ThreeWrapper<Camera> *self, float a, float b, float c, float d, float tx, float ty)
+{
+	if (!self || !self->getObject()) return;
+	auto cam = self->getObject();
+	threepp::Matrix4 m;
+	m.set(a, b, 0, tx,
+	      c, d, 0, ty,
+	      0, 0, 1, 0,
+	      0, 0, 0, 1);
+	cam->projectionMatrix.premultiply(m);
+	cam->projectionMatrixInverse.copy(cam->projectionMatrix).invert();
+}
+
 NCB_REGISTER_THREE_SUBCLASS(Camera)
+NCB_METHOD_PROXY(applyScreenAffine, Camera_applyScreenAffine);// (a,b,c,d,tx,ty) 投影へ 2D アフィンを後掛け
 NCB_THREE_PROPERTY_RO(type, type);
 NCB_THREE_MEMBER_PROPERTY(zoom, float, zoom);
 NCB_THREE_MEMBER_PROPERTY(nearPlane, float, nearPlane);
@@ -3007,6 +3029,44 @@ static ttstr VRM_morphListJson(ThreeWrapper<VRM> *self) {
 static void  VRM_update(ThreeWrapper<VRM> *self, float dt)                                { if (self && self->getObject()) self->getObject()->update(dt); }
 static void  VRM_setColliderScale(ThreeWrapper<VRM> *self, float s)                       { if (self && self->getObject()) self->getObject()->setColliderScale(s); }
 static float VRM_getColliderScale(ThreeWrapper<VRM> *self)                                { return (self && self->getObject()) ? self->getObject()->getColliderScale() : 1.f; }
+static void  VRM_resetSpringBones(ThreeWrapper<VRM> *self)                                { if (self && self->getObject()) self->getObject()->resetSpringBones(); }
+
+// ttstr → UTF-8 (material 名は日本語を含みうる)
+static std::string ThreeTtstrToUtf8(const ttstr &s)
+{
+	std::string out;
+	const tjs_char *p = s.c_str();
+	if (!p) return out;
+	for (; *p; ++p) {
+		unsigned int cp = (unsigned int)*p;
+		if (sizeof(tjs_char) == 2 && cp >= 0xD800 && cp < 0xDC00 && p[1] >= 0xDC00 && p[1] < 0xE000) {
+			cp = 0x10000 + ((cp - 0xD800) << 10) + ((unsigned int)p[1] - 0xDC00);
+			++p;
+		}
+		if (cp < 0x80) out += (char)cp;
+		else if (cp < 0x800) { out += (char)(0xC0 | (cp >> 6)); out += (char)(0x80 | (cp & 0x3F)); }
+		else if (cp < 0x10000) { out += (char)(0xE0 | (cp >> 12)); out += (char)(0x80 | ((cp >> 6) & 0x3F)); out += (char)(0x80 | (cp & 0x3F)); }
+		else { out += (char)(0xF0 | (cp >> 18)); out += (char)(0x80 | ((cp >> 12) & 0x3F)); out += (char)(0x80 | ((cp >> 6) & 0x3F)); out += (char)(0x80 | (cp & 0x3F)); }
+	}
+	return out;
+}
+
+// material (glTF material 単位) の表示切替・乗算色。name は完全一致優先、無ければ部分一致。
+static int   VRM_getMaterialCount(ThreeWrapper<VRM> *self) { return (self && self->getObject()) ? (int)self->getObject()->materialCount() : 0; }
+static ttstr VRM_getMaterialName(ThreeWrapper<VRM> *self, int i) { return (self && self->getObject()) ? ThreeUtf8ToTtstr(self->getObject()->materialName((std::size_t)i)) : ttstr(); }
+static ttstr VRM_materialListJson(ThreeWrapper<VRM> *self)
+{
+	nlohmann::json arr = nlohmann::json::array();
+	if (self && self->getObject()) {
+		for (const auto& m : self->getObject()->materials_)
+			arr.push_back({ {"name", m.name}, {"visible", m.visible}, {"meshes", (int)m.meshes.size()} });
+	}
+	return ThreeUtf8ToTtstr(arr.dump());
+}
+static int  VRM_setMaterialVisible(ThreeWrapper<VRM> *self, ttstr name, bool v) { return (self && self->getObject()) ? self->getObject()->setMaterialVisible(ThreeTtstrToUtf8(name), v) : 0; }
+static bool VRM_getMaterialVisible(ThreeWrapper<VRM> *self, ttstr name) { return (self && self->getObject()) ? self->getObject()->getMaterialVisible(ThreeTtstrToUtf8(name)) : false; }
+static int  VRM_setMaterialColor(ThreeWrapper<VRM> *self, ttstr name, float r, float g, float b) { return (self && self->getObject()) ? self->getObject()->setMaterialColor(ThreeTtstrToUtf8(name), r, g, b) : 0; }
+static void VRM_setTint(ThreeWrapper<VRM> *self, float r, float g, float b) { if (self && self->getObject()) self->getObject()->setTint(r, g, b); }
 
 // 視線 (Phase1, bone 方式)。setLookAtTarget(ワールド座標) 後 update() で eye ボーンに反映。
 static void VRM_setLookAtTarget(ThreeWrapper<VRM> *self, float x, float y, float z) { if (self && self->getObject()) self->getObject()->lookAt.setTarget(x, y, z); }
@@ -3150,6 +3210,14 @@ NCB_METHOD_PROXY(getMorphName, VRM_getMorphName);    // (i) -> モーフ短名
 NCB_METHOD_PROXY(update, VRM_update);                // morph/視線へ反映 (毎フレーム)
 NCB_METHOD_PROXY(setColliderScale, VRM_setColliderScale);// 揺れコライダー半径の一律スケール(既定1.0)
 NCB_METHOD_PROXY(getColliderScale, VRM_getColliderScale);
+NCB_METHOD_PROXY(resetSpringBones, VRM_resetSpringBones);// 揺れものを現在の姿勢で静止させる
+NCB_METHOD_PROXY(getMaterialCount, VRM_getMaterialCount);    // -> glTF material 数
+NCB_METHOD_PROXY(getMaterialName, VRM_getMaterialName);      // (i) -> material 名
+NCB_METHOD_PROXY(materialListJson, VRM_materialListJson);    // -> [{name,visible,meshes},…] JSON
+NCB_METHOD_PROXY(setMaterialVisible, VRM_setMaterialVisible);// (name, bool) -> 適用数 (完全一致優先・無ければ部分一致)
+NCB_METHOD_PROXY(getMaterialVisible, VRM_getMaterialVisible);// (name) -> bool
+NCB_METHOD_PROXY(setMaterialColor, VRM_setMaterialColor);    // (name, r,g,b) 乗算色 (1,1,1=元の色) -> 適用数
+NCB_METHOD_PROXY(setTint, VRM_setTint);                      // (r,g,b) 全 material への乗算色 (1,1,1=元の色)
 NCB_METHOD_PROXY(setLookAtTarget, VRM_setLookAtTarget);   // (x,y,z) ワールド座標
 NCB_METHOD_PROXY(clearLookAtTarget, VRM_clearLookAtTarget);
 NCB_METHOD_PROXY(hasLookAt, VRM_hasLookAt);          // -> bool
