@@ -70,8 +70,12 @@ static const unsigned char lic_01[] = {
 
 void RegisterKrkrThreeppLicenses()
 {
-	TVPRegisterLicense(TJS_W("threepp"), TJS_W("plugin:krkrthreepp"), lic_00, 641, 1077);
-	TVPRegisterLicense(TJS_W("VRM (Kota Iguchi)"), TJS_W("plugin:krkrthreepp"), lic_01, 635, 1068);
+	try {
+		TVPRegisterLicense(TJS_W("threepp"), TJS_W("plugin:krkrthreepp"), lic_00, 641, 1077);
+		TVPRegisterLicense(TJS_W("VRM (Kota Iguchi)"), TJS_W("plugin:krkrthreepp"), lic_01, 635, 1068);
+	} catch (...) {
+		/* 本体が License API を持たない (古い本体) ときは登録しない */
+	}
 }
 
 #else /* !TVP_HAS_LICENSE_API */
