@@ -78,9 +78,9 @@ class Threepp {
 	// ============================================================
 	// Loop 定義 (アニメーションループ)
 	// ============================================================
-	const Loop_Once = 2200;
-	const Loop_Repeat = 2201;
-	const Loop_PingPong = 2202;
+	const Loop_Once = 2200;     // 1回で停止
+	const Loop_Repeat = 2201;   // ループ (ModelAnimator.play の既定)
+	const Loop_PingPong = 2202; // 往復
 
 	// ============================================================
 	// Math クラス
@@ -518,10 +518,14 @@ class Threepp {
 		property receiveShadow; // 影を受けるか
 		property frustumCulled; // 視錐台カリングを行うか
 		property renderOrder; // 描画順序
-		// 注意: position/rotation/scale/quaternion の getter は「値のコピー」を返すため、
-		//       obj.position.set(...) や obj.position.x = ... を書いても本体には反映されません。
-		//       位置・回転・スケールを変えるには下の setPosition/setRotation/setScale を使ってください。
-		property position;    // 位置 (Vector3、値コピー = 実質読み取り専用)
+		/**
+		 * 位置 (Vector3、値コピー = 実質読み取り専用)
+		 *
+		 * 注意: position/rotation/scale/quaternion の getter は「値のコピー」を返すため、
+		 * obj.position.set(...) や obj.position.x = ... を書いても本体には反映されません。
+		 * 位置・回転・スケールを変えるには setPosition/setRotation/setScale (quaternion は setQuaternion) を使ってください。
+		 */
+		property position;
 		property rotation;    // 回転 (Euler、値コピー = 実質読み取り専用)
 		property quaternion;  // 回転 (Quaternion、値コピー = 実質読み取り専用)
 		property scale;       // スケール (Vector3、値コピー = 実質読み取り専用)
@@ -579,14 +583,24 @@ class Threepp {
 		 * @return JSON 文字列
 		 */
 		function treeJson();
-		// quaternion プロパティは値のコピーを返すので、書き戻しはこれを使う (Object3D のみ)
+		/**
+		 * 回転を Quaternion の成分で設定
+		 *
+		 * quaternion プロパティは値のコピーを返すので、書き戻しはこれを使う (Object3D のみ)。
+		 */
 		function setQuaternion(x, y, z, w);
 
 		// --- ワールド変換の取得 (matrixWorld から算出) ---
-		// 返り値が最新であるには、直前に render するか updateMatrixWorld(true) を
-		// 呼んでおくこと(親をたどって world 行列を確定させる必要がある)。
-		// 立ち絵フレーミングで骨(head/hips 等)の world 座標を得るのに使う。
-		function getWorldPosition();   // -> Vector3 (ワールド座標)
+
+		/**
+		 * -> Vector3 (ワールド座標)
+		 *
+		 * getWorldPosition / getWorldQuaternion / getWorldScale は matrixWorld から算出する。
+		 * 返り値が最新であるには、直前に render するか updateMatrixWorld(true) を
+		 * 呼んでおくこと(親をたどって world 行列を確定させる必要がある)。
+		 * 立ち絵フレーミングで骨(head/hips 等)の world 座標を得るのに使う。
+		 */
+		function getWorldPosition();
 		function getWorldQuaternion(); // -> Quaternion (ワールド回転)
 		function getWorldScale();      // -> Vector3 (ワールドスケール)
 	}
@@ -786,6 +800,10 @@ class Threepp {
 	/**
 	 * 平行光源（太陽光のような光）
 	 * @description 無限遠から平行に照射される光源です。影を落とすことができます。
+	 *
+	 * 影を落とすには castShadow=true にし、renderer.setShadowMapEnabled(true) と、
+	 * 影を受ける側の receiveShadow=true が必要です。
+	 * 平行光源の影は正投影カメラで焼くので、シーンを覆う範囲を setShadowOrthoBounds で指定します。
 	 */
 	class DirectionalLight {
 		/**
@@ -798,9 +816,7 @@ class Threepp {
 		property type;  // "DirectionalLight"（読み取り専用）
 
 		// --- 影(ShadowMap) ---
-		// このライトで影を落とすには castShadow=true にし、
-		// renderer.setShadowMapEnabled(true) と、影を受ける側の receiveShadow=true が必要。
-		// 平行光源の影は正投影カメラで焼くので、シーンを覆う範囲を setShadowOrthoBounds で指定する。
+
 		function setShadowMapSize(w, h);        // シャドウマップ解像度 (既定 2048x2048)
 		function setShadowBias(bias);           // 影のアクネ対策バイアス (例 -0.0005)
 		function setShadowNormalBias(bias);     // 法線方向バイアス
@@ -814,6 +830,8 @@ class Threepp {
 	/**
 	 * 点光源
 	 * @description 一点から全方向に照射される光源です。
+	 *
+	 * 影の設定は DirectionalLight と同様です。ただし setShadowOrthoBounds は平行光源専用で、点光源では効果がありません。
 	 */
 	class PointLight {
 		/**
@@ -832,12 +850,13 @@ class Threepp {
 		function getPower(); // 光のパワーを取得
 		function setPower(power); // 光のパワーを設定
 
-		// --- 影(ShadowMap) --- ※ setShadowOrthoBounds は平行光源専用(点光源では無効)
-		function setShadowMapSize(w, h);
-		function setShadowBias(bias);
-		function setShadowNormalBias(bias);
-		function setShadowRadius(radius);
-		function setShadowNearFar(near, far);
+		// --- 影(ShadowMap) ---
+
+		function setShadowMapSize(w, h);        // シャドウマップ解像度 (既定 2048x2048)
+		function setShadowBias(bias);           // 影のアクネ対策バイアス (例 -0.0005)
+		function setShadowNormalBias(bias);     // 法線方向バイアス
+		function setShadowRadius(radius);       // ソフトシャドウ半径 (PCF)
+		function setShadowNearFar(near, far);   // 影用カメラの near/far
 
 		function dispose(); // リソースを解放
 	}
@@ -845,6 +864,8 @@ class Threepp {
 	/**
 	 * スポットライト
 	 * @description 一点から円錐状に照射される光源です。
+	 *
+	 * 影の設定は DirectionalLight と同様です。スポットライトの影は透視カメラで焼きます (角度は angle に依存)。
 	 */
 	class SpotLight {
 		/**
@@ -867,12 +888,13 @@ class Threepp {
 		function getPower(); // 光のパワーを取得
 		function setPower(power); // 光のパワーを設定
 
-		// --- 影(ShadowMap) --- スポットライトの影は透視カメラで焼く(角度は angle 依存)
-		function setShadowMapSize(w, h);
-		function setShadowBias(bias);
-		function setShadowNormalBias(bias);
-		function setShadowRadius(radius);
-		function setShadowNearFar(near, far);
+		// --- 影(ShadowMap) ---
+
+		function setShadowMapSize(w, h);        // シャドウマップ解像度 (既定 2048x2048)
+		function setShadowBias(bias);           // 影のアクネ対策バイアス (例 -0.0005)
+		function setShadowNormalBias(bias);     // 法線方向バイアス
+		function setShadowRadius(radius);       // ソフトシャドウ半径 (PCF)
+		function setShadowNearFar(near, far);   // 影用カメラの near/far
 
 		function dispose(); // リソースを解放
 	}
@@ -2511,6 +2533,7 @@ class Threepp {
 		function getPointAt(u);    // 等間隔パラメータ u の点を取得
 		
 		// Pathと同じ描画メソッド
+
 		function moveTo(x, y);     // ペンを移動
 		function lineTo(x, y);     // 直線を描画
 		function quadraticCurveTo(cpX, cpY, x, y);  // 二次ベジェ曲線を描画
@@ -2522,6 +2545,7 @@ class Threepp {
 		function closePath();      // パスを閉じる
 		
 		// 穴の管理
+
 		function addHole(hole);    // 穴を追加（Pathオブジェクト）
 		function getHole(index);   // 穴を取得
 		function getHoleCount();   // 穴の数を取得
@@ -2603,32 +2627,42 @@ class Threepp {
 		function resetNormalizedPose();       // 正規化ポーズを rest に戻す
 
 		/**
-		 * 毎フレーム更新。humanoid リグ転写 + 制約(node_constraint) + 表情 + 視線 +
-		 * 揺れ物(springBone) をまとめて反映する。
+		 * 毎フレーム更新
+		 *
+		 * humanoid リグ転写 + 制約(node_constraint) + 表情 + 視線 + 揺れ物(springBone) をまとめて反映する。
 		 * @param dt  前フレームからの経過秒 (揺れ物の物理積分に使う。0 だと揺れは止まる)
 		 */
 		function update(dt);
 
 		// --- 表情 (Expression) ---
+
 		function setExpression(name, weight); // 表情ウェイト設定 (name: "happy"/"blink"/"aa" 等, weight 0..1)
 		function getExpression(name);         // -> float
 		function getExpressionCount();        // -> int
 		function getExpressionName(index);    // i 番目の表情名 -> string (範囲外は "")
 		function expressionListJson();        // 全表情の一括 JSON '[{"name":…,"weight":…},…]' (Web UI 用)
 
-		// --- 生モーフ (ブレンドシェイプ直接指定。表情の後に override 適用) ---
-		function setMorph(name, weight);      // 名前で個別モーフを設定 (VRoid: "Fcl_*" 等)
+		// --- 生モーフ ---
+
+		/**
+		 * 名前で個別モーフを設定 (VRoid: "Fcl_*" 等)
+		 *
+		 * ブレンドシェイプを直接指定する。表情の後に override として適用される。
+		 */
+		function setMorph(name, weight);
 		function clearMorphs();               // 生モーフ全解除
 		function getMorphCount();             // -> int
 		function getMorphName(index);         // i 番目のモーフ名 -> string
 		function morphListJson();             // 全モーフ名の一括 JSON '["Fcl_ALL_Neutral",…]' (Web UI 用)
 
 		// --- 視線 (LookAt) ---
+
 		function setLookAtTarget(x, y, z);    // 注視点(ワールド座標)を設定
 		function clearLookAtTarget();         // 注視を解除
 		function hasLookAt();                 // 視線機能を持つか -> bool
 
 		// --- アニメーション ---
+
 		/**
 		 * VRM アニメーションを時刻 time(秒) で適用する。適用後 update(dt) で raw ボーンへ転写。
 		 * @param vrmAnimation  Threepp.VRMAnimation
@@ -2637,9 +2671,12 @@ class Threepp {
 		function applyAnimation(vrmAnimation, time);
 		function applyAnimationBlend(vrmAnimation, time, blend); // クロスフェード用 (blend 0..1)
 
-		// --- ポーズ (正規化リグのローカル回転) ---
+		// --- ポーズ ---
+
 		/**
 		 * ポーズを適用。arr は [ボーン名, qx, qy, qz, qw, …] の平坦配列。
+		 *
+		 * 回転は正規化リグのローカル回転。
 		 * @param blend  0..1 (省略時 1 = 即時)
 		 */
 		function applyPose(arr, blend);
@@ -2650,6 +2687,7 @@ class Threepp {
 		function setOffset(x, y, z);          // キャラ全体を平行移動
 
 		// --- 揺れ物 (SpringBone) ---
+
 		/**
 		 * springBone コライダー半径の一律スケール (既定 1.0=忠実)。
 		 * VRoid 系はコライダーが体にタイトで胴体側面が手薄なため、髪が服に埋まる場合は
@@ -2664,19 +2702,35 @@ class Threepp {
 		function resetSpringBones();
 
 		// --- マテリアル (glTF の material 単位) ---
-		// name は完全一致を優先し、無ければ部分一致した全 material に適用する。戻り値は適用数。
-		// VRoid の服の部品 (上着/リボン等) の出し入れや色替え、全体の暗さに使う。
-		// 実効色 = 元の色 × setMaterialColor の色 × setTint の色 (MToon の lit/shade/emissive/rim/
-		// matcap と輪郭線の色に掛かる)。
+
 		function getMaterialCount();          // -> int
 		function getMaterialName(index);      // -> string (glTF material.name)
 		function materialListJson();          // -> [{name,visible,meshes},…] の JSON 文字列
-		function setMaterialVisible(name, visible); // -> 適用数
+		/**
+		 * material の表示/非表示を設定 -> 適用数
+		 *
+		 * name は完全一致を優先し、無ければ部分一致した全 material に適用する。戻り値は適用数。
+		 * VRoid の服の部品 (上着/リボン等) の出し入れに使う。
+		 */
+		function setMaterialVisible(name, visible);
 		function getMaterialVisible(name);    // -> bool
-		function setMaterialColor(name, r, g, b);   // 乗算色 (1,1,1 = 元の色) -> 適用数
-		function setTint(r, g, b);            // 全 material への乗算色 (1,1,1 = 元の色)
+		/**
+		 * 乗算色 (1,1,1 = 元の色) -> 適用数
+		 *
+		 * name は完全一致を優先し、無ければ部分一致した全 material に適用する。戻り値は適用数。
+		 * 実効色 = 元の色 × setMaterialColor の色 × setTint の色 (MToon の lit/shade/emissive/rim/
+		 * matcap と輪郭線の色に掛かる)。VRoid の服の部品の色替えに使う。
+		 */
+		function setMaterialColor(name, r, g, b);
+		/**
+		 * 全 material への乗算色 (1,1,1 = 元の色)
+		 *
+		 * setMaterialColor の色にさらに掛かる。全体の暗さの調整に使う。
+		 */
+		function setTint(r, g, b);
 
 		// --- メタ情報 ---
+
 		function getMetaName();               // -> string
 		function getMetaVersion();            // -> string
 		function getMetaLicenseUrl();         // -> string
@@ -2756,10 +2810,15 @@ class Threepp {
 		 */
 
 		// --- パーツ (メッシュ) の取り出し ---
-		// 同じモデルを何百個も並べたいとき、GLB を個数ぶん読んで Mesh を並べると
-		// draw call がそのまま個数になる。ここから取り出して InstancedMesh へ
-		// まとめると 1 個で済む。
-		function getPartCount();           // -> int (モデル内のメッシュ数。深さ優先の出現順)
+
+		/**
+		 * -> int (モデル内のメッシュ数。深さ優先の出現順)
+		 *
+		 * 同じモデルを何百個も並べたいとき、GLB を個数ぶん読んで Mesh を並べると
+		 * draw call がそのまま個数になる。getPartGeometry / getPartMaterial で取り出して
+		 * InstancedMesh へまとめると 1 個で済む。
+		 */
+		function getPartCount();
 		function getPartGeometry(i);       // (i) -> BufferGeometry
 		function getPartMaterial(i);       // (i) -> Material (元を共有。テクスチャを持つため)
 		function getPartName(i);           // (i) -> string (どのパーツか見分ける用)
@@ -2843,11 +2902,6 @@ class Threepp {
 		function crossFadeTo(other, dur, warp); // 別 AnimationAction へ dur 秒でクロスフェード
 		function setDuration(sec);         // クリップの実効長を上書き
 	}
-
-	// Loop モード定数 (AnimationAction.setLoop に渡す)
-	const Loop_Once = 2200;     // 1回で停止
-	const Loop_Repeat = 2201;   // ループ (ModelAnimator.play の既定)
-	const Loop_PingPong = 2202; // 往復
 
 	// CurveType 定数
 	const CatmullRomCurve3_CurveType_centripetal = 0;
