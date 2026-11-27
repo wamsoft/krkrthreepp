@@ -81,6 +81,13 @@ VRMA アニメ(+hips ルートモーション)・揺れ物(springBone, center �
 参照に実装・検証。**機能ごとの詳細な対応状況は [`docs/vrm_support_status.md`](docs/vrm_support_status.md)**。
 未対応の主なもの: materialColorBind / VRMA 顔トラック / FirstPerson / scene ライティング(固定ライト)。
 
+### GPU モード (SDL_GPU) 対応の方針 (2026-11-27 決定・未着手)
+本体の GPU モードでも VRM を表示する。threepp の中核と VRM ランタイムは共通のまま、VRM / glTF 表示に
+絞った描画部を SDL_GPU で別に書く予定 (詳細は `docs/vrm_support_status.md` «GPU モード対応の方針»)。
+そのため GL 版を触るときも次を守ること:
+- `src/vrm/` から GL を直接呼ばない (GL は描画部とバインド層に閉じる。2026-11-27 時点で直接呼び出し無し)
+- MToon は «マテリアルの定義 (パラメーター)» と «GLSL の実装» を分けておく
+
 ### リポジトリ
 - 親 (`.`): VRM 実装 + ncbind バインド (`src/main.cpp`)。
 - threepp fork (`external/threepp/`, branch `work_sdl3`): GLES 化 / GLTFLoader 露出・修正 / MToon 用の

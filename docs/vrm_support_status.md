@@ -132,6 +132,19 @@ VRM 0.x / 1.0 の**読込・humanoid・表情・視線・アニメ(VRMA)・揺�
 | MSAA (縁 AA) | ✅ | `setSampleCount`。内部マルチサンプル FBO→resolve |
 | premultiplied 縁補正 | ✅ | gles.dll `unpremultiply`(opt-in) |
 | 吉里吉里レイヤ合成 | ✅ | dest.type=ltAlpha |
+| SDL_GPU (GPU モード) 版の描画 | ❌ | 方針決定済み・未着手 (2026-11-27)。下記 |
+
+### GPU モード対応の方針 (2026-11-27 決定)
+
+本体の GPU モード (`KRKRZ_CANVAS_GPU`、家庭用ゲーム機を含む) でも VRM を表示する。threepp の中核と
+VRM ランタイムは共通のまま、VRM / glTF 表示に絞った描画部を SDL_GPU で別に書く (threepp の
+`GLRenderer` や threepp 本体の Vulkan / WebGPU 描画は使わない)。着手は本体がプラグインへ GPU を
+渡す口を決めてから。SSOT = 本体 `doc/CanvasGPU.md` «krkrthreepp (VRM) の GPU 版»。
+
+GL 版の開発で今から守ること:
+
+- `src/vrm/` から GL を直接呼ばない (GL の呼び出しは描画部とバインド層 `src/main.cpp` に閉じる)
+- MToon は «マテリアルの定義 (パラメーター)» と «GLSL の実装» を分けておく
 
 ---
 
